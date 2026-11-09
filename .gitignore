@@ -1,0 +1,16 @@
+*.o
+*.so
+*.dll
+*.dylib
+geolith_libretro.*
+objs/
+
+# Android / Gradle (HowlingDog frontend additions)
+.gradle/
+local.properties
+*.jks
+keystore/
+app/build/
+build/
+.idea/
+*.iml

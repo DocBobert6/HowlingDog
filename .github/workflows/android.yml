@@ -1,0 +1,108 @@
+name: Android CI
+
+# HowlingDog Phase 1: fork the Geolith core at pinned commit 2dc88e3
+# and build the stock core untouched in CI (arm64 only). No core
+# changes, no releases: a push to main only builds and verifies.
+# The player arrives in Phase 2; the app module here is a minimal
+# skeleton that proves the frontend compiles.
+#
+# NDK: 27.2.12479018 (matches the local build). ndk-build is invoked
+# from libretro/jni with APP_ABI=arm64-v8a on the command line;
+# Application.mk is NOT edited.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install NDK 27.2.12479018
+        run: sdkmanager "ndk;27.2.12479018"
+
+      - name: Build stock core (arm64-v8a only)
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          NDK_BUILD="$NDK/ndk-build"
+          if [ ! -x "$NDK_BUILD" ]; then
+            echo "ndk-build missing from NDK 27.2.12479018: $NDK_BUILD"
+            exit 1
+          fi
+          cd libretro/jni
+          "$NDK_BUILD" -j"$(nproc)" APP_ABI=arm64-v8a APP_PLATFORM=android-21
+          cd "$GITHUB_WORKSPACE"
+          # ndk-build leaves two copies: the linked library under obj/
+          # and the installed (stripped) copy under libs/. ndk-build's
+          # project root is the parent of jni/, so the outputs land
+          # under libretro/libs/ and libretro/obj/, not under
+          # libretro/jni/. Only the installed copy under libs/ is
+          # the artifact.
+          FOUND=$(find libretro -path "*/libs/arm64-v8a/*.so")
+          COUNT=$(printf "%s\n" "$FOUND" | grep -c . || true)
+          if [ "$COUNT" -ne 1 ]; then
+            echo "expected exactly one built .so, found $COUNT:"
+            printf "%s\n" "$FOUND"
+            exit 1
+          fi
+          echo "BUILT_SO=$FOUND" >> "$GITHUB_ENV"
+
+      - name: Verify core
+        run: |
+          set -euo pipefail
+          SO="$BUILT_SO"
+          file "$SO"
+          file "$SO" | grep -q "ELF 64-bit.*ARM aarch64" || {
+            echo "not an ARM64 ELF: $(file "$SO")"
+            exit 1
+          }
+          SIZE=$(stat -c%s "$SO")
+          echo "size: $SIZE bytes"
+          if [ "$SIZE" -le 102400 ]; then
+            echo "core implausibly small: $SIZE bytes"
+            exit 1
+          fi
+          NM="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          EXPORTS=$("$NM" -D "$SO")
+          for sym in retro_api_version retro_get_system_info retro_get_system_av_info retro_set_environment retro_set_video_refresh retro_set_audio_sample_batch retro_set_input_poll retro_set_input_state retro_init retro_deinit retro_load_game retro_run retro_reset retro_serialize_size retro_serialize retro_unserialize retro_get_memory_data retro_get_memory_size; do
+            echo "$EXPORTS" | grep -q " $sym" || {
+              echo "missing export: $sym"
+              echo "$EXPORTS"
+              exit 1
+            }
+          done
+          echo "core=geolith pin=2dc88e3fa72ff404213a65d6eb5bb33baa687f73 size=$SIZE sha256=$(sha256sum "$SO" | cut -d' ' -f1)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build debug APK (proves the app compiles)
+        run: ./gradlew :app:assembleDebug
+
+      - name: Upload core artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: geolith-libretro-android
+          path: ${{ env.BUILT_SO }}
+          if-no-files-found: error
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: howlingdog-apk-debug
+          path: app/build/outputs/apk/debug/*.apk
