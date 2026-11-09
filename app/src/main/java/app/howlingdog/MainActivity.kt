@@ -378,23 +378,32 @@ class MainActivity : ComponentActivity() {
                 )
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            when (event.type) {
-                                PointerEventType.Press -> {
-                                    if (!held) {
-                                        held = true
-                                        onHoldChange(true)
+                        // Compose has no PointerEventType.Cancel: a cancelled gesture
+                        // cancels this coroutine instead, so release the hold in
+                        // finally — otherwise a stuck button keeps firing input.
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                when (event.type) {
+                                    PointerEventType.Press -> {
+                                        if (!held) {
+                                            held = true
+                                            onHoldChange(true)
+                                        }
+                                    }
+                                    PointerEventType.Release,
+                                    PointerEventType.Exit -> {
+                                        if (held) {
+                                            held = false
+                                            onHoldChange(false)
+                                        }
                                     }
                                 }
-                                PointerEventType.Release,
-                                PointerEventType.Exit,
-                                PointerEventType.Cancel -> {
-                                    if (held) {
-                                        held = false
-                                        onHoldChange(false)
-                                    }
-                                }
+                            }
+                        } finally {
+                            if (held) {
+                                held = false
+                                onHoldChange(false)
                             }
                         }
                     }
