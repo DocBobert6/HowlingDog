@@ -34,6 +34,9 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -46,4 +49,18 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
+    implementation("androidx.documentfile:documentfile:1.0.1")
+
+    // Phase 2: startup-path gate (Robolectric) + input-mask unit test.
+    // The gate exists because green CI and ordinary APK checks missed
+    // a launch death before (AutoSpace r159, Notscape beta.48): the
+    // test launches MainActivity and asserts the setup screen renders
+    // without crashing — with no native code present, since the
+    // bridge loads its libraries lazily on game start only.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

@@ -3,10 +3,10 @@
 A standalone Neo Geo emulator for Android: an original frontend around
 the Geolith libretro core (AES / MVS / CD / CDZ).
 
-**Status: Phase 1** — the stock core builds green in CI on arm64. The
-player (boot a game, video, audio, input) arrives in Phase 2. See
-`PLAN.md` in `~/workspace/howlingdog/` for the locked plan; the plan
-file is not part of this repo.
+**Status: Phase 2** — the bare player spike: the JNI bridge boots a
+game with video, audio, and touch input. See `PLAN.md` in
+`~/workspace/howlingdog/` for the locked plan; the plan file is not
+part of this repo.
 
 ## Core pin
 
@@ -23,8 +23,12 @@ baseline defined in the plan — never silently.
 - `src/`, `libretro/`, `deps/` — Geolith core, BSD-3-Clause (see `LICENSE`)
 - `frontend/` — the Android frontend, GPL-3.0 (see `frontend/LICENSE`)
 - `app/` — the Android app module (`app.howlingdog`), Kotlin/Compose
-- `.github/workflows/android.yml` — CI: builds the stock core for
-  arm64-v8a via ndk-build, then compiles the app (debug, unsigned)
+- `bridge/` — the JNI bridge (C++), built by ndk-build; it links the
+  prebuilt core and is the only native code the frontend owns
+- `.github/workflows/android.yml` — CI: builds the stock core, then
+  the bridge, for arm64-v8a via ndk-build; stages both .so files;
+  runs the unit tests (incl. the Robolectric startup gate); then
+  compiles the app (debug, unsigned)
 - `NOTICE` — full licence texts for every library in the compiled core
 
 ## Licences
@@ -50,6 +54,44 @@ none ever will be. To play, supply your own:
   (MVS + Universe BIOS), `neocd.zip` + `neocdz.zip` (CD),
   `neocdz.zip` (CDZ), `irrmaze.zip` (Irritating Maze, MVS).
 
+## Playing (Phase 2 spike)
+
+The spike UI is plain and temporary — the fighting-game select grid
+library arrives in a later phase. To test on a device, install the
+debug APK from the CI artifact (`howlingdog-apk-debug`) and supply
+your own files:
+
+1. A game file: one `.NEO` cartridge file (`.cue` / `.chd` also
+   work the same way, with the matching BIOS below).
+2. A folder holding the BIOS zips: `aes.zip` for home-console games,
+   `neogeo.zip` for arcade games; `neocd.zip` + `neocdz.zip` for
+   disc games, `neocdz.zip` for CDZ games.
+
+In the app: tap **Pick game file**, pick the `.NEO`; tap **Pick BIOS
+folder**, pick the folder holding the zips; tap **Start**. The game
+boots fullscreen with touch controls (directions, A/B/C/D, Start,
+Coin). **Stop** (or Back) returns to the setup screen.
+
+Honest limits of the spike, stated plainly:
+
+- No game has been booted locally yet — the sandbox has no games
+  and must not download any, so the first real boot happens on the
+  test device. What CI verifies: the core and bridge build, the
+  bridge links the core and exposes all 11 JNI entry points, the
+  unit tests pass (incl. the Robolectric startup gate, which
+  launches the app with no native code present), and the debug APK
+  assembles.
+- Video is a Bitmap copy path (framebuffer -> int array -> Bitmap):
+  correct, but it copies every pixel every frame. The final
+  renderer will draw the core's framebuffer directly.
+- Audio is resampled to 48 kHz in the bridge with a linear
+  interpolator, because the core's native rates (55943 Hz AES,
+  55555 Hz MVS, 44396 Hz CD) sit outside what AudioTrack accepts
+  reliably. A proper resampler belongs in a later phase.
+- Input is player 1, touch only. Gamepad input arrives in Phase 4.
+- No save states, no pause menu, no core-options UI: the core runs
+  on its defaults (AES system unless a game needs MVS).
+
 ## Building
 
 CI builds on every push to `main` (see `.github/workflows/android.yml`).
@@ -60,6 +102,15 @@ Locally, with the Android SDK + NDK 27 installed:
 # Stock core, arm64 only
 cd libretro/jni
 $ANDROID_HOME/ndk/27.2.12479018/ndk-build -j"$(nproc)" APP_ABI=arm64-v8a APP_PLATFORM=android-21
+# Bridge (after the core — it links the prebuilt libretro.so)
+cd ../../bridge/jni
+$ANDROID_HOME/ndk/27.2.12479018/ndk-build -j"$(nproc)" APP_ABI=arm64-v8a APP_PLATFORM=android-21
+# Stage both .so files for Gradle (build artifacts, never committed)
+cd ../..
+mkdir -p app/src/main/jniLibs/arm64-v8a
+cp bridge/libs/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
+# Unit tests (incl. the Robolectric startup gate)
+./gradlew :app:testDebugUnitTest
 # App (debug, unsigned)
 ./gradlew :app:assembleDebug
 ```

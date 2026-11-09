@@ -1,14 +1,22 @@
 name: Android CI
 
-# HowlingDog Phase 1: fork the Geolith core at pinned commit 2dc88e3
-# and build the stock core untouched in CI (arm64 only). No core
-# changes, no releases: a push to main only builds and verifies.
-# The player arrives in Phase 2; the app module here is a minimal
-# skeleton that proves the frontend compiles.
+# HowlingDog Phase 2: the bare player spike — the JNI bridge from the
+# app.howlingdog frontend to the stock Geolith core, plus a minimal
+# spike UI (pick a game + BIOS folder, start, fullscreen playback
+# with touch controls). The core stays untouched (pinned 2dc88e3);
+# the bridge lives in bridge/ and links the prebuilt libretro.so.
+# No releases: a push to main only builds and verifies.
 #
 # NDK: 27.2.12479018 (matches the local build). ndk-build is invoked
 # from libretro/jni with APP_ABI=arm64-v8a on the command line;
-# Application.mk is NOT edited.
+# Application.mk is NOT edited. The bridge is built the same way
+# from bridge/jni. Both .so files are staged into
+# app/src/main/jniLibs/arm64-v8a/ before Gradle assembles the APK
+# (the .so files are build artifacts, never committed).
+#
+# Order matters: core -> bridge -> stage libs -> unit tests -> APK.
+# A red build stops the line: fix it and verify green before
+# pushing anything new.
 
 on:
   push:
@@ -90,6 +98,71 @@ jobs:
             }
           done
           echo "core=geolith pin=2dc88e3fa72ff404213a65d6eb5bb33baa687f73 size=$SIZE sha256=$(sha256sum "$SO" | cut -d' ' -f1)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build bridge (arm64-v8a only)
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          NDK_BUILD="$NDK/ndk-build"
+          cd bridge/jni
+          "$NDK_BUILD" -j"$(nproc)" APP_ABI=arm64-v8a APP_PLATFORM=android-21
+          cd "$GITHUB_WORKSPACE"
+          FOUND=$(find bridge -path "*/libs/arm64-v8a/*.so")
+          COUNT=$(printf "%s\n" "$FOUND" | grep -c . || true)
+          if [ "$COUNT" -ne 2 ]; then
+            echo "expected exactly two built .so files (bridge + prebuilt core), found $COUNT:"
+            printf "%s\n" "$FOUND"
+            exit 1
+          fi
+          echo "$FOUND" | grep -q "libhowlingdog-bridge.so" || {
+            echo "bridge .so missing from: $FOUND"
+            exit 1
+          }
+          echo "$FOUND" | grep -q "libretro.so" || {
+            echo "prebuilt core .so missing from bridge libs: $FOUND"
+            exit 1
+          }
+
+      - name: Verify bridge
+        run: |
+          set -euo pipefail
+          BRIDGE=$(find bridge -path "*/libs/arm64-v8a/libhowlingdog-bridge.so")
+          file "$BRIDGE" | grep -q "ELF 64-bit.*ARM aarch64" || {
+            echo "bridge is not an ARM64 ELF: $(file "$BRIDGE")"
+            exit 1
+          }
+          NM="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          READELF="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          # The bridge must call into the core (DT_NEEDED libretro.so)
+          # and expose the JNI entry points the Kotlin side declares.
+          "$READELF" -d "$BRIDGE" | grep -q "libretro.so" || {
+            echo "bridge does not link libretro.so:"
+            "$READELF" -d "$BRIDGE"
+            exit 1
+          }
+          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeUnloadGame nativeDeinit nativeLastError nativeSystemInfo; do
+            "$NM" -D "$BRIDGE" | grep -q "Java_app_howlingdog_Bridge_$sym" || {
+              echo "missing JNI export: $sym"
+              "$NM" -D "$BRIDGE"
+              exit 1
+            }
+          done
+          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 11 JNI entry points present"
+
+      - name: Stage native libs for Gradle
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          cp bridge/libs/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
+          ls -l app/src/main/jniLibs/arm64-v8a/
+          COUNT=$(find app/src/main/jniLibs/arm64-v8a -name "*.so" | wc -l)
+          if [ "$COUNT" -ne 2 ]; then
+            echo "expected 2 staged .so files, found $COUNT"
+            exit 1
+          fi
+
+      - name: Run unit tests (incl. Robolectric startup gate)
+        run: ./gradlew :app:testDebugUnitTest
 
       - name: Build debug APK (proves the app compiles)
         run: ./gradlew :app:assembleDebug
