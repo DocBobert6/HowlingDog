@@ -33,6 +33,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,6 +69,15 @@ import java.io.FileOutputStream
  * No native code is touched here: Bridge loads its libraries lazily
  * when a game starts, so this activity launches with no native code
  * present (the Robolectric startup gate depends on that).
+ *
+ * Rotation: MainActivity declares configChanges in the manifest, so
+ * entering the game screen's forced landscape does not recreate the
+ * activity. The picked game/BIOS state is rememberSaveable as a
+ * second brace — the Phase 2 device test showed the picks vanishing
+ * when the rotation recreated the activity (Start flashed back to a
+ * fresh setup screen). screen/held/gameView stay plain remember:
+ * if the activity is ever recreated, the safe fallback is the setup
+ * screen with the session stopped.
  */
 class MainActivity : ComponentActivity() {
 
@@ -110,10 +120,15 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         val activity = context as Activity
         var screen by remember { mutableStateOf(Screen.Setup) }
-        var gameFile by remember { mutableStateOf<File?>(null) }
-        var gameName by remember { mutableStateOf<String?>(null) }
-        var biosCount by remember { mutableStateOf(0) }
-        var status by remember { mutableStateOf("Pick a game file and a BIOS folder, then Start.") }
+        // Picked state survives recreation (rememberSaveable). File is
+        // not saveable, so the path is what is saved and the File is
+        // derived from it. The copied files themselves live on disk
+        // (cacheDir/games, filesDir/bios), so a restored path is valid.
+        var gamePath by rememberSaveable { mutableStateOf<String?>(null) }
+        var gameName by rememberSaveable { mutableStateOf<String?>(null) }
+        var biosCount by rememberSaveable { mutableStateOf(0) }
+        var status by rememberSaveable { mutableStateOf("Pick a game file and a BIOS folder, then Start.") }
+        val gameFile: File? = gamePath?.let { File(it) }
         var held by remember { mutableStateOf(Held()) }
         var gameView by remember { mutableStateOf<GameView?>(null) }
 
@@ -154,7 +169,7 @@ class MainActivity : ComponentActivity() {
                         FileOutputStream(dest).use { output -> input.copyTo(output) }
                     }
                     withContext(Dispatchers.Main) {
-                        gameFile = dest
+                        gamePath = dest.absolutePath
                         gameName = name
                         status = "Game ready: $name"
                     }

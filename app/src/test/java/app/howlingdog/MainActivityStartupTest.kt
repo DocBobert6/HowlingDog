@@ -1,8 +1,13 @@
 package app.howlingdog
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.pm.ActivityInfo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.test.core.app.ApplicationProvider
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -46,5 +51,48 @@ class MainActivityStartupTest {
         // covered by the button's `enabled` wiring in MainActivity.)
         composeRule.onNodeWithText("No game picked yet").assertIsDisplayed()
         composeRule.onNodeWithText("No BIOS files yet").assertIsDisplayed()
+    }
+
+    /**
+     * Regression guard for the Phase 2 device bug: tapping Start
+     * flashed back to a fresh setup screen with no files picked.
+     * Cause: MainActivity declared no configChanges, so entering the
+     * game screen's forced landscape recreated the activity, and the
+     * picked state lived in plain remember. This test pins the
+     * primary fix — rotation must not recreate the activity.
+     */
+    @Test
+    fun mainActivityDeclaresConfigChanges() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val info = context.packageManager.getActivityInfo(
+            ComponentName(context, MainActivity::class.java),
+            0,
+        )
+        val flags = info.configChanges
+        assertTrue("orientation must not recreate MainActivity",
+            flags and ActivityInfo.CONFIG_ORIENTATION != 0)
+        assertTrue("screenSize must not recreate MainActivity",
+            flags and ActivityInfo.CONFIG_SCREEN_SIZE != 0)
+        assertTrue("screenLayout must not recreate MainActivity",
+            flags and ActivityInfo.CONFIG_SCREEN_LAYOUT != 0)
+        assertTrue("keyboardHidden must not recreate MainActivity",
+            flags and ActivityInfo.CONFIG_KEYBOARD_HIDDEN != 0)
+        assertTrue("smallestScreenSize must not recreate MainActivity",
+            flags and ActivityInfo.CONFIG_SMALLEST_SCREEN_SIZE != 0)
+    }
+
+    /**
+     * If the activity IS ever recreated, the fallback must be a clean
+     * setup screen, not a crash. (This does not guard the picked
+     * state itself — the pickers need SAF, which Robolectric cannot
+     * drive — the manifest test above is the guard for that. The
+     * picked state is rememberSaveable as the second brace.)
+     */
+    @Test
+    fun activitySurvivesRecreation() {
+        composeRule.activityRule.scenario.recreate()
+        composeRule.onNodeWithText("HowlingDog").assertIsDisplayed()
+        composeRule.onNodeWithText("No game picked yet").assertIsDisplayed()
+        composeRule.onNodeWithText("Start").assertIsDisplayed()
     }
 }

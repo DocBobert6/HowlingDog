@@ -6,8 +6,13 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.HowlingDog">
+        <!-- configChanges: entering the game screen forces landscape;
+             without this the rotation recreates the activity and the
+             picked game + BIOS state is lost (Phase 2 device test:
+             Start flashed back to a fresh setup screen). -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
             android:exported="true"
             android:theme="@style/Theme.HowlingDog">
             <intent-filter>
