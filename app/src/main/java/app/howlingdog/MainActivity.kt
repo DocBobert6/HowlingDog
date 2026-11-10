@@ -340,6 +340,15 @@ class MainActivity : ComponentActivity() {
         // adjust mode (1.0 = the Settings preset size).
         var stickScale by remember { mutableStateOf(controlSettings.stickScale()) }
         var buttonsScale by remember { mutableStateOf(controlSettings.buttonsScale()) }
+        // Per-button offset overrides (Item 2): a button's offset
+        // from the cluster centre, in dp at scale 1.0. Absent means
+        // the theme layout's default offset for that button.
+        var buttonOverrides by remember { mutableStateOf(controlSettings.buttonOffsets()) }
+        // Move-together toggle (Item 2, Mariner's paired-buttons
+        // behaviour): on, dragging a button moves the whole
+        // cluster; off, it moves that button alone. A session
+        // toggle, not persisted — Mariner's `grouped` is the same.
+        var moveTogether by remember { mutableStateOf(true) }
         // Adjust-layout edit mode: entered from the pause screen
         // (the game has to be running to see where the controls
         // sit). While editing, the game stays paused, the pause
@@ -351,6 +360,7 @@ class MainActivity : ComponentActivity() {
             controlSettings.setButtonsPosition(buttonsPos)
             controlSettings.setStickScale(stickScale)
             controlSettings.setButtonsScale(buttonsScale)
+            for ((id, off) in buttonOverrides) controlSettings.setButtonOffset(id, off)
             editControls = false
         }
         val haptics = remember(context) {
@@ -370,6 +380,7 @@ class MainActivity : ComponentActivity() {
                 buttonsPos = controlSettings.buttonsPosition()
                 stickScale = controlSettings.stickScale()
                 buttonsScale = controlSettings.buttonsScale()
+                buttonOverrides = controlSettings.buttonOffsets()
             }
         }
 
@@ -1042,12 +1053,17 @@ class MainActivity : ComponentActivity() {
                         )
                         if (editControls) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                Button(onClick = { moveTogether = !moveTogether }) {
+                                    Text(if (moveTogether) "Together: On" else "Together: Off")
+                                }
+                                Spacer(Modifier.width(8.dp))
                                 Button(onClick = {
                                     controlSettings.resetLayout()
                                     stickPos = ControlSettings.DEFAULT_STICK_POS
                                     buttonsPos = ControlSettings.DEFAULT_BUTTONS_POS
                                     stickScale = ControlSettings.DEFAULT_GROUP_SCALE
                                     buttonsScale = ControlSettings.DEFAULT_GROUP_SCALE
+                                    buttonOverrides = emptyMap()
                                 }) { Text("Reset layout") }
                                 Spacer(Modifier.width(8.dp))
                                 Button(onClick = { exitEditMode() }) { Text("Done") }
@@ -1106,13 +1122,19 @@ class MainActivity : ComponentActivity() {
                             val overlayTheme = OverlayTheme.themeFor(
                                 playingGame?.effectiveMode ?: "aes",
                             )
-                            val buttonOffsets =
-                                OverlayTheme.buttonOffsets(overlayTheme.layout)
+                            // A button's effective offset: its stored
+                            // override, or the theme layout's default
+                            // for this system. The cluster's bounding
+                            // box follows the effective offsets, so a
+                            // button moved on its own grows the
+                            // cluster to contain it.
+                            val buttonOffsets = OverlayTheme.buttonOffsets(overlayTheme.layout)
+                                .mapValues { (id, off) -> buttonOverrides[id] ?: off }
                             // Button cluster geometry (dp, scaled):
-                            // the theme layout's bounding box at
-                            // scale 1, times the effective scale.
+                            // the effective bounding box at scale 1,
+                            // times the effective scale.
                             val (clusterWdp1, clusterHdp1) =
-                                OverlayTheme.clusterSize(overlayTheme.layout)
+                                OverlayTheme.clusterSizeFor(buttonOffsets)
                             val buttonsWdp = clusterWdp1 * buttonsScaleEff
                             val buttonsHdp = clusterHdp1 * buttonsScaleEff
                             val buttonsWPx = with(density) { buttonsWdp.dp.toPx() }
@@ -1125,10 +1147,19 @@ class MainActivity : ComponentActivity() {
                             // unit drags to a new centre fraction,
                             // and its bottom-end corner (the visible
                             // resize grip, 28dp) drags to resize it.
-                            // One gesture detector per unit decides
-                            // move vs resize from where the press
-                            // landed, so the two gestures never
-                            // fight. rememberUpdatedState keeps the
+                            // The button cluster's detector also
+                            // decides, from where the press landed,
+                            // whether the drag moves the whole cluster
+                            // or one button on its own: with Together
+                            // off, a press inside a button's circle
+                            // moves that button alone (its offset is
+                            // stored as an override); with Together
+                            // on, or a press on empty space, the
+                            // whole cluster moves. One gesture
+                            // detector per unit decides move vs resize
+                            // vs individual-move from where the press
+                            // landed, so the gestures never fight.
+                            // rememberUpdatedState keeps the
                             // drag lambda reading the current
                             // position and size without restarting
                             // the gesture on every move (the size
@@ -1157,10 +1188,17 @@ class MainActivity : ComponentActivity() {
                             val buttonsWPxState = rememberUpdatedState(buttonsWPx)
                             val buttonsHPxState = rememberUpdatedState(buttonsHPx)
                             val clusterSizeState =
-                                rememberUpdatedState(OverlayTheme.clusterSize(overlayTheme.layout))
+                                rememberUpdatedState(clusterWdp1 to clusterHdp1)
                             val presetScaleState = rememberUpdatedState(controlSize.scale)
                             val handlePx = with(density) { 28.dp.toPx() }
                             val handlePxState = rememberUpdatedState(handlePx)
+                            // The button drag reads these live (the
+                            // offsets change while dragging, so they
+                            // must not be pointerInput keys).
+                            val buttonOffsetsState = rememberUpdatedState(buttonOffsets)
+                            val moveTogetherState = rememberUpdatedState(moveTogether)
+                            val buttonOverridesState = rememberUpdatedState(buttonOverrides)
+                            val dpPxState = rememberUpdatedState(with(density) { 1.dp.toPx() })
                             val stickDrag = if (editControls) {
                                 Modifier.pointerInput(boxW, boxH) {
                                     var resizing = false
@@ -1225,6 +1263,9 @@ class MainActivity : ComponentActivity() {
                             val buttonsDrag = if (editControls) {
                                 Modifier.pointerInput(boxW, boxH) {
                                     var resizing = false
+                                    // The button being moved on its
+                                    // own (null = the whole cluster).
+                                    var dragButton: String? = null
                                     detectDragGestures(
                                         onDragStart = { start ->
                                             val wPx = buttonsWPxState.value
@@ -1232,13 +1273,43 @@ class MainActivity : ComponentActivity() {
                                             val grip = handlePxState.value
                                             resizing = start.x > wPx - grip &&
                                                 start.y > hPx - grip
+                                            dragButton = null
+                                            if (!resizing && !moveTogetherState.value) {
+                                                // Individual move: which
+                                                // button (if any) did the
+                                                // press land on? A press
+                                                // counts when it is inside
+                                                // the button's circle.
+                                                val offsets = buttonOffsetsState.value
+                                                val scale = presetScaleState.value *
+                                                    buttonsScaleState.value
+                                                val dpPx = dpPxState.value
+                                                for ((id, off) in offsets) {
+                                                    val cx = wPx / 2f +
+                                                        off.first * scale * dpPx
+                                                    val cy = hPx / 2f +
+                                                        off.second * scale * dpPx
+                                                    val r = OverlayTheme.buttonSize(id) *
+                                                        scale * dpPx / 2f
+                                                    val dx = start.x - cx
+                                                    val dy = start.y - cy
+                                                    if (dx * dx + dy * dy <= r * r) {
+                                                        dragButton = id
+                                                        break
+                                                    }
+                                                }
+                                            }
                                         },
                                         onDragEnd = {
-                                            if (resizing) {
-                                                controlSettings.setButtonsScale(buttonsScaleState.value)
-                                            } else {
-                                                controlSettings.setButtonsPosition(buttonsPosState.value)
+                                            val id = dragButton
+                                            when {
+                                                resizing -> controlSettings.setButtonsScale(buttonsScaleState.value)
+                                                id != null -> buttonOverridesState.value[id]?.let {
+                                                    controlSettings.setButtonOffset(id, it)
+                                                }
+                                                else -> controlSettings.setButtonsPosition(buttonsPosState.value)
                                             }
+                                            dragButton = null
                                         },
                                         onDrag = { change, dragAmount ->
                                             change.consume()
@@ -1253,8 +1324,8 @@ class MainActivity : ComponentActivity() {
                                                         )
                                                     buttonsScale = newScale
                                                     // The cluster's bounding box at scale
-                                                    // 1 comes from the theme layout, so a
-                                                    // resized cluster still fits.
+                                                    // 1 comes from the effective offsets,
+                                                    // so a resized cluster still fits.
                                                     val eff = presetScaleState.value * newScale
                                                     val (cw1, ch1) = clusterSizeState.value
                                                     val newWPx = with(density) {
@@ -1273,15 +1344,52 @@ class MainActivity : ComponentActivity() {
                                                     )
                                                 }
                                             } else {
-                                                val cur = buttonsPosState.value
-                                                val halfW = buttonsWPxState.value / 2 / boxW
-                                                val halfH = buttonsHPxState.value / 2 / boxH
-                                                buttonsPos = ControlPosition(
-                                                    (cur.x + dragAmount.x / boxW)
-                                                        .coerceIn(halfW, 1f - halfW),
-                                                    (cur.y + dragAmount.y / boxH)
-                                                        .coerceIn(halfH, 1f - halfH),
-                                                )
+                                                val id = dragButton
+                                                if (id != null) {
+                                                    // Move that button alone:
+                                                    // the drag moves its offset
+                                                    // (dp at scale 1), clamped
+                                                    // so the button stays fully
+                                                    // inside the game area.
+                                                    val cur = buttonOffsetsState.value[id]
+                                                    if (cur != null) {
+                                                        val scale = presetScaleState.value *
+                                                            buttonsScaleState.value
+                                                        val dpPx = dpPxState.value
+                                                        val halfBtn = OverlayTheme.buttonSize(id) *
+                                                            scale * dpPx / 2f
+                                                        // The button's centre, in
+                                                        // px of the game area.
+                                                        val ccx = buttonsPosState.value.x * boxW
+                                                        val ccy = buttonsPosState.value.y * boxH
+                                                        val curBx = ccx + cur.first * scale * dpPx
+                                                        val curBy = ccy + cur.second * scale * dpPx
+                                                        val newBx = (curBx + dragAmount.x)
+                                                            .coerceIn(halfBtn, boxW - halfBtn)
+                                                        val newBy = (curBy + dragAmount.y)
+                                                            .coerceIn(halfBtn, boxH - halfBtn)
+                                                        // Back to an offset (dp
+                                                        // at scale 1) from the
+                                                        // cluster centre.
+                                                        val newOff = (
+                                                            (newBx - ccx) / (scale * dpPx)
+                                                        ) to (
+                                                            (newBy - ccy) / (scale * dpPx)
+                                                        )
+                                                        buttonOverrides = buttonOverridesState.value +
+                                                            (id to newOff)
+                                                    }
+                                                } else {
+                                                    val cur = buttonsPosState.value
+                                                    val halfW = buttonsWPxState.value / 2 / boxW
+                                                    val halfH = buttonsHPxState.value / 2 / boxH
+                                                    buttonsPos = ControlPosition(
+                                                        (cur.x + dragAmount.x / boxW)
+                                                            .coerceIn(halfW, 1f - halfW),
+                                                        (cur.y + dragAmount.y / boxH)
+                                                            .coerceIn(halfH, 1f - halfH),
+                                                    )
+                                                }
                                             }
                                         },
                                     )
@@ -1406,7 +1514,7 @@ class MainActivity : ComponentActivity() {
                         // Edit-mode hint, over the game area.
                         if (editControls) {
                             Text(
-                                "Drag a control to move it, drag its ↘ corner to resize it",
+                                "Drag a control to move it, drag its ↘ corner to resize it — buttons move together when Together is on, one at a time when it is off",
                                 color = Color(EraUi.Palette.TEXT),
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier
@@ -1522,7 +1630,7 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                     Text(
-                        "To move and resize the controls, start a game, pause, and tap Adjust controls — drag a control to move it, drag its ↘ corner to resize it.",
+                        "To move and resize the controls, start a game, pause, and tap Adjust controls — drag a control to move it, drag its ↘ corner to resize it. Buttons move together when Together is on, or one at a time when it is off.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(16.dp))

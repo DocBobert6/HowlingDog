@@ -105,6 +105,56 @@ class ControlSettingsTest {
     }
 
     @Test
+    fun buttonOffsetsDefaultToNone() {
+        val s = ControlSettings(MapStore())
+        assertEquals(emptyMap<String, Pair<Float, Float>>(), s.buttonOffsets())
+        assertEquals(null, s.buttonOffset("A"))
+    }
+
+    @Test
+    fun buttonOffsetsRoundTripAndClamp() {
+        val s = ControlSettings(MapStore())
+        s.setButtonOffset("A", -132f to -62f)
+        s.setButtonOffset("Coin", 10.5f to 116f)
+        assertEquals(-132f to -62f, s.buttonOffset("A"))
+        assertEquals(10.5f to 116f, s.buttonOffset("Coin"))
+        assertEquals(
+            mapOf("A" to (-132f to -62f), "Coin" to (10.5f to 116f)),
+            s.buttonOffsets(),
+        )
+        // Offsets stay inside the game area.
+        s.setButtonOffset("B", 900f to -900f)
+        assertEquals(500f to -500f, s.buttonOffset("B"))
+    }
+
+    @Test
+    fun buttonOffsetsResetWithTheLayout() {
+        val s = ControlSettings(MapStore())
+        s.setButtonOffset("A", -132f to -62f)
+        s.setButtonOffset("D", 96f to -24f)
+        s.resetLayout()
+        assertEquals(emptyMap<String, Pair<Float, Float>>(), s.buttonOffsets())
+        assertEquals(null, s.buttonOffset("A"))
+    }
+
+    @Test
+    fun invalidButtonOffsetsFallBackToNull() {
+        val store = MapStore()
+        store.put(ControlSettings.KEY_BUTTON_OFFSET_PREFIX + "A", "")
+        store.put(ControlSettings.KEY_BUTTON_OFFSET_PREFIX + "B", "not-a-number,5")
+        store.put(ControlSettings.KEY_BUTTON_OFFSET_PREFIX + "C", "10")
+        store.put(ControlSettings.KEY_BUTTON_OFFSET_PREFIX + "D", "9999,0")
+        store.put(ControlSettings.KEY_BUTTON_OFFSET_PREFIX + "Coin", "1,2,3")
+        val s = ControlSettings(store)
+        assertEquals(null, s.buttonOffset("A"))
+        assertEquals(null, s.buttonOffset("B"))
+        assertEquals(null, s.buttonOffset("C"))
+        assertEquals(null, s.buttonOffset("D"))
+        assertEquals(null, s.buttonOffset("Coin"))
+        assertEquals(emptyMap<String, Pair<Float, Float>>(), s.buttonOffsets())
+    }
+
+    @Test
     fun invalidValuesFallBackToDefaults() {
         val store = MapStore()
         store.put(ControlSettings.KEY_HAPTICS, "banana")

@@ -121,6 +121,19 @@ class OverlayThemeTest {
     }
 
     @Test
+    fun clusterSizeForFollowsMovedButtons() {
+        // Moving one button grows the cluster to contain it: A
+        // dragged 100dp left widens the grid by 100dp.
+        val moved = OverlayTheme.buttonOffsets(OverlayTheme.ButtonLayout.GRID)
+            .toMutableMap()
+        moved["A"] = (-132f to -62f)
+        assertEquals(220f to 180f, OverlayTheme.clusterSizeFor(moved))
+        // Moving Coin down 50dp deepens it by 50dp.
+        moved["Coin"] = (-32f to 116f)
+        assertEquals(220f to 230f, OverlayTheme.clusterSizeFor(moved))
+    }
+
+    @Test
     fun buttonsNeverOverlapInAnyLayout() {
         // The smallest centre distance between two buttons must
         // hold both: a main button (56dp) next to a small one

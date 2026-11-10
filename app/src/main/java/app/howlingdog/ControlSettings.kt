@@ -37,6 +37,14 @@ class ControlSettings(private val store: OptionStore) {
         const val KEY_BUTTONS_POS = "controls.buttonsPos"
         const val KEY_STICK_SCALE = "controls.stickScale" // float, 0.7..1.5
         const val KEY_BUTTONS_SCALE = "controls.buttonsScale"
+        /** Per-button offset overrides, "dx,dy" in dp at scale 1.0
+            (relative to the cluster centre). One key per button id
+            ("A", "B", "C", "D", "Coin", "Start"); absent means the
+            theme layout's default offset for that button. */
+        const val KEY_BUTTON_OFFSET_PREFIX = "controls.buttonOffset."
+        const val MAX_BUTTON_OFFSET_DP = 500f
+
+        val BUTTON_IDS: List<String> = listOf("A", "B", "C", "D", "Coin", "Start")
 
         val DEFAULT_HAPTICS = HapticLevel.LIGHT
         const val DEFAULT_OPACITY = 60 // percent — matches the old fixed 0.6 alpha
@@ -119,6 +127,40 @@ class ControlSettings(private val store: OptionStore) {
         setButtonsPosition(DEFAULT_BUTTONS_POS)
         setStickScale(DEFAULT_GROUP_SCALE)
         setButtonsScale(DEFAULT_GROUP_SCALE)
+        clearButtonOffsets()
+    }
+
+    /** A button's stored offset override (dp at scale 1.0, relative to the cluster centre), or null when it uses the theme layout's default. */
+    fun buttonOffset(id: String): Pair<Float, Float>? {
+        val raw = store.get(KEY_BUTTON_OFFSET_PREFIX + id) ?: return null
+        if (raw.isBlank()) return null
+        val parts = raw.split(",")
+        if (parts.size != 2) return null
+        val dx = parts[0].toFloatOrNull() ?: return null
+        val dy = parts[1].toFloatOrNull() ?: return null
+        if (dx !in -MAX_BUTTON_OFFSET_DP..MAX_BUTTON_OFFSET_DP ||
+            dy !in -MAX_BUTTON_OFFSET_DP..MAX_BUTTON_OFFSET_DP
+        ) return null
+        return dx to dy
+    }
+
+    /** All stored button offset overrides, by button id. */
+    fun buttonOffsets(): Map<String, Pair<Float, Float>> =
+        BUTTON_IDS.mapNotNull { id -> buttonOffset(id)?.let { id to it } }.toMap()
+
+    /** Store one button's offset override (dp at scale 1.0). */
+    fun setButtonOffset(id: String, offset: Pair<Float, Float>) {
+        val (dx, dy) = offset
+        store.put(
+            KEY_BUTTON_OFFSET_PREFIX + id,
+            "${dx.coerceIn(-MAX_BUTTON_OFFSET_DP, MAX_BUTTON_OFFSET_DP)}," +
+                dy.coerceIn(-MAX_BUTTON_OFFSET_DP, MAX_BUTTON_OFFSET_DP),
+        )
+    }
+
+    /** Drop every button offset override (the buttons return to the theme layout's defaults). */
+    fun clearButtonOffsets() {
+        for (id in BUTTON_IDS) store.put(KEY_BUTTON_OFFSET_PREFIX + id, "")
     }
 
     private fun readScale(key: String): Float {

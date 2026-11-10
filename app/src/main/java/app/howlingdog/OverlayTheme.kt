@@ -183,8 +183,16 @@ object OverlayTheme {
      * from the button offsets and sizes — the single source of
      * truth for the cluster geometry (offset, drag, resize grip).
      */
-    fun clusterSize(layout: ButtonLayout): Pair<Float, Float> {
-        val offsets = buttonOffsets(layout)
+    fun clusterSize(layout: ButtonLayout): Pair<Float, Float> =
+        clusterSizeFor(buttonOffsets(layout))
+
+    /**
+     * The bounding box (width, height) in dp at scale 1.0 for an
+     * arbitrary offset map — the same computation, so a cluster
+     * whose buttons were moved individually (Item 2) still gets
+     * its true size for the grip and the drag clamping.
+     */
+    fun clusterSizeFor(offsets: Map<String, Pair<Float, Float>>): Pair<Float, Float> {
         var minX = Float.MAX_VALUE
         var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE
