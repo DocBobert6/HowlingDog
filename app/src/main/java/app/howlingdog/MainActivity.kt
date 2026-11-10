@@ -140,6 +140,13 @@ class MainActivity : ComponentActivity() {
     private var onPadMask: ((Int) -> Unit)? = null
     /** Set by the UI; called by the START+SELECT pause hotkey. */
     private var onPauseHotkey: (() -> Unit)? = null
+    /**
+     * The GL game view (an Activity field, not composable state,
+     * so onPause/onResume can forward to it: a GLSurfaceView
+     * must be paused with the Activity, or its render thread
+     * keeps running while the app is backgrounded).
+     */
+    private var gameGlView: GameGlView? = null
 
     /** A pad that disappears must never leave a stuck button. */
     private val deviceListener = object : InputManager.InputDeviceListener {
@@ -173,6 +180,16 @@ class MainActivity : ComponentActivity() {
         session?.stop()
         session = null
         super.onDestroy()
+    }
+
+    override fun onPause() {
+        gameGlView?.onPause()
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        gameGlView?.onResume()
     }
 
     /** Recompute the gamepad mask from the held buttons and axes, and hand it to the UI. */
@@ -289,7 +306,8 @@ class MainActivity : ComponentActivity() {
         var pressStartAlpha by remember { mutableStateOf(1f) }
         var padMask by remember { mutableStateOf(0) }
         var held by remember { mutableStateOf(Held()) }
-        var gameView by remember { mutableStateOf<GameView?>(null) }
+        // (The GL game view lives in the Activity field gameGlView,
+        // so onPause/onResume can forward to it.)
         // Cover art (box art fetched at runtime, Wi-Fi only,
         // cached — see CoverArt). `covers` holds the decoded
         // bitmap per main-file name; `artTried` remembers games
@@ -338,6 +356,19 @@ class MainActivity : ComponentActivity() {
         // The on-screen left control (stick or 8-way D-pad).
         var leftControl by remember { mutableStateOf(controlSettings.leftControl()) }
         var showBoot by remember { mutableStateOf(appSettings.showBoot()) }
+        // CRT display settings (shader chain, curvature): the same
+        // SharedPreferences file, own "display.*" keys.
+        val shaderSettings = remember {
+            ShaderSettings(
+                SharedPrefsStore(
+                    context.getSharedPreferences(
+                        "howlingdog-settings", Context.MODE_PRIVATE,
+                    ),
+                ),
+            )
+        }
+        var crtShaderOn by remember { mutableStateOf(shaderSettings.shaderMasterOn()) }
+        var curvatureOn by remember { mutableStateOf(shaderSettings.curvatureMasterOn()) }
         var stickPos by remember { mutableStateOf(controlSettings.stickPosition()) }
         var buttonsPos by remember { mutableStateOf(controlSettings.buttonsPosition()) }
         // Per-group resize multipliers, set by the resize handle in
@@ -567,7 +598,7 @@ class MainActivity : ComponentActivity() {
                 systemDir = biosDir.absolutePath,
                 saveDir = saveDir.absolutePath,
                 gamePath = entry.mainPath(gamesDir).absolutePath,
-                onFrame = { bitmap -> gameView?.setBitmap(bitmap) },
+                onFrame = { bitmap -> gameGlView?.setFrame(bitmap) },
                 onError = { message ->
                     inputActive = false
                     status = message
@@ -1080,7 +1111,22 @@ class MainActivity : ComponentActivity() {
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AndroidView(
                             factory = { ctx ->
-                                GameView(ctx).also { gameView = it }
+                                GameGlView(ctx).also { gameGlView = it }
+                            },
+                            update = {
+                                // Apply this game's system preset (and
+                                // toggles) whenever the game screen
+                                // recomposes — a new game, or a return
+                                // to the game screen, re-applies it.
+                                val entry = playingGame
+                                if (entry != null) {
+                                    val mode = entry.effectiveMode
+                                    it.setPreset(
+                                        ShaderPresets.forMode(mode),
+                                        shaderSettings.shaderOn(mode),
+                                        shaderSettings.curvatureOn(mode),
+                                    )
+                                }
                             },
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -1619,6 +1665,34 @@ class MainActivity : ComponentActivity() {
                     for (opt in CoreOptions.ALL.filter { !it.live }) {
                         OptionRow(opt, settings)
                     }
+                    Spacer(Modifier.height(16.dp))
+                    Text("CRT display", style = MaterialTheme.typography.titleSmall)
+                    ControlDropdownRow(
+                        "CRT shader",
+                        listOf("on" to "On", "off" to "Off"),
+                        if (crtShaderOn) "on" else "off",
+                    ) { value ->
+                        val on = value == "on"
+                        shaderSettings.setShaderMaster(on)
+                        crtShaderOn = on
+                    }
+                    Text(
+                        "Each system uses its own chain, tuned to the display it was played on — AES Hearth, Arcade Neon, Neo Geo CD Comet, Neo Geo CDZ Zenith. Takes effect the next time a game starts.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    ControlDropdownRow(
+                        "Screen curvature",
+                        listOf("on" to "On", "off" to "Off"),
+                        if (curvatureOn) "on" else "off",
+                    ) { value ->
+                        val on = value == "on"
+                        shaderSettings.setCurvatureMaster(on)
+                        curvatureOn = on
+                    }
+                    Text(
+                        "Each system's curve matches its own display — the home TV curve for AES and the CD consoles, the flatter arcade-monitor curve for MVS. Takes effect the next time a game starts.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Spacer(Modifier.height(16.dp))
                     Text("On-screen controls", style = MaterialTheme.typography.titleSmall)
                     ControlDropdownRow(
