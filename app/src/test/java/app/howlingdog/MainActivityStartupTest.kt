@@ -6,6 +6,7 @@ import android.content.pm.ActivityInfo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -48,7 +49,11 @@ class MainActivityStartupTest {
     fun emptyLibraryShowsEmptyState() {
         // Nothing imported yet (Robolectric has no files on disk):
         // the empty state is the launch gate for the library home.
-        composeRule.onNodeWithText("No games yet. Add a game to start.").assertIsDisplayed()
+        // The screen scrolls, so scroll the node into view first —
+        // in the small test window it sits below the fold.
+        composeRule.onNodeWithText("No games yet. Add a game to start.")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     /**
@@ -90,6 +95,8 @@ class MainActivityStartupTest {
     fun activitySurvivesRecreation() {
         composeRule.activityRule.scenario.recreate()
         composeRule.onNodeWithText("HowlingDog").assertIsDisplayed()
-        composeRule.onNodeWithText("No games yet. Add a game to start.").assertIsDisplayed()
+        composeRule.onNodeWithText("No games yet. Add a game to start.")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 }

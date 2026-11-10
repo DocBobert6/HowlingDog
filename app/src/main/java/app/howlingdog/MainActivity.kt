@@ -24,8 +24,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -349,9 +349,12 @@ class MainActivity : ComponentActivity() {
 
         when (screen) {
             Screen.Library -> {
+                // The whole screen scrolls (a small window or a long
+                // library must never push content out of reach).
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
@@ -405,8 +408,12 @@ class MainActivity : ComponentActivity() {
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     } else {
-                        LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                            items(games, key = { it.mainFile }) { game ->
+                        // Plain Column, not a lazy list: the screen
+                        // itself scrolls, so every row is composed
+                        // and reachable. Fine for a v1 library;
+                        // revisit if libraries grow very large.
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            for (game in games) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
