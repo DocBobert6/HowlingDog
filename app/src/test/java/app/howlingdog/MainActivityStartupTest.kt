@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.ActivityInfo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -42,7 +43,10 @@ class MainActivityStartupTest {
     fun activityLaunchesAndShowsLibrary() {
         // Phase 5: the app opens on the VS-style boot splash.
         // Tapping PRESS START enters the library (the splash
-        // waits for a real press — there is no timeout).
+        // waits for a real press — there is no timeout). The
+        // splash shows Robert's icon, big — the drawn mascot is
+        // gone.
+        composeRule.onNodeWithContentDescription("HowlingDog icon").assertIsDisplayed()
         composeRule.onNodeWithText("HOWLINGDOG").assertIsDisplayed()
         composeRule.onNodeWithText("PRESS START").assertIsDisplayed()
         composeRule.onNodeWithText("PRESS START").performClick()

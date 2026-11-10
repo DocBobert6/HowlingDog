@@ -18,6 +18,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -68,6 +70,7 @@ import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -90,8 +93,8 @@ import java.io.FileOutputStream
  * Phase 5 era skin: the fighting-game select grid (KOF '94/'95,
  * Street Fighter II) — the library as a grid of portrait tiles
  * with the picked game big in the middle, a VS-style boot splash,
- * and a "CONTINUE?" pause screen. The mascot is an original
- * howling-dog silhouette against a full moon (Mascot.kt).
+ * and a "CONTINUE?" pause screen. The mascot is the icon itself:
+ * Robert's howling-dog artwork, shown big on the boot splash.
  *
  * Library screen (the home screen): the persistent game list, the
  * system-files status, and import — one game file, or a whole folder
@@ -683,7 +686,7 @@ class MainActivity : ComponentActivity() {
 
         when (screen) {
             Screen.Boot -> {
-                // VS-style splash: the mascot, HOWLINGDOG, PRESS
+                // VS-style splash: the icon, HOWLINGDOG, PRESS
                 // START. Tap anywhere (or press Start) to enter the
                 // library. There is no timeout — the splash waits
                 // until the user moves on.
@@ -717,7 +720,18 @@ class MainActivity : ComponentActivity() {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(24.dp),
                     ) {
-                        HowlingDogMascot(modifier = Modifier.fillMaxWidth(0.75f))
+                        // The icon itself, big: sized to the
+                        // smaller of 85% of the width and 52% of the
+                        // height, so it is the centrepiece in
+                        // portrait and still fits in landscape.
+                        BoxWithConstraints {
+                            val iconSize = minOf(maxWidth * 0.85f, maxHeight * 0.52f)
+                            Image(
+                                painter = painterResource(R.drawable.howlingdog_icon),
+                                contentDescription = "HowlingDog icon",
+                                modifier = Modifier.size(iconSize),
+                            )
+                        }
                         Spacer(Modifier.height(24.dp))
                         Text(
                             "HOWLINGDOG",
@@ -813,8 +827,14 @@ class MainActivity : ComponentActivity() {
                     }
                     Spacer(Modifier.height(16.dp))
                     if (games.isEmpty()) {
-                        // Empty state: the mascot, then the prompt.
-                        HowlingDogMascot(modifier = Modifier.fillMaxWidth(0.6f))
+                        // Empty state: the icon, then the prompt.
+                        Image(
+                            painter = painterResource(R.drawable.howlingdog_icon),
+                            contentDescription = "HowlingDog icon",
+                            modifier = Modifier
+                                .fillMaxWidth(0.5f)
+                                .aspectRatio(1f),
+                        )
                         Spacer(Modifier.height(16.dp))
                         Text(
                             "No games yet. Add a game to start.",
