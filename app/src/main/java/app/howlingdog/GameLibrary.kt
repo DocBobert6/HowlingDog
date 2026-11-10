@@ -54,8 +54,8 @@ data class GameEntry(
     /** True for the disc games (cue sheets and single-file images). */
     val isDisc: Boolean get() = isCue || mainFile.lowercase().endsWith(".chd")
 
-    /** The mode this game boots with: the stored mode, or the type default (Home console for carts, Neo Geo CDZ for discs). */
-    val effectiveMode: String get() = mode ?: if (isDisc) "cdz" else "aes"
+    /** The mode this game boots with: the stored mode, or the type default (Home console for carts, Neo Geo CD for discs — the original system the games were made for; CDZ is a per-game pick, never the default). */
+    val effectiveMode: String get() = mode ?: if (isDisc) "cd" else "aes"
 }
 
 /** Display label for a system mode value. */

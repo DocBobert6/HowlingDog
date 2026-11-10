@@ -197,7 +197,10 @@ class GameLibraryTest {
         val cart = GameEntry("neobombe.neo", "neobombe", listOf("neobombe.neo"), 0L)
         val disc = GameEntry("game.cue", "game", listOf("game.cue"), 0L)
         assertTrue(lib.biosReadyFor(cart, status))
-        assertTrue(lib.biosReadyFor(disc, status))
+        // The disc default is Neo Geo CD, which needs neocd.zip
+        // (absent here) — not CDZ, even though neocdz.zip is present.
+        assertFalse(lib.biosReadyFor(disc, status))
+        assertTrue(lib.biosReadyFor(disc.copy(mode = "cdz"), status))
         assertFalse(lib.biosReadyFor(disc, status.copy(system1995 = false)))
         assertFalse(lib.biosReadyFor(cart, status.copy(home = false)))
     }
@@ -210,8 +213,8 @@ class GameLibraryTest {
         val cue = GameEntry("game.cue", "game", listOf("game.cue"), 0L)
         val chd = GameEntry("game.chd", "game", listOf("game.chd"), 0L)
         assertEquals("aes", cart.effectiveMode)
-        assertEquals("cdz", cue.effectiveMode)
-        assertEquals("cdz", chd.effectiveMode)
+        assertEquals("cd", cue.effectiveMode)
+        assertEquals("cd", chd.effectiveMode)
         assertEquals(listOf("aes", "mvs"), modesFor(cart))
         assertEquals(listOf("cd", "cdz"), modesFor(cue))
         assertEquals("Home console", modeLabel("aes"))
@@ -276,9 +279,29 @@ class GameLibraryTest {
         // Arcade mode needs neogeo.zip, which is present.
         assertTrue(lib.biosReadyFor(cart.copy(mode = "mvs"), status))
         val disc = GameEntry("game.cue", "game", listOf("game.cue"), 0L)
-        // Neo Geo CDZ (default) needs neocdz.zip, which is absent.
-        assertFalse(lib.biosReadyFor(disc, status))
-        // Neo Geo CD needs neocd.zip, which is present.
-        assertTrue(lib.biosReadyFor(disc.copy(mode = "cd"), status))
+        // Neo Geo CD (the default) needs neocd.zip, which is present.
+        assertTrue(lib.biosReadyFor(disc, status))
+        // Neo Geo CDZ needs neocdz.zip, which is absent.
+        assertFalse(lib.biosReadyFor(disc.copy(mode = "cdz"), status))
+    }
+
+    @Test
+    fun storedDiscModeSurvivesDefaultChange() {
+        val dir = tempDir("lib-mode-disc")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "game.cue").writeText("fake cue")
+        val entry = lib.register("game.cue", listOf("game.cue"))
+        // A new disc defaults to Neo Geo CD.
+        assertEquals("cd", entry.effectiveMode)
+        // Setting CDZ sticks across a reload — the default change
+        // must never rewrite a stored per-game choice.
+        lib.setMode(entry, "cdz")
+        val loaded = library(dir).load()
+        assertEquals("cdz", loaded[0].mode)
+        assertEquals("cdz", loaded[0].effectiveMode)
+        // And a disc stored as CD stays CD.
+        lib.setMode(loaded[0], "cd")
+        assertEquals("cd", library(dir).load()[0].effectiveMode)
     }
 }
