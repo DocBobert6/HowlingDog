@@ -67,9 +67,11 @@ import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.math.roundToInt
 import androidx.core.view.WindowInsetsCompat
@@ -77,14 +79,18 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Phase 3 library UI. Plain Material3, no era skin yet (the
- * fighting-game select grid arrives in Phase 5).
+ * Phase 5 era skin: the fighting-game select grid (KOF '94/'95,
+ * Street Fighter II) — the library as a grid of portrait tiles
+ * with the picked game big in the middle, a VS-style boot splash,
+ * and a "CONTINUE?" pause screen. The mascot is an original
+ * howling-dog silhouette against a full moon (Mascot.kt).
  *
  * Library screen (the home screen): the persistent game list, the
  * system-files status, and import — one game file, or a whole folder
@@ -92,8 +98,8 @@ import java.io.FileOutputStream
  * COPIED into app-private storage (the core only reads real file
  * paths): games to filesDir/games/, system files to filesDir/bios/.
  * Nothing is uploaded anywhere. A game is a game: the list shows
- * names only, never a media type, and the UI never says the banned
- * words for the 1990s systems.
+ * names only, never a media type, and never sorts by media; the UI
+ * shows no disc imagery.
  *
  * Game screen: the frame, plus the touch controls floating over it
  * (directions, A/B/C/D, Start, Coin) — just enough to play.
@@ -221,7 +227,7 @@ class MainActivity : ComponentActivity() {
         return super.onGenericMotionEvent(event)
     }
 
-    private enum class Screen { Library, Playing, Settings }
+    private enum class Screen { Boot, Library, Playing, Settings }
 
     private data class Held(
         val up: Boolean = false,
@@ -240,7 +246,7 @@ class MainActivity : ComponentActivity() {
     private fun HowlingDogUi() {
         val context = LocalContext.current
         val activity = context as Activity
-        var screen by remember { mutableStateOf(Screen.Library) }
+        var screen by remember { mutableStateOf(Screen.Boot) }
         var games by remember { mutableStateOf<List<GameEntry>>(emptyList()) }
         var bios by remember { mutableStateOf<BiosStatus?>(null) }
         var status by remember { mutableStateOf("") }
@@ -250,6 +256,16 @@ class MainActivity : ComponentActivity() {
         var settingsFrom by remember { mutableStateOf(Screen.Library) }
         var paused by remember { mutableStateOf(false) }
         var pauseStatus by remember { mutableStateOf("") }
+        // Phase 5 — era skin state. The select grid's picked game is
+        // a main-file name, derived fresh from `games` below, so it
+        // never goes stale when the library reloads. The countdowns
+        // are decorative and never trigger an action.
+        var selectedMainFile by remember { mutableStateOf<String?>(null) }
+        val selectedGame =
+            games.firstOrNull { it.mainFile == selectedMainFile } ?: games.firstOrNull()
+        var timeLeft by remember { mutableStateOf(9) }
+        var pauseTimeLeft by remember { mutableStateOf(9) }
+        var pressStartAlpha by remember { mutableStateOf(1f) }
         var padMask by remember { mutableStateOf(0) }
         var held by remember { mutableStateOf(Held()) }
         var gameView by remember { mutableStateOf<GameView?>(null) }
@@ -316,6 +332,48 @@ class MainActivity : ComponentActivity() {
                 controlSize = controlSettings.size()
                 stickPos = controlSettings.stickPosition()
                 buttonsPos = controlSettings.buttonsPosition()
+            }
+        }
+
+        // Boot splash: a tap or a short timeout moves on — never
+        // traps the user on the splash.
+        LaunchedEffect(screen) {
+            if (screen != Screen.Boot) return@LaunchedEffect
+            delay(3000)
+            screen = Screen.Library
+        }
+        // PRESS START blink (a delay loop: in tests the delay never
+        // fires, so the text simply stays visible).
+        LaunchedEffect(screen) {
+            if (screen != Screen.Boot) return@LaunchedEffect
+            while (true) {
+                pressStartAlpha = 0.15f
+                delay(700)
+                pressStartAlpha = 1f
+                delay(700)
+            }
+        }
+        // Library countdown: resets when the selection changes,
+        // wraps at 0, never starts or quits anything.
+        LaunchedEffect(screen, selectedGame?.mainFile) {
+            if (screen != Screen.Library) return@LaunchedEffect
+            var t = 9
+            timeLeft = t
+            while (true) {
+                delay(1000)
+                t = EraUi.countdownNext(t, 9)
+                timeLeft = t
+            }
+        }
+        // Pause countdown: the same treatment, only while paused.
+        LaunchedEffect(paused) {
+            if (!paused) return@LaunchedEffect
+            var t = 9
+            pauseTimeLeft = t
+            while (true) {
+                delay(1000)
+                t = EraUi.countdownNext(t, 9)
+                pauseTimeLeft = t
             }
         }
 
@@ -606,38 +664,96 @@ class MainActivity : ComponentActivity() {
         }
 
         when (screen) {
+            Screen.Boot -> {
+                // VS-style splash: the mascot, HOWLINGDOG, PRESS
+                // START. Tap anywhere to enter the library; the
+                // timeout in the LaunchedEffect above moves on too.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black)
+                        .clickable { screen = Screen.Library },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(24.dp),
+                    ) {
+                        HowlingDogMascot(modifier = Modifier.fillMaxWidth(0.75f))
+                        Spacer(Modifier.height(24.dp))
+                        Text(
+                            "HOWLINGDOG",
+                            color = Color.White,
+                            fontSize = 44.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 4.sp,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "PRESS START",
+                            color = Color(0xFFF2C200),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp,
+                            modifier = Modifier.alpha(pressStartAlpha),
+                        )
+                    }
+                }
+            }
+
             Screen.Library -> {
                 // The whole screen scrolls (a small window or a long
                 // library must never push content out of reach).
+                // Phase 5 — the fighting-game select grid: black
+                // arcade background, chunky type, portrait tiles.
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .background(Color.Black)
                         .verticalScroll(rememberScrollState())
-                        .padding(24.dp),
+                        .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("HowlingDog", style = MaterialTheme.typography.headlineMedium)
-                    Text(
-                        "Tap a game to play.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Spacer(Modifier.height(16.dp))
+                    // Select-screen header: the title and the
+                    // decorative countdown (resets on selection,
+                    // wraps at 0, never starts or quits anything).
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "SELECT YOUR GAME",
+                            color = Color.White,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 2.sp,
+                        )
+                        Text(
+                            "TIME %02d".format(timeLeft),
+                            color = if (timeLeft <= 3) Color(0xFFD21F2B) else Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(
-                                MaterialTheme.colorScheme.surfaceVariant,
+                                Color(0xFF1A1A1A),
                                 RoundedCornerShape(8.dp),
                             )
                             .padding(12.dp),
                     ) {
-                        Text("System files", style = MaterialTheme.typography.titleSmall)
+                        Text("System files", color = Color.White, style = MaterialTheme.typography.titleSmall)
                         val b = bios
                         if (b == null) {
-                            Text("Checking…", style = MaterialTheme.typography.bodyMedium)
+                            Text("Checking…", color = Color.White, style = MaterialTheme.typography.bodyMedium)
                         } else {
                             Text(
                                 "System files: ${b.readyCount} of ${b.totalCount} ready",
+                                color = Color.White,
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             BiosRow("Home console", b.home)
@@ -646,64 +762,68 @@ class MainActivity : ComponentActivity() {
                             BiosRow("Neo Geo CDZ", b.system1995)
                         }
                         Spacer(Modifier.height(8.dp))
-                        Button(onClick = { biosPicker.launch(null) }) {
-                            Text("Pick BIOS folder")
-                        }
+                        ArcadeButton(text = "Pick BIOS folder") { biosPicker.launch(null) }
                     }
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { gamePicker.launch(arrayOf("*/*")) }) {
-                            Text("Add game")
-                        }
-                        Button(onClick = { folderPicker.launch(null) }) {
-                            Text("Add folder")
-                        }
-                        Button(onClick = {
+                        ArcadeButton(text = "Add game") { gamePicker.launch(arrayOf("*/*")) }
+                        ArcadeButton(text = "Add folder") { folderPicker.launch(null) }
+                        ArcadeButton(text = "Settings") {
                             settingsFrom = Screen.Library
                             screen = Screen.Settings
-                        }) {
-                            Text("Settings")
                         }
                     }
                     Spacer(Modifier.height(16.dp))
                     if (games.isEmpty()) {
+                        // Empty state: the mascot, then the prompt.
+                        HowlingDogMascot(modifier = Modifier.fillMaxWidth(0.6f))
+                        Spacer(Modifier.height(16.dp))
                         Text(
                             "No games yet. Add a game to start.",
+                            color = Color.White,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     } else {
-                        // Plain Column, not a lazy list: the screen
-                        // itself scrolls, so every row is composed
+                        // The picked game, big in the middle.
+                        val selected = selectedGame
+                        if (selected != null) {
+                            SelectedPortrait(
+                                entry = selected,
+                                onPlay = { startGame(selected) },
+                                onMode = { modePickerFor = selected },
+                                onRemove = { confirmRemove = selected },
+                            )
+                            Spacer(Modifier.height(12.dp))
+                        }
+                        // The grid: plain Rows in the scrolling
+                        // Column, not a lazy list — the screen
+                        // itself scrolls, so every tile is composed
                         // and reachable. Fine for a v1 library;
                         // revisit if libraries grow very large.
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            for (game in games) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        game.displayName,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clickable { startGame(game) },
-                                    )
-                                    TextButton(onClick = { modePickerFor = game }) {
-                                        Text(modeLabel(game.effectiveMode))
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                            val cols = if (maxWidth > 600.dp) 4 else 3
+                            Column {
+                                for (row in games.chunked(cols)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        for (game in row) {
+                                            GameTile(
+                                                entry = game,
+                                                selected = game.mainFile == selected?.mainFile,
+                                                onSelect = { selectedMainFile = game.mainFile },
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                        }
+                                        repeat(cols - row.size) {
+                                            Spacer(Modifier.weight(1f))
+                                        }
                                     }
-                                    TextButton(onClick = { confirmRemove = game }) {
-                                        Text("✕")
-                                    }
+                                    Spacer(Modifier.height(8.dp))
                                 }
                             }
                         }
                     }
                     Spacer(Modifier.height(16.dp))
-                    Text(status, style = MaterialTheme.typography.bodyMedium)
+                    Text(status, color = Color.White, style = MaterialTheme.typography.bodyMedium)
                 }
                 val toRemove = confirmRemove
                 if (toRemove != null) {
@@ -1045,26 +1165,38 @@ class MainActivity : ComponentActivity() {
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    // Arcade "CONTINUE?" screen: the
+                                    // countdown is decorative — it
+                                    // wraps at 0 and never resumes or
+                                    // quits anything on its own.
                                     Text(
-                                        "Paused",
+                                        "CONTINUE?",
+                                        color = Color(0xFFD21F2B),
+                                        fontSize = 40.sp,
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = 2.sp,
+                                    )
+                                    Text(
+                                        "%d".format(pauseTimeLeft),
                                         color = Color.White,
-                                        style = MaterialTheme.typography.headlineMedium,
+                                        fontSize = 28.sp,
+                                        fontWeight = FontWeight.Bold,
                                     )
                                     Spacer(Modifier.height(16.dp))
-                                    Button(onClick = { resumeGame() }) { Text("Resume") }
+                                    ArcadeButton(text = "RESUME", primary = true) { resumeGame() }
                                     Spacer(Modifier.height(8.dp))
-                                    Button(onClick = { saveState() }) { Text("Save state") }
+                                    ArcadeButton(text = "SAVE STATE") { saveState() }
                                     Spacer(Modifier.height(8.dp))
-                                    Button(onClick = { loadState() }) { Text("Load state") }
+                                    ArcadeButton(text = "LOAD STATE") { loadState() }
                                     Spacer(Modifier.height(8.dp))
-                                    Button(onClick = {
+                                    ArcadeButton(text = "SETTINGS") {
                                         settingsFrom = Screen.Playing
                                         screen = Screen.Settings
-                                    }) { Text("Settings") }
+                                    }
                                     Spacer(Modifier.height(8.dp))
-                                    Button(onClick = { editControls = true }) { Text("Adjust controls") }
+                                    ArcadeButton(text = "ADJUST CONTROLS") { editControls = true }
                                     Spacer(Modifier.height(8.dp))
-                                    Button(onClick = { quitToLibrary() }) { Text("Quit to library") }
+                                    ArcadeButton(text = "QUIT TO LIBRARY") { quitToLibrary() }
                                     if (pauseStatus.isNotEmpty()) {
                                         Spacer(Modifier.height(8.dp))
                                         Text(pauseStatus, color = Color.White)
@@ -1238,9 +1370,10 @@ class MainActivity : ComponentActivity() {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text(label, color = Color.White, style = MaterialTheme.typography.bodyMedium)
             Text(
                 if (ready) "✓" else "✗",
+                color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
             )
         }

@@ -6,6 +6,7 @@ import android.content.pm.ActivityInfo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertTrue
@@ -39,7 +40,14 @@ class MainActivityStartupTest {
 
     @Test
     fun activityLaunchesAndShowsLibrary() {
-        composeRule.onNodeWithText("HowlingDog").assertIsDisplayed()
+        // Phase 5: the app opens on the VS-style boot splash.
+        // Tapping PRESS START enters the library (the splash also
+        // auto-advances after a few seconds on device; the timeout
+        // path is device-verified, the tap path is tested here).
+        composeRule.onNodeWithText("HOWLINGDOG").assertIsDisplayed()
+        composeRule.onNodeWithText("PRESS START").assertIsDisplayed()
+        composeRule.onNodeWithText("PRESS START").performClick()
+        composeRule.onNodeWithText("SELECT YOUR GAME").assertIsDisplayed()
         composeRule.onNodeWithText("Add game").assertIsDisplayed()
         composeRule.onNodeWithText("Add folder").assertIsDisplayed()
         composeRule.onNodeWithText("Settings").assertIsDisplayed()
@@ -52,6 +60,7 @@ class MainActivityStartupTest {
         // the empty state is the launch gate for the library home.
         // The screen scrolls, so scroll the node into view first —
         // in the small test window it sits below the fold.
+        composeRule.onNodeWithText("PRESS START").performClick()
         composeRule.onNodeWithText("No games yet. Add a game to start.")
             .performScrollTo()
             .assertIsDisplayed()
@@ -95,7 +104,11 @@ class MainActivityStartupTest {
     @Test
     fun activitySurvivesRecreation() {
         composeRule.activityRule.scenario.recreate()
-        composeRule.onNodeWithText("HowlingDog").assertIsDisplayed()
+        // Recreation restarts at the boot splash (screen state is
+        // not saved); tapping through lands on a clean library.
+        composeRule.onNodeWithText("PRESS START").assertIsDisplayed()
+        composeRule.onNodeWithText("PRESS START").performClick()
+        composeRule.onNodeWithText("SELECT YOUR GAME").assertIsDisplayed()
         composeRule.onNodeWithText("No games yet. Add a game to start.")
             .performScrollTo()
             .assertIsDisplayed()
