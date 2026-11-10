@@ -342,62 +342,69 @@ class MainActivity : ComponentActivity() {
                                     .padding(4.dp),
                             )
                         }
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // D-pad
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            HoldButton("▲", { pressed ->
-                                held = held.copy(up = pressed); pushMask()
-                            })
-                            Row {
-                                HoldButton("◀", { pressed ->
-                                    held = held.copy(left = pressed); pushMask()
+                        // Touch controls float over the game view
+                        // (standard mobile-emulator layout): the game
+                        // fills the whole Box and the buttons overlay
+                        // its lower part instead of taking their own
+                        // row. In landscape the old row ate ~240dp
+                        // and left the game ~125dp tall.
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // D-pad
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                HoldButton("▲", { pressed ->
+                                    held = held.copy(up = pressed); pushMask()
                                 })
-                                Spacer(Modifier.width(56.dp))
-                                HoldButton("▶", { pressed ->
-                                    held = held.copy(right = pressed); pushMask()
-                                })
-                            }
-                            HoldButton("▼", { pressed ->
-                                held = held.copy(down = pressed); pushMask()
-                            })
-                        }
-                        // Start / Coin
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            HoldButton("Coin", { pressed ->
-                                held = held.copy(coin = pressed); pushMask()
-                            }, small = true)
-                            Spacer(Modifier.height(8.dp))
-                            HoldButton("Start", { pressed ->
-                                held = held.copy(start = pressed); pushMask()
-                            }, small = true)
-                        }
-                        // Neo Geo buttons: A B / C D
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Row {
-                                HoldButton("A", { pressed ->
-                                    held = held.copy(a = pressed); pushMask()
-                                })
-                                Spacer(Modifier.width(8.dp))
-                                HoldButton("B", { pressed ->
-                                    held = held.copy(b = pressed); pushMask()
+                                Row {
+                                    HoldButton("◀", { pressed ->
+                                        held = held.copy(left = pressed); pushMask()
+                                    })
+                                    Spacer(Modifier.width(56.dp))
+                                    HoldButton("▶", { pressed ->
+                                        held = held.copy(right = pressed); pushMask()
+                                    })
+                                }
+                                HoldButton("▼", { pressed ->
+                                    held = held.copy(down = pressed); pushMask()
                                 })
                             }
-                            Spacer(Modifier.height(8.dp))
-                            Row {
-                                HoldButton("C", { pressed ->
-                                    held = held.copy(c = pressed); pushMask()
-                                })
-                                Spacer(Modifier.width(8.dp))
-                                HoldButton("D", { pressed ->
-                                    held = held.copy(d = pressed); pushMask()
-                                })
+                            // Start / Coin
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                HoldButton("Coin", { pressed ->
+                                    held = held.copy(coin = pressed); pushMask()
+                                }, small = true)
+                                Spacer(Modifier.height(8.dp))
+                                HoldButton("Start", { pressed ->
+                                    held = held.copy(start = pressed); pushMask()
+                                }, small = true)
+                            }
+                            // Neo Geo buttons: A B / C D
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Row {
+                                    HoldButton("A", { pressed ->
+                                        held = held.copy(a = pressed); pushMask()
+                                    })
+                                    Spacer(Modifier.width(8.dp))
+                                    HoldButton("B", { pressed ->
+                                        held = held.copy(b = pressed); pushMask()
+                                    })
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Row {
+                                    HoldButton("C", { pressed ->
+                                        held = held.copy(c = pressed); pushMask()
+                                    })
+                                    Spacer(Modifier.width(8.dp))
+                                    HoldButton("D", { pressed ->
+                                        held = held.copy(d = pressed); pushMask()
+                                    })
+                                }
                             }
                         }
                     }
@@ -419,7 +426,8 @@ class MainActivity : ComponentActivity() {
             modifier = modifier
                 .size(size)
                 .background(
-                    if (held) Color(0xFF880000) else Color(0xFF333333),
+                    if (held) Color(0xFF880000).copy(alpha = 0.6f)
+                    else Color(0xFF333333).copy(alpha = 0.6f),
                     CircleShape,
                 )
                 .pointerInput(Unit) {
