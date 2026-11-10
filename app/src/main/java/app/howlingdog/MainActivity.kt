@@ -1922,6 +1922,13 @@ class MainActivity : ComponentActivity() {
                                         onHoldChange(true)
                                     }
                                 }
+                                // A button releases when the finger
+                                // slides off it (Exit) as well as when
+                                // it lifts (Release) — that is correct
+                                // button behaviour, and it is NOT the
+                                // stick/D-pad bug: a held direction
+                                // must keep tracking past the edge,
+                                // but a button must let go.
                                 PointerEventType.Release,
                                 PointerEventType.Exit -> {
                                     if (held) {
@@ -2119,8 +2126,23 @@ class MainActivity : ComponentActivity() {
                                             updateKnob(change.position)
                                         }
                                     }
-                                    PointerEventType.Release,
-                                    PointerEventType.Exit -> {
+                                    // Only a real Release (finger lift)
+                                    // ends the drag. An Exit — the
+                                    // pointer sliding out of the touch
+                                    // area while still down — is
+                                    // deliberately NOT handled: the
+                                    // Move events keep coming with
+                                    // out-of-bounds positions, and
+                                    // updateKnob clamps the direction
+                                    // to the edge (and the nub to the
+                                    // base radius). Ending the drag on
+                                    // Exit is what dropped the touch on
+                                    // straight left-to-right drags (a
+                                    // circular drag stays inside the
+                                    // bounds, so it never fired Exit).
+                                    // A Cancel ends it too, via the
+                                    // finally block below.
+                                    PointerEventType.Release -> {
                                         val id = activeId
                                         if (id != null && event.changes.any { it.id == id }) {
                                             activeId = null
@@ -2290,8 +2312,18 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
                                     }
-                                    PointerEventType.Release,
-                                    PointerEventType.Exit -> {
+                                    // Only a real Release (finger lift)
+                                    // ends the drag — same as the stick:
+                                    // an Exit (the pointer sliding out
+                                    // of the pad while still down) is
+                                    // deliberately NOT handled, so a
+                                    // drag that runs off the pad's edge
+                                    // keeps its direction (the press
+                                    // position clamps to the edge in
+                                    // DpadInput). Ending the drag on
+                                    // Exit dropped the direction on
+                                    // straight drags.
+                                    PointerEventType.Release -> {
                                         val id = activeId
                                         if (id != null && event.changes.any { it.id == id }) {
                                             activeId = null

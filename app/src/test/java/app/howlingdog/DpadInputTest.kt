@@ -70,4 +70,19 @@ class DpadInputTest {
         assertEquals(0, DpadInput.directionFromPress(200f, 200f, 0f))
         assertEquals(0, DpadInput.directionFromPress(200f, 200f, -10f))
     }
+
+    @Test
+    fun pressOutsideThePadStillReportsTheEdgeDirection() {
+        // A drag that slides off the pad's edge keeps its
+        // direction (the offset clamps to full deflection):
+        // this is what lets the stick/D-pad hold a drag past
+        // the touch bounds instead of dropping it on Exit.
+        // size is 400, so the pad spans 0..400; 700 is well
+        // past the right edge, and -300 well past the left.
+        assertEquals(right, DpadInput.directionFromPress(700f, 200f, size))
+        assertEquals(left, DpadInput.directionFromPress(-300f, 200f, size))
+        assertEquals(up, DpadInput.directionFromPress(200f, -300f, size))
+        assertEquals(down, DpadInput.directionFromPress(200f, 700f, size))
+        assertEquals(right or up, DpadInput.directionFromPress(700f, -300f, size))
+    }
 }
