@@ -77,6 +77,65 @@ object NeoHeader {
     }
 
     /**
+     * Region words a disc's display name can carry as a trailing
+     * tag ("Japan" in "Cyber Lip Japan EnJa", "World" in a
+     * "… World" cue name). They are not part of the game's title,
+     * so they are stripped before matching. Only TRAILING words
+     * are stripped, so a region word inside a real title
+     * ("World Heroes") is never touched. "Kong" is deliberately
+     * NOT here: "Hong Kong" is a region, but a title ending in
+     * "Kong" is a game.
+     */
+    private val REGION_WORDS = setOf(
+        "japan", "usa", "us", "europe", "eu", "world", "asia",
+        "korea", "brazil", "france", "germany", "spain", "italy",
+        "uk", "australia", "canada", "netherlands", "china",
+        "taiwan", "mexico", "argentina", "portugal",
+    )
+
+    /**
+     * Two-letter codes a disc's display name can carry as a
+     * trailing tag, alone or glued into a 2–4-letter word
+     * ("EnJa", "JaEn", "EnUs", "JpEn"): ISO 639-1 language codes
+     * (en, ja, fr, de, es, it, pt, nl, ko, zh, ru, …) plus the
+     * region codes that appear in the same tags (jp, kr, cn, tw,
+     * au, ca, mx, br, us, uk, eu). No Neo Geo title ends in one
+     * of these as a word, and only trailing words are stripped.
+     */
+    private val TAG_CODES = setOf(
+        "en", "ja", "fr", "de", "es", "it", "pt", "nl", "ko", "zh",
+        "ru", "sv", "da", "fi", "no", "pl", "tr", "ar", "he", "cs",
+        "hu", "el", "id", "ms", "th", "vi",
+        "jp", "kr", "cn", "tw", "au", "ca", "mx", "br", "us", "uk", "eu",
+    )
+
+    /** A word that is a region tag, or a language/region-code word (2–4 letters, made of 2-letter codes). */
+    private fun isRegionOrLangTag(word: String): Boolean {
+        if (word in REGION_WORDS) return true
+        return word.length in 2..4 && word.length % 2 == 0 &&
+            word.chunked(2).all { it in TAG_CODES }
+    }
+
+    /**
+     * Strip trailing region/language tags from a normalised
+     * title ("cyber lip japan enja" -> "cyber lip"). A title
+     * that IS a region word ("japan") is never stripped to
+     * nothing: at least one word always remains.
+     */
+    fun stripRegionTags(normalized: String): String {
+        val words = normalized.split(' ').filter { it.isNotEmpty() }.toMutableList()
+        while (words.size > 1 && isRegionOrLangTag(words.last())) {
+            words.removeAt(words.lastIndex)
+        }
+        return words.joinToString(" ")
+    }
+
+    /** A title ready for art matching: normalised, with trailing region/language tags stripped. */
+    fun normalizeForMatch(title: String): String {
+        return stripRegionTags(normalizeTitle(title))
+    }
+
+    /**
      * The box-art filename for a game, from the folder index, or
      * null when nothing in the index matches. Order: exact title,
      * then an NGH/NGM number carried with the title (the number
@@ -85,12 +144,22 @@ object NeoHeader {
      * Among several prefix matches the shortest wins, and a
      * "bootleg" file only wins when the title itself says bootleg
      * (so "Metal Slug 5" never lands on "Metal Slug 5 Plus").
+     *
+     * Both sides are normalised for the match ([normalizeForMatch]):
+     * a CD game's identity comes from its cue/disc display name,
+     * which can carry the cue filename's region/language suffix
+     * ("Cyber Lip Japan EnJa", "Galaxy Fight Universal Warriors
+     * (Japan)"), while the art filename carries the plain title
+     * ("Cyber-Lip (NGM-010)", "Galaxy Fight - Universal Warriors").
+     * Stripping the suffixes makes those two match. The NGH/NGM
+     * step and the bootleg guard are unaffected: a number is not
+     * a region/language tag, and neither is "bootleg".
      */
     fun matchArtFile(title: String, catalogue: String?, index: List<String>): String? {
-        val want = normalizeTitle(title)
+        val want = normalizeForMatch(title)
         if (want.isEmpty()) return null
         val byNorm = index.mapNotNull { name ->
-            val norm = normalizeTitle(name.removeSuffix(".png"))
+            val norm = normalizeForMatch(name.removeSuffix(".png"))
             if (norm.isEmpty()) null else name to norm
         }
         // 1. Exact title.

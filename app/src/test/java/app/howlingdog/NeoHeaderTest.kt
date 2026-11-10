@@ -131,6 +131,55 @@ class NeoHeaderTest {
         assertNull(NeoHeader.matchArtFile("Metal Slug 5", "268", bootlegOnly))
     }
 
+    // --- CD titles: the cue/disc display name carries region/language suffixes ---
+
+    @Test fun matchesCdCyberLipWithRegionTags() {
+        // The disc title is "Cyber Lip Japan EnJa" (the cue
+        // filename's region/language suffix); the art file is
+        // "Cyber-Lip (NGM-010).png". After stripping the suffixes
+        // the title is "cyber lip", which prefixes the art name.
+        assertEquals("Cyber-Lip (NGM-010).png", NeoHeader.matchArtFile("Cyber Lip Japan EnJa", null, index))
+    }
+
+    @Test fun matchesCdGalaxyFightWithRegionTag() {
+        // The disc title is "Galaxy Fight Universal Warriors
+        // Japan"; the art file is "Galaxy Fight - Universal
+        // Warriors.png". After stripping, the two are exactly equal.
+        assertEquals(
+            "Galaxy Fight - Universal Warriors.png",
+            NeoHeader.matchArtFile("Galaxy Fight Universal Warriors Japan", null, index),
+        )
+    }
+
+    @Test fun matchesCdGalaxyFightWithParenthesisedRegion() {
+        // The region tag in parentheses ("(Japan)") normalises
+        // to the same trailing word, and is stripped the same way.
+        assertEquals(
+            "Galaxy Fight - Universal Warriors.png",
+            NeoHeader.matchArtFile("Galaxy Fight Universal Warriors (Japan)", null, index),
+        )
+    }
+
+    @Test fun stripRegionTagsStripsOnlyTrailingTags() {
+        assertEquals("cyber lip", NeoHeader.stripRegionTags("cyber lip japan enja"))
+        assertEquals("galaxy fight universal warriors", NeoHeader.stripRegionTags("galaxy fight universal warriors japan"))
+        assertEquals("metal slug 5", NeoHeader.stripRegionTags("metal slug 5"))
+        // A region word inside the title is not stripped.
+        assertEquals("world heroes", NeoHeader.stripRegionTags("world heroes"))
+        // A title that IS a region word is never stripped to nothing.
+        assertEquals("japan", NeoHeader.stripRegionTags("japan"))
+        // A glued language pair strips, and so does a region+language pair.
+        assertEquals("cyber lip", NeoHeader.stripRegionTags("cyber lip jaen"))
+        assertEquals("cyber lip", NeoHeader.stripRegionTags("cyber lip jpen"))
+    }
+
+    @Test fun bootlegGuardStillHoldsWithRegionTags() {
+        // A disc title with a region tag still never lands on
+        // the bootleg: the guard runs on the stripped title.
+        val bootlegOnly = listOf("Metal Slug 5 Plus (bootleg).png")
+        assertNull(NeoHeader.matchArtFile("Metal Slug 5 Japan", "268", bootlegOnly))
+    }
+
     @Test fun noMatchReturnsNull() {
         assertNull(NeoHeader.matchArtFile("Some Unreleased Proto", null, index))
         assertNull(NeoHeader.matchArtFile("Metal Slug 5", "268", emptyList()))
