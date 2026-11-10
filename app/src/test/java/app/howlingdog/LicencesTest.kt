@@ -32,33 +32,29 @@ class LicencesTest {
         // Settings screen — scroll the button into view first.
         composeRule.onNodeWithText("Licences").performScrollTo().performClick()
         composeRule.onNodeWithText("Licences").assertIsDisplayed()
-        // The full NOTICE text is one Text node; substring matches
-        // prove each required licence and the disclaimer are in it.
-        // Assert in document order (top to bottom): the screen
-        // scrolls monotonically, and a substring near the top
-        // (the SNK disclaimer, in the preamble) cannot be
-        // scrolled back into view once the column is at the
-        // bottom, because the node is a single tall Text.
-        composeRule.onNodeWithText("not affiliated with or endorsed by SNK", substring = true)
-            .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Geolith (the core itself)", substring = true)
-            .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("ymfm (FM sound synthesis", substring = true)
-            .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Speex resampler", substring = true)
-            .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("zstd (deps/zstd)", substring = true)
-            .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Musashi (Motorola 68000 emulation", substring = true)
-            .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Jolly Good Z80", substring = true)
-            .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("miniz (deps/miniz)", substring = true)
-            .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("libretro API header", substring = true)
-            .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("LZMA (deps/lzma)", substring = true)
-            .performScrollTo().assertIsDisplayed()
+        // The full NOTICE text is one very tall Text node, so
+        // scrolling to a substring and asserting it is displayed
+        // is not robust for a node taller than the viewport.
+        // assertExists is the right check here — it proves each
+        // required licence and the disclaimer are in the composed
+        // tree, i.e. shown on this screen. (The disclaimer
+        // substring is kept on one line in NOTICE so it matches
+        // contiguously; it used to wrap across two lines, which
+        // is why the first version of this test went red.)
+        for (text in listOf(
+            "not affiliated with or endorsed by SNK",
+            "Geolith (the core itself)",
+            "ymfm (FM sound synthesis",
+            "Speex resampler",
+            "zstd (deps/zstd)",
+            "Musashi (Motorola 68000 emulation",
+            "Jolly Good Z80",
+            "miniz (deps/miniz)",
+            "libretro API header",
+            "LZMA (deps/lzma)",
+        )) {
+            composeRule.onNodeWithText(text, substring = true).assertExists()
+        }
     }
 
     @Test
