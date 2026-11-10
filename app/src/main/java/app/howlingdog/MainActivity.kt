@@ -62,8 +62,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
@@ -686,9 +684,17 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .background(Color.Black)
                         .onKeyEvent { event ->
-                            if (event.type == KeyEventType.KeyUp &&
-                                (event.key == Key.ButtonStart || event.key == Key.ButtonA ||
-                                    event.key == Key.Enter || event.key == Key.DirectionCenter)
+                            // Compose's KeyEvent only exposes the
+                            // native event as a member (key/type are
+                            // extension properties in this Compose
+                            // version); read the native key codes
+                            // directly, as GamepadInput does.
+                            val native = event.nativeKeyEvent
+                            if (native.action == KeyEvent.ACTION_UP &&
+                                (native.keyCode == KeyEvent.KEYCODE_BUTTON_START ||
+                                    native.keyCode == KeyEvent.KEYCODE_BUTTON_A ||
+                                    native.keyCode == KeyEvent.KEYCODE_ENTER ||
+                                    native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER)
                             ) {
                                 screen = Screen.Library
                                 true
