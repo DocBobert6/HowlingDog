@@ -932,7 +932,10 @@ class MainActivity : ComponentActivity() {
                     withContext(Dispatchers.Main) {
                         bios = b
                         status = if (count > 0) {
-                            "System files: ${b.readyCount} of ${b.totalCount} ready."
+                            // Audit fix (d): the System files card
+                            // already shows the ready count, so the
+                            // status line must not repeat it.
+                            "BIOS folder set."
                         } else {
                             "No .zip files in that folder. Pick the folder holding the BIOS files."
                         }
