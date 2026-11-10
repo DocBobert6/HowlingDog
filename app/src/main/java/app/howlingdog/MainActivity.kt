@@ -1133,12 +1133,6 @@ class MainActivity : ComponentActivity() {
                 .pointerInput(enabled, maxTravel) {
                     if (!enabled) return@pointerInput
                     awaitPointerEventScope {
-                        // The pointer-input area size (IntSize, px).
-                        // Captured here because the local helpers
-                        // below do not see the scope's receiver:
-                        // an unqualified `size` inside them would
-                        // resolve to the stick's Dp parameter.
-                        val areaSize = size
                         var activeId: PointerId? = null
                         var lastMask = 0
                         fun setDirection(mask: Int) {
@@ -1149,10 +1143,14 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         fun updateKnob(position: Offset) {
-                            val centre = Offset(
-                                areaSize.width / 2f,
-                                areaSize.height / 2f,
-                            )
+                            // The touch area is a touchPx square, so
+                            // its centre is touchPx / 2. Do NOT use
+                            // the pointer scope's `size` here: an
+                            // unqualified `size` resolves to the
+                            // stick's Dp parameter, because function
+                            // parameters shadow implicit receiver
+                            // members. That broke CI twice.
+                            val centre = Offset(touchPx / 2f, touchPx / 2f)
                             val raw = position - centre
                             val (cx, cy) = StickInput.clamp(
                                 raw.x / maxTravel,
