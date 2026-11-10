@@ -124,8 +124,6 @@ class PlayerSession(
         paused = false
     }
 
-    fun isPaused(): Boolean = paused
-
     /**
      * Snapshot the running state as bytes. Only call while paused
      * (see [pause]); null when no game is loaded or the core refuses.

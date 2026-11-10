@@ -24,10 +24,10 @@
 //     GET_VARIABLE_UPDATE so the core re-reads the live options on
 //     the next frame. System types are first-run only in the core,
 //     so a game's mode must be set before retro_init.
-//   - Save states (Phase 4): nativeSerializeSize / nativeSerialize /
-//     nativeUnserialize wrap the core's retro_serialize family. They
-//     must only be called while the emulation thread is paused
-//     (never concurrently with retro_run).
+//   - Save states (Phase 4): nativeSerialize / nativeUnserialize
+//     wrap the core's retro_serialize family. They must only be
+//     called while the emulation thread is paused (never
+//     concurrently with retro_run).
 
 #include <jni.h>
 
@@ -569,14 +569,6 @@ Java_app_howlingdog_Bridge_nativeSetOption(JNIEnv *env, jobject /* thiz */,
 // emulation thread is paused — never concurrently with retro_run.
 // retro_serialize copies the core's internal state buffer, so the
 // size from retro_serialize_size() is the exact byte count.
-JNIEXPORT jlong JNICALL
-Java_app_howlingdog_Bridge_nativeSerializeSize(JNIEnv * /* env */,
-                                               jobject /* thiz */) {
-    if (!g_inited || !g_loaded)
-        return 0;
-    return (jlong)retro_serialize_size();
-}
-
 JNIEXPORT jbyteArray JNICALL
 Java_app_howlingdog_Bridge_nativeSerialize(JNIEnv *env, jobject /* thiz */) {
     if (!g_inited || !g_loaded)
@@ -653,18 +645,6 @@ Java_app_howlingdog_Bridge_nativeLastError(JNIEnv *env, jobject /* thiz */) {
     jstring out = env->NewStringUTF(g_last_error);
     pthread_mutex_unlock(&g_error_mutex);
     return out;
-}
-
-JNIEXPORT jstring JNICALL
-Java_app_howlingdog_Bridge_nativeSystemInfo(JNIEnv *env, jobject /* thiz */) {
-    struct retro_system_info info;
-    memset(&info, 0, sizeof(info));
-    retro_get_system_info(&info);
-    char buf[128];
-    snprintf(buf, sizeof(buf), "%s %s",
-             info.library_name ? info.library_name : "Geolith",
-             info.library_version ? info.library_version : "");
-    return env->NewStringUTF(buf);
 }
 
 } // extern "C"

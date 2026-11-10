@@ -182,6 +182,7 @@ object OverlayTheme {
      * A layout's bounding box (width, height) in dp at scale 1.0,
      * from the button offsets and sizes — the single source of
      * truth for the cluster geometry (offset, drag, resize grip).
+     * (Covered by OverlayThemeTest's layout-size assertions.)
      */
     fun clusterSize(layout: ButtonLayout): Pair<Float, Float> =
         clusterSizeFor(buttonOffsets(layout))

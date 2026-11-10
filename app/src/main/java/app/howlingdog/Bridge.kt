@@ -53,12 +53,10 @@ object Bridge {
     external fun nativeSetOption(key: String, value: String): Boolean
 
     /** Save-state bytes; only call while the emulation thread is paused. */
-    external fun nativeSerializeSize(): Long
     external fun nativeSerialize(): ByteArray?
     external fun nativeUnserialize(data: ByteArray): Boolean
 
     external fun nativeUnloadGame()
     external fun nativeDeinit()
     external fun nativeLastError(): String
-    external fun nativeSystemInfo(): String
 }

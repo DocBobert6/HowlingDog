@@ -152,14 +152,14 @@ jobs:
             "$READELF" -d "$BRIDGE"
             exit 1
           }
-          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeSetOption nativeSerializeSize nativeSerialize nativeUnserialize nativeUnloadGame nativeDeinit nativeLastError nativeSystemInfo; do
+          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeSetOption nativeSerialize nativeUnserialize nativeUnloadGame nativeDeinit nativeLastError; do
             "$NM" -D "$BRIDGE" | grep -q "Java_app_howlingdog_Bridge_$sym" || {
               echo "missing JNI export: $sym"
               "$NM" -D "$BRIDGE"
               exit 1
             }
           done
-          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 15 JNI entry points present"
+          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 13 JNI entry points present"
 
       - name: Stage native libs for Gradle
         run: |
