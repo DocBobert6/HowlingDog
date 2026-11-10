@@ -34,6 +34,13 @@ class LicencesTest {
         composeRule.onNodeWithText("Licences").assertIsDisplayed()
         // The full NOTICE text is one Text node; substring matches
         // prove each required licence and the disclaimer are in it.
+        // Assert in document order (top to bottom): the screen
+        // scrolls monotonically, and a substring near the top
+        // (the SNK disclaimer, in the preamble) cannot be
+        // scrolled back into view once the column is at the
+        // bottom, because the node is a single tall Text.
+        composeRule.onNodeWithText("not affiliated with or endorsed by SNK", substring = true)
+            .performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Geolith (the core itself)", substring = true)
             .performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("ymfm (FM sound synthesis", substring = true)
@@ -51,8 +58,6 @@ class LicencesTest {
         composeRule.onNodeWithText("libretro API header", substring = true)
             .performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("LZMA (deps/lzma)", substring = true)
-            .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("not affiliated with or endorsed by SNK", substring = true)
             .performScrollTo().assertIsDisplayed()
     }
 
