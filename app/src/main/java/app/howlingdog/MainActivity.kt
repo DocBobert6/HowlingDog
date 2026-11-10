@@ -1322,14 +1322,6 @@ class MainActivity : ComponentActivity() {
                                     .padding(4.dp),
                             )
                         }
-                                color = Color.White,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .background(Color.Black.copy(alpha = 0.6f))
-                                    .padding(4.dp),
-                            )
-                        }
                         // Pause overlay: covers the game and the
                         // controls (drawn last, so it is on top) and
                         // swallows touches, so no button can be
