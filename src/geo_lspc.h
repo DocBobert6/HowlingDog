@@ -124,6 +124,11 @@ void geo_lspc_shadow_wr(unsigned);
 
 void geo_lspc_run(unsigned);
 
+/* Current position within the scanline, in M68K cycles (0..767).
+   Phase 6: geo_exec() reads it to bound each batched 68k slice at
+   the next LSPC event point. */
+unsigned geo_lspc_cyc(void);
+
 void geo_lspc_state_load(uint8_t*);
 void geo_lspc_state_save(uint8_t*);
 

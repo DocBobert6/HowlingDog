@@ -41,6 +41,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "geo_mixer.h"
 #include "geo_rtc.h"
 #include "geo_serial.h"
+#include "geo_slice.h"
 #include "geo_vfs.h"
 #include "geo_ymfm.h"
 #include "geo_z80.h"
@@ -758,7 +759,20 @@ void geo_watchdog_enable(unsigned enable) {
 
 void geo_exec(void) {
     while (mcycs < MCYC_PER_FRAME) {
-        icycs = geo_m68k_run(1);
+        /* Event-batched 68k execution (Phase 6): run the 68k in a
+           slice up to the next event instead of one cycle at a
+           time. Musashi executes at least one whole instruction
+           per m68k_execute() call and only takes an interrupt on
+           entry, so the slice ends at the next LSPC event point,
+           at IRQ2 timer expiry, or at the frame end — whichever
+           comes first (see geo_slice.h). The bookkeeping below
+           runs once per slice, exactly as it ran once per
+           instruction; only the granularity changes, never the
+           order or the totals. */
+        unsigned slice = geo_exec_slice_len(geo_lspc_cyc(),
+                                            ngsys.irq2_counter,
+                                            mcycs, oc);
+        icycs = geo_m68k_run(slice);
         mcycs += (icycs * DIV_M68K) >> oc;
 
         // Watchdog counts real time, always at the base clock rate

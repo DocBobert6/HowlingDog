@@ -74,6 +74,17 @@ jobs:
           fi
           echo "BUILT_SO=$FOUND" >> "$GITHUB_ENV"
 
+      - name: Run core slice unit test (host)
+        run: |
+          set -euo pipefail
+          # Phase 6: the event-batched 68k slice computation is pure C
+          # (src/geo_slice.h), so it is tested on the host with a plain
+          # C compiler — no NDK, no game files. This exercises the exact
+          # functions geo_exec() calls, so a wrong event point or a wrong
+          # bound fails here instead of on device.
+          gcc -I src -Wall -Wextra -o /tmp/geo_slice_test tests/geo_slice_test.c
+          /tmp/geo_slice_test
+
       - name: Verify core
         run: |
           set -euo pipefail

@@ -993,6 +993,14 @@ static void geo_lspc_scanline(void) {
     }
 }
 
+/* Current position within the scanline, in M68K cycles (0..767).
+   Phase 6: geo_exec() reads it to bound each batched 68k slice at
+   the next LSPC event point. */
+unsigned geo_lspc_cyc(void)
+{
+    return lspc.cyc;
+}
+
 void geo_lspc_run(unsigned cycs) {
     /* Timing of events which occur during a scanline is not perfect.
        Documentation on the fine details is rather old, and more modern
