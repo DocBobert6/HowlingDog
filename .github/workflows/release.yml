@@ -131,8 +131,11 @@ jobs:
             echo "apksigner verify failed — the APK is not properly signed"
             exit 1
           }
-          APK_CERT=$("$APKSIGNER" verify --print-certs --verbose "$APK" | grep "SHA-256 digest" | awk '{print $NF}' | head -1)
-          KS_CERT=$(keytool -list -v -keystore "$KEYSTORE_FILE" -storepass "${{ secrets.KEYSTORE_PASSWORD }}" | grep "SHA256:" | awk '{print $NF}' | head -1)
+          APK_CERT=$("$APKSIGNER" verify --print-certs --verbose "$APK" | grep "SHA-256 digest" | awk '{print $NF}' | head -1 | tr 'A-F' 'a-f')
+          # keytool prints the fingerprint colon-separated and upper-case
+          # (DF:EF:...), apksigner prints it bare and lower-case
+          # (dfef...): normalise both to the same form before comparing.
+          KS_CERT=$(keytool -list -v -keystore "$KEYSTORE_FILE" -storepass "${{ secrets.KEYSTORE_PASSWORD }}" | grep "SHA256:" | awk '{print $NF}' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
           echo "APK certificate SHA-256: $APK_CERT"
           echo "Keystore certificate SHA-256: $KS_CERT"
           if [ "$APK_CERT" != "$KS_CERT" ]; then
