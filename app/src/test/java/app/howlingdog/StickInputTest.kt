@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Pure-JVM unit tests for the flat-outline stick's direction math:
+ * Pure-JVM unit tests for the stick's direction math:
  * the 8 sectors, the diagonals, the centre dead zone, and the
  * knob clamp. No Android framework calls.
  */

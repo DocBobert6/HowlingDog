@@ -4,7 +4,7 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * The flat-outline arcade stick's direction math (pure Kotlin, no
+ * The arcade stick's direction math (pure Kotlin, no
  * Android dependencies, unit-tested on the JVM).
  *
  * The stick is fixed in place: the thumb drags a knob inside a base

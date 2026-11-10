@@ -62,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onKeyEvent
@@ -78,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.documentfile.provider.DocumentFile
@@ -1029,7 +1031,7 @@ class MainActivity : ComponentActivity() {
                         //
                         // The controls are two units, each placed by
                         // its stored centre (a fraction of this Box):
-                        // the flat-outline stick (bottom-left) and
+                        // the PS1-style stick (bottom-left) and
                         // the button cluster (bottom-right). The
                         // whole overlay takes the stored opacity.
                         BoxWithConstraints(
@@ -1234,7 +1236,7 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 Modifier
                             }
-                            OutlineStick(
+                            PsStick(
                                 size = (140f * stickScaleEff).dp,
                                 grabMargin = (16f * stickScaleEff).dp,
                                 onDirection = { mask ->
@@ -1662,24 +1664,38 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * The flat-outline arcade stick (replaces the 4-way D-pad).
+     * The PlayStation-style stick: it LOOKS like the PS1
+     * overlay joystick in Notscape Mariner (GameActivity
+     * StickSurface) — a filled base disc with a smaller
+     * filled nub riding inside it — but it WORKS exactly
+     * like the HowlingDog stick always has: the same
+     * square-gate 0.35 diagonal detection, the same 0.22
+     * dead zone, the same drag handling. Only the drawing
+     * changed; the flat outline rings are gone.
      *
-     * Look: thin white outlines only — a ring for the base, a ring
-     * for the knob that follows the thumb, and a small centre dot.
-     * No fill, no gradient, no shading, so the game shows through;
-     * the overlay's opacity comes from the container's alpha.
+     * Mariner proportions, kept exact: the nub is 0.55x
+     * the base diameter and rides at 0.45x the finger
+     * offset (clamped to the base radius), so at full
+     * deflection its edge sits flush with the base edge.
+     * Mariner's frost is near-white; here the discs are
+     * maroon with a gold hairline, so the stick sits in
+     * HowlingDog's palette instead of clashing with it.
      *
-     * Behaviour: fixed in place (it never follows the thumb around
-     * the screen). Touch down inside the base (plus the grab margin)
-     * and drag; the knob follows, clamped to the base, and the
-     * direction comes from StickInput's 8 sectors. Release snaps
-     * the knob back to centre and clears the direction. A cancelled
-     * gesture clears it too, in the finally block — a stuck
-     * direction is never left behind. Only one pointer is tracked,
-     * so a second thumb on the buttons cannot steal the stick.
+     * Behaviour: fixed in place (it never follows the thumb
+     * around the screen). Touch down inside the base (plus
+     * the grab margin) and drag; the nub follows and the
+     * direction comes from StickInput's square-gate rule.
+     * Release snaps the nub back to centre and clears the
+     * direction. A cancelled gesture clears it too, in the
+     * finally block — a stuck direction is never left
+     * behind. Only one pointer is tracked, so a second
+     * thumb on the buttons cannot steal the stick.
+     * The input travel is tuned against the old knob
+     * radius and must not move: the dead zone and the
+     * diagonal band are measured in units of that travel.
      */
     @Composable
-    private fun OutlineStick(
+    private fun PsStick(
         size: Dp, // base diameter
         grabMargin: Dp,
         onDirection: (Int) -> Unit,
@@ -1691,8 +1707,9 @@ class MainActivity : ComponentActivity() {
         val touchPx = with(density) { (size + grabMargin * 2).toPx() }
         val grabPx = with(density) { grabMargin.toPx() }
         val baseR = touchPx / 2f - grabPx
-        val knobR = baseR * 0.38f
-        val maxTravel = baseR - knobR
+        val travelKnobR = baseR * 0.38f
+        val maxTravel = baseR - travelKnobR
+        val knobR = baseR * 0.55f
         var knob by remember { mutableStateOf(Offset.Zero) }
         Box(
             modifier = modifier
@@ -1718,11 +1735,26 @@ class MainActivity : ComponentActivity() {
                             // members. That broke CI twice.
                             val centre = Offset(touchPx / 2f, touchPx / 2f)
                             val raw = position - centre
+                            // Direction (unchanged): the drag
+                            // normalised by the input travel, so the
+                            // dead zone and the 0.35 square-gate band
+                            // behave exactly as before.
                             val (cx, cy) = StickInput.clamp(
                                 raw.x / maxTravel,
                                 raw.y / maxTravel,
                             )
-                            knob = Offset(cx * maxTravel, cy * maxTravel)
+                            // Nub visual (Mariner StickSurface): the
+                            // nub rides at 0.45x the finger offset,
+                            // clamped to the base radius, so at full
+                            // deflection its edge sits flush with the
+                            // base edge (0.45 + 0.55 = 1.0).
+                            val rawMag = sqrt(raw.x * raw.x + raw.y * raw.y)
+                            val clamped = if (rawMag > baseR) {
+                                raw * (baseR / rawMag)
+                            } else {
+                                raw
+                            }
+                            knob = clamped * 0.45f
                             setDirection(StickInput.direction(cx, cy))
                         }
                         try {
@@ -1767,24 +1799,57 @@ class MainActivity : ComponentActivity() {
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val centre = Offset(this.size.width / 2f, this.size.height / 2f)
-                // Base ring + centre dot.
+                val gold = Color(EraUi.Palette.GOLD)
+                // Soft drop shadow under the base (Mariner's
+                // frostBar carries a 6dp elevation; the game area
+                // is dark, so this only reads on bright game art).
                 drawCircle(
-                    color = Color(EraUi.Palette.GOLD),
+                    color = Color.Black.copy(alpha = 0.35f),
+                    radius = baseR,
+                    center = centre + Offset(0f, 2.dp.toPx()),
+                )
+                // Base: a filled disc, lighter at the top, like
+                // Mariner's frost base — maroon, not frost white,
+                // so it sits in HowlingDog's palette.
+                drawCircle(
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            Color(EraUi.Palette.MAROON),
+                            Color(EraUi.Palette.SURFACE_RAISED),
+                        ),
+                        startY = centre.y - baseR,
+                        endY = centre.y + baseR,
+                    ),
                     radius = baseR,
                     center = centre,
-                    style = Stroke(width = 2.5.dp.toPx()),
                 )
                 drawCircle(
-                    color = Color(EraUi.Palette.GOLD),
-                    radius = 2.dp.toPx(),
+                    color = gold.copy(alpha = 0.6f),
+                    radius = baseR,
                     center = centre,
+                    style = Stroke(width = 1.dp.toPx()),
                 )
-                // Knob ring, following the thumb.
+                // Nub: a smaller filled disc riding inside the
+                // base, a lighter maroon so it reads against the
+                // base, with the same gold hairline.
+                val nubCentre = centre + knob
                 drawCircle(
-                    color = Color(EraUi.Palette.GOLD),
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            Color(EraUi.Palette.MAROON_LIGHT),
+                            Color(EraUi.Palette.MAROON),
+                        ),
+                        startY = nubCentre.y - knobR,
+                        endY = nubCentre.y + knobR,
+                    ),
                     radius = knobR,
-                    center = centre + knob,
-                    style = Stroke(width = 3.5.dp.toPx()),
+                    center = nubCentre,
+                )
+                drawCircle(
+                    color = gold.copy(alpha = 0.8f),
+                    radius = knobR,
+                    center = nubCentre,
+                    style = Stroke(width = 1.dp.toPx()),
                 )
             }
         }
