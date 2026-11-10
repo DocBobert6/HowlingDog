@@ -60,8 +60,10 @@ fun HowlingDogMascot(modifier: Modifier = Modifier) {
             // Haunch (sitting body) and chest.
             drawOval(color = dog, topLeft = Offset(92f, 96f), size = Size(80f, 74f))
             drawOval(color = dog, topLeft = Offset(88f, 91f), size = Size(40f, 54f))
-            // Neck, leaning left toward the moon.
-            rotate(degrees = -28f, pivot = Offset(96f, 82f)) {
+            // Neck, leaning left toward the moon. `rotate` lives on
+            // DrawTransform, so it goes in a nested withTransform —
+            // it is not a DrawScope member (that broke CI once).
+            withTransform({ rotate(degrees = -28f, pivot = Offset(96f, 82f)) }) {
                 drawRoundRect(
                     color = dog,
                     topLeft = Offset(84f, 55f),
