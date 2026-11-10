@@ -18,12 +18,16 @@
 //     reliably. A proper resampler belongs in a later phase.
 //   - Input is port 0 only (player 1), touch only. Gamepad input
 //     arrives in Phase 4.
-//   - No save states, no pause, no core options UI. The environment
-//     callback answers GET_VARIABLE with the core's documented
-//     defaults (AES system, default crops, resnet palette). That
-//     last part is load-bearing, not cosmetic: the core only builds
-//     its palette LUTs when GET_VARIABLE returns a value, so
-//     answering "not found" left every colour opaque black.
+//   - Core options are settable through nativeSetOption (Phase 4):
+//     the bridge answers GET_VARIABLE from a mutable table seeded
+//     with the core's documented defaults; a set flags
+//     GET_VARIABLE_UPDATE so the core re-reads the live options on
+//     the next frame. System types are first-run only in the core,
+//     so a game's mode must be set before retro_init.
+//   - Save states (Phase 4): nativeSerializeSize / nativeSerialize /
+//     nativeUnserialize wrap the core's retro_serialize family. They
+//     must only be called while the emulation thread is paused
+//     (never concurrently with retro_run).
 
 #include <jni.h>
 
@@ -137,17 +141,22 @@ static void bridge_log(enum retro_log_level level, const char *fmt, ...) {
 // libretro callbacks supplied by the frontend
 // ---------------------------------------------------------------------------
 
-// Core options (no settings UI yet): answer GET_VARIABLE with the
+// Core options (Phase 4: settable through nativeSetOption). The
+// bridge answers GET_VARIABLE from a mutable table seeded with the
 // core's documented defaults (libretro/libretro_core_options.h).
 // The core only builds its palette LUTs inside check_variables(),
 // which only runs the palette branch when GET_VARIABLE returns a
 // value — answering "not found" left lut_normal/lut_shadow all
 // zero, so every colour came out opaque black (the Phase 2 no-video
 // bug). The value strings are static storage: the core may keep the
-// pointer, so they must outlive the call.
+// pointer, so they must outlive the call. A set flags
+// GET_VARIABLE_UPDATE so the core re-reads the live options on the
+// next retro_run; system types are first-run only in the core, so
+// they must be set before retro_init.
+#define CORE_OPT_VALUE_LEN 32
 static const struct {
     const char *key;
-    const char *value;
+    const char *value; // documented default
 } kCoreOptionDefaults[] = {
     {"geolith_system_type", "aes"},
     {"geolith_unibios_hw", "mvs"},
@@ -171,6 +180,33 @@ static const struct {
     {"geolith_cd_dma_len_limit", "disabled"},
     {"geolith_cd_skip_loading", "disabled"},
 };
+
+// Mutable current values, seeded from the defaults. Kotlin pushes
+// the stored settings (and the per-game mode) through
+// nativeSetOption before retro_init, and live changes while a game
+// runs; GET_VARIABLE answers from here.
+static char g_opt_values[sizeof(kCoreOptionDefaults) /
+                         sizeof(kCoreOptionDefaults[0])][CORE_OPT_VALUE_LEN];
+static bool g_opt_inited = false;
+static pthread_mutex_t g_opt_mutex = PTHREAD_MUTEX_INITIALIZER;
+// Set by nativeSetOption; GET_VARIABLE_UPDATE reports it once and
+// clears it, so the core re-reads the live options on the next frame.
+static volatile bool g_opt_dirty = false;
+
+static void bridge_options_init(void) {
+    pthread_mutex_lock(&g_opt_mutex);
+    if (!g_opt_inited) {
+        for (size_t i = 0;
+             i < sizeof(kCoreOptionDefaults) / sizeof(kCoreOptionDefaults[0]);
+             ++i) {
+            strncpy(g_opt_values[i], kCoreOptionDefaults[i].value,
+                    CORE_OPT_VALUE_LEN - 1);
+            g_opt_values[i][CORE_OPT_VALUE_LEN - 1] = '\0';
+        }
+        g_opt_inited = true;
+    }
+    pthread_mutex_unlock(&g_opt_mutex);
+}
 
 static bool bridge_environ(unsigned cmd, void *data) {
     switch (cmd) {
@@ -204,29 +240,38 @@ static bool bridge_environ(unsigned cmd, void *data) {
             // We answer the mask query (see bridge_input_state).
             return true;
         case RETRO_ENVIRONMENT_GET_VARIABLE: {
-            // No core-options UI yet: answer with the documented
-            // defaults (see kCoreOptionDefaults). Unknown keys still
+            // Answer from the mutable table (defaults, plus anything
+            // Kotlin set through nativeSetOption). Unknown keys still
             // return false.
             if (!data)
                 return false;
             struct retro_variable *var = (struct retro_variable *)data;
             if (!var->key)
                 return false;
+            // Seed the table on first use: GET_VARIABLE is only
+            // reached after retro_init (nativeInit seeds it), but
+            // never answer from a zero-initialised buffer.
+            bridge_options_init();
             for (size_t i = 0;
                  i < sizeof(kCoreOptionDefaults) /
                          sizeof(kCoreOptionDefaults[0]);
                  ++i) {
                 if (strcmp(var->key, kCoreOptionDefaults[i].key) == 0) {
-                    var->value = kCoreOptionDefaults[i].value;
+                    var->value = g_opt_values[i];
                     return true;
                 }
             }
             return false;
         }
         case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: {
+            // Report a pending options change once, then clear it.
             if (!data)
                 return false;
-            *(bool *)data = false;
+            pthread_mutex_lock(&g_opt_mutex);
+            bool dirty = g_opt_dirty;
+            g_opt_dirty = false;
+            pthread_mutex_unlock(&g_opt_mutex);
+            *(bool *)data = dirty;
             return true;
         }
         case RETRO_ENVIRONMENT_SET_GEOMETRY:
@@ -367,6 +412,8 @@ Java_app_howlingdog_Bridge_nativeInit(JNIEnv *env, jobject /* thiz */,
     if (!g_frame)
         return JNI_FALSE;
 
+    // Seed the option table before the core reads it in retro_init.
+    bridge_options_init();
     retro_set_environment(bridge_environ);
     retro_set_video_refresh(bridge_video);
     retro_set_audio_sample_batch(bridge_audio_batch);
@@ -481,6 +528,92 @@ JNIEXPORT void JNICALL
 Java_app_howlingdog_Bridge_nativeSetInput(JNIEnv * /* env */,
                                           jobject /* thiz */, jint mask) {
     g_input_mask = (int16_t)mask;
+}
+
+// Set one core option (Phase 4 settings / per-game mode). The value
+// is stored in the mutable table and flags GET_VARIABLE_UPDATE, so
+// the core re-reads the live options on the next frame. System types
+// are first-run only in the core, so a game's mode must be set before
+// retro_init (Kotlin pushes it before starting the session). Returns
+// false for an unknown key. Safe to call before nativeInit.
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeSetOption(JNIEnv *env, jobject /* thiz */,
+                                           jstring key, jstring value) {
+    bridge_options_init();
+    const char *k = key ? env->GetStringUTFChars(key, nullptr) : nullptr;
+    const char *v = value ? env->GetStringUTFChars(value, nullptr) : nullptr;
+    bool ok = false;
+    if (k && v) {
+        pthread_mutex_lock(&g_opt_mutex);
+        for (size_t i = 0;
+             i < sizeof(kCoreOptionDefaults) / sizeof(kCoreOptionDefaults[0]);
+             ++i) {
+            if (strcmp(k, kCoreOptionDefaults[i].key) == 0) {
+                strncpy(g_opt_values[i], v, CORE_OPT_VALUE_LEN - 1);
+                g_opt_values[i][CORE_OPT_VALUE_LEN - 1] = '\0';
+                g_opt_dirty = true;
+                ok = true;
+                break;
+            }
+        }
+        pthread_mutex_unlock(&g_opt_mutex);
+    }
+    if (k)
+        env->ReleaseStringUTFChars(key, k);
+    if (v)
+        env->ReleaseStringUTFChars(value, v);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+// Save states (Phase 4). These must only be called while the
+// emulation thread is paused — never concurrently with retro_run.
+// retro_serialize copies the core's internal state buffer, so the
+// size from retro_serialize_size() is the exact byte count.
+JNIEXPORT jlong JNICALL
+Java_app_howlingdog_Bridge_nativeSerializeSize(JNIEnv * /* env */,
+                                               jobject /* thiz */) {
+    if (!g_inited || !g_loaded)
+        return 0;
+    return (jlong)retro_serialize_size();
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_app_howlingdog_Bridge_nativeSerialize(JNIEnv *env, jobject /* thiz */) {
+    if (!g_inited || !g_loaded)
+        return nullptr;
+    size_t size = retro_serialize_size();
+    if (size == 0)
+        return nullptr;
+    jbyteArray out = env->NewByteArray((jsize)size);
+    if (!out)
+        return nullptr;
+    jbyte *buf = env->GetByteArrayElements(out, nullptr);
+    if (!buf)
+        return nullptr;
+    bool ok = retro_serialize((void *)buf, size);
+    env->ReleaseByteArrayElements(out, buf, 0);
+    if (!ok)
+        return nullptr;
+    return out;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeUnserialize(JNIEnv *env, jobject /* thiz */,
+                                             jbyteArray data) {
+    if (!g_inited || !g_loaded || !data)
+        return JNI_FALSE;
+    jsize len = env->GetArrayLength(data);
+    if (len <= 0)
+        return JNI_FALSE;
+    jbyte *buf = env->GetByteArrayElements(data, nullptr);
+    if (!buf)
+        return JNI_FALSE;
+    // The core refuses a state saved under a different system type
+    // or region (returns false); the UI reports that, it is not a
+    // crash. JNI_ABORT: the core never writes into the buffer.
+    bool ok = retro_unserialize((const void *)buf, (size_t)len);
+    env->ReleaseByteArrayElements(data, buf, JNI_ABORT);
+    return ok ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL

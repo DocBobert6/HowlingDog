@@ -42,6 +42,15 @@ object Bridge {
     /** Drains up to [maxFrames] stereo frames into [samples]; returns frames read. */
     external fun nativeReadAudio(samples: ShortArray, maxFrames: Int): Int
     external fun nativeSetInput(mask: Int)
+
+    /** Set one core option (see bridge.cpp). False for an unknown key. */
+    external fun nativeSetOption(key: String, value: String): Boolean
+
+    /** Save-state bytes; only call while the emulation thread is paused. */
+    external fun nativeSerializeSize(): Long
+    external fun nativeSerialize(): ByteArray?
+    external fun nativeUnserialize(data: ByteArray): Boolean
+
     external fun nativeUnloadGame()
     external fun nativeDeinit()
     external fun nativeLastError(): String
