@@ -42,7 +42,6 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -132,9 +131,6 @@ class MainActivity : ComponentActivity() {
         val gameFile: File? = gamePath?.let { File(it) }
         var held by remember { mutableStateOf(Held()) }
         var gameView by remember { mutableStateOf<GameView?>(null) }
-        // Spike diagnostic (no-video bug): live frame numbers from
-        // PlayerSession, shown on the game screen and logged.
-        var stats by remember { mutableStateOf<FrameStats?>(null) }
 
         fun pushMask() {
             session?.setInput(
@@ -150,7 +146,6 @@ class MainActivity : ComponentActivity() {
             session?.stop()
             session = null
             held = Held()
-            stats = null
             screen = Screen.Setup
         }
 
@@ -258,7 +253,6 @@ class MainActivity : ComponentActivity() {
                             val biosDir = File(filesDir, "bios")
                             val saveDir = File(filesDir, "saves").apply { mkdirs() }
                             status = "Starting ${gameName ?: "game"}…"
-                            stats = null
                             session = PlayerSession(
                                 systemDir = biosDir.absolutePath,
                                 saveDir = saveDir.absolutePath,
@@ -269,7 +263,6 @@ class MainActivity : ComponentActivity() {
                                     session = null
                                     screen = Screen.Setup
                                 },
-                                onStats = { stats = it },
                             )
                             screen = Screen.Playing
                             session?.start()
@@ -320,28 +313,6 @@ class MainActivity : ComponentActivity() {
                             },
                             modifier = Modifier.fillMaxSize(),
                         )
-                        // Spike diagnostic for the no-video bug: live
-                        // frame numbers over the black screen. Read:
-                        // frames 0 = no delivery; frames climbing +
-                        // bright 0 = core renders black; frames
-                        // climbing + bright > 0 = GameView not showing
-                        // the bitmap. The SRC line probes the source
-                        // BEFORE the copy: nonzero 0 = the core
-                        // delivers black; nonzero > 0 with bright 0 =
-                        // the copy loses the picture. Updated once a
-                        // second.
-                        val s = stats
-                        if (s != null) {
-                            Text(
-                                text = formatDiagText(s),
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .background(Color.Black.copy(alpha = 0.6f))
-                                    .padding(4.dp),
-                            )
-                        }
                         // Touch controls float over the game view
                         // (standard mobile-emulator layout): the game
                         // fills the whole Box and the buttons overlay

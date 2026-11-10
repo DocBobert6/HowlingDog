@@ -196,12 +196,6 @@ void geo_init(void);
 void geo_deinit(void);
 void geo_reset(int);
 
-/* TEMPORARY DIAGNOSTIC (no-video bug): palette/VRAM write counters,
-   first 8 palette RAM entries, palette bank, 68k PC, non-zero palette
-   entries, backdrop entry, last frame's non-zero line-buffer pixels
-   (see geo.c for the out[] layout). */
-void geo_diag_pal(uint32_t *out);
-
 void geo_log_set_callback(void (*)(int, const char *, ...));
 void geo_input_set_callback(unsigned, unsigned (*)(unsigned));
 void geo_input_sys_set_callback(unsigned, unsigned (*)(void));

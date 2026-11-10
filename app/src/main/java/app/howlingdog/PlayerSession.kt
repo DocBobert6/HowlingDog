@@ -6,7 +6,6 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.util.Log
 
 /**
@@ -26,7 +25,6 @@ class PlayerSession(
     private val gamePath: String,
     private val onFrame: (Bitmap) -> Unit,
     private val onError: (String) -> Unit,
-    private val onStats: (FrameStats) -> Unit = {},
 ) {
     companion object {
         private const val TAG = "HowlingDog"
@@ -42,18 +40,6 @@ class PlayerSession(
 
     @Volatile
     private var inputMask = 0
-
-    // Spike diagnostic (no-video bug): live frame counters for the
-    // on-screen readout and the once-a-second logcat line.
-    private var framesReceived = 0L
-    private var framesDrawn = 0L
-    private var lastW = 0
-    private var lastH = 0
-    private var bright = FrameBrightness(0, 0, 0, 0)
-    private var avW = 0
-    private var avH = 0
-    private var avFps = 0.0
-    private var lastStatsAtMs = 0L
 
     fun setInput(mask: Int) {
         inputMask = mask
@@ -106,9 +92,6 @@ class PlayerSession(
         val width = av[0]
         val height = av[1]
         val fps = av[2] / 1000.0
-        avW = width
-        avH = height
-        avFps = fps
         Log.i(TAG, "playing ${width}x${height} @ $fps fps, audio ${av[3]} Hz -> $AUDIO_RATE Hz")
         // Push any input the UI already recorded before the load finished.
         Bridge.nativeSetInput(inputMask)
@@ -134,14 +117,9 @@ class PlayerSession(
             val t0 = System.nanoTime()
             Bridge.nativeRunFrame()
             if (Bridge.nativeGetFrame(pixels, dims)) {
-                framesReceived++
                 val w = dims[0]
                 val h = dims[1]
-                lastW = w
-                lastH = h
                 if (w == width && h == height) {
-                    framesDrawn++
-                    bright = sampleFrameBrightness(pixels, width, height)
                     val back = 1 - front
                     bitmaps[back].setPixels(pixels, 0, width, 0, 0, width, height)
                     front = back
@@ -152,45 +130,6 @@ class PlayerSession(
                     // the spike drops the frame rather than guessing.
                     Log.w(TAG, "frame geometry changed to ${w}x$h, dropping frame")
                 }
-            }
-            // Diagnostic: emit the live numbers once a second, on the
-            // main thread for the overlay and in logcat for bug reports.
-            // This runs even when no frames arrive, so frames == 0 is
-            // visible too.
-            val now = SystemClock.uptimeMillis()
-            if (now - lastStatsAtMs >= 1000) {
-                lastStatsAtMs = now
-                val probe = Bridge.nativeGetSrcProbe()
-                // TEMPORARY DIAGNOSTIC (no-video bug): palette/VRAM
-                // write counters + 68k PC from the core. The counts
-                // are unsigned 32-bit values in a signed IntArray.
-                val pal = Bridge.nativeGetPalDiag()
-                val s = FrameStats(
-                    framesReceived, framesDrawn, lastW, lastH,
-                    avW, avH, avFps, bright.mean,
-                    bright.centreR, bright.centreG, bright.centreB,
-                    srcCalls = probe[0].toLong(),
-                    srcNonzero = probe[1],
-                    srcFirst = probe[2],
-                    srcFirst100 = probe[3],
-                    srcFirst1000 = probe[4],
-                    srcW = probe[5],
-                    srcH = probe[6],
-                    srcPitch = probe[7],
-                    lastError = Bridge.nativeLastError(),
-                    palWrites = pal[0].toLong() and 0xFFFFFFFFL,
-                    vramWrites = pal[1].toLong() and 0xFFFFFFFFL,
-                    palBank = pal[10],
-                    palPc = pal[11],
-                    pal = pal.copyOfRange(2, 10),
-                    palNonzero = pal[12],
-                    palBackdrop = pal[13],
-                    lbNonzero = pal[14].toLong() and 0xFFFFFFFFL,
-                )
-                // Same text as the on-screen readout, one line for
-                // logcat (pipes stand in for the newlines).
-                Log.i(TAG, formatDiagText(s).replace("\n", " | "))
-                mainHandler.post { onStats(s) }
             }
             val elapsed = System.nanoTime() - t0
             val remaining = frameNs - elapsed
