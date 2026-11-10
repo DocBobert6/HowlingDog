@@ -194,10 +194,91 @@ class GameLibraryTest {
         assertFalse(status.system1994)
         assertTrue(status.system1995)
         assertEquals(2, status.readyCount)
-        assertTrue(lib.biosReadyFor("neobombe.neo", status))
-        assertTrue(lib.biosReadyFor("game.cue", status))
-        assertTrue(lib.biosReadyFor("game.chd", status))
-        assertFalse(lib.biosReadyFor("game.cue", status.copy(system1995 = false)))
-        assertFalse(lib.biosReadyFor("neobombe.neo", status.copy(home = false)))
+        val cart = GameEntry("neobombe.neo", "neobombe", listOf("neobombe.neo"), 0L)
+        val disc = GameEntry("game.cue", "game", listOf("game.cue"), 0L)
+        assertTrue(lib.biosReadyFor(cart, status))
+        assertTrue(lib.biosReadyFor(disc, status))
+        assertFalse(lib.biosReadyFor(disc, status.copy(system1995 = false)))
+        assertFalse(lib.biosReadyFor(cart, status.copy(home = false)))
+    }
+
+    // --- per-game mode ---
+
+    @Test
+    fun effectiveModeDefaultsByType() {
+        val cart = GameEntry("neobombe.neo", "neobombe", listOf("neobombe.neo"), 0L)
+        val cue = GameEntry("game.cue", "game", listOf("game.cue"), 0L)
+        val chd = GameEntry("game.chd", "game", listOf("game.chd"), 0L)
+        assertEquals("aes", cart.effectiveMode)
+        assertEquals("cdz", cue.effectiveMode)
+        assertEquals("cdz", chd.effectiveMode)
+        assertEquals(listOf("aes", "mvs"), modesFor(cart))
+        assertEquals(listOf("cd", "cdz"), modesFor(cue))
+        assertEquals("Home console", modeLabel("aes"))
+        assertEquals("Arcade", modeLabel("mvs"))
+        assertEquals("Neo Geo CD", modeLabel("cd"))
+        assertEquals("Neo Geo CDZ", modeLabel("cdz"))
+    }
+
+    @Test
+    fun setModePersistsAndRoundTrips() {
+        val dir = tempDir("lib-mode")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "neobombe.neo").writeText("fake")
+        val entry = lib.register("neobombe.neo", listOf("neobombe.neo"))
+        val updated = lib.setMode(entry, "mvs")
+        assertEquals("mvs", updated.effectiveMode)
+        // A fresh instance reads the stored mode back.
+        val loaded = library(dir).load()
+        assertEquals("mvs", loaded[0].mode)
+        // Clearing the mode restores the type default.
+        lib.setMode(loaded[0], null)
+        assertEquals("aes", library(dir).load()[0].effectiveMode)
+    }
+
+    @Test
+    fun legacyFourFieldLinesLoadWithNoMode() {
+        val dir = tempDir("lib-mode-legacy")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "neobombe.neo").writeText("fake")
+        File(dir, "library.txt").writeText("neobombe.neo|neobombe|123|neobombe.neo\n")
+        val loaded = lib.load()
+        assertEquals(1, loaded.size)
+        assertEquals(null, loaded[0].mode)
+        assertEquals("aes", loaded[0].effectiveMode)
+    }
+
+    @Test
+    fun reimportKeepsStoredMode() {
+        val dir = tempDir("lib-mode-reimport")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "neobombe.neo").writeText("fake")
+        val entry = lib.register("neobombe.neo", listOf("neobombe.neo"))
+        lib.setMode(entry, "mvs")
+        lib.register("neobombe.neo", listOf("neobombe.neo"))
+        assertEquals("mvs", lib.load()[0].mode)
+    }
+
+    @Test
+    fun biosGateFollowsEffectiveMode() {
+        val dir = tempDir("lib-mode-gate")
+        val lib = library(dir)
+        val bios = File(dir, "bios")
+        File(bios, "neogeo.zip").writeText("fake")
+        File(bios, "neocd.zip").writeText("fake")
+        val status = lib.biosStatus()
+        val cart = GameEntry("neobombe.neo", "neobombe", listOf("neobombe.neo"), 0L)
+        // Home console (default) needs aes.zip, which is absent.
+        assertFalse(lib.biosReadyFor(cart, status))
+        // Arcade mode needs neogeo.zip, which is present.
+        assertTrue(lib.biosReadyFor(cart.copy(mode = "mvs"), status))
+        val disc = GameEntry("game.cue", "game", listOf("game.cue"), 0L)
+        // Neo Geo CDZ (default) needs neocdz.zip, which is absent.
+        assertFalse(lib.biosReadyFor(disc, status))
+        // Neo Geo CD needs neocd.zip, which is present.
+        assertTrue(lib.biosReadyFor(disc.copy(mode = "cd"), status))
     }
 }

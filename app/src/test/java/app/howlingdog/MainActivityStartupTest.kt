@@ -42,6 +42,7 @@ class MainActivityStartupTest {
         composeRule.onNodeWithText("HowlingDog").assertIsDisplayed()
         composeRule.onNodeWithText("Add game").assertIsDisplayed()
         composeRule.onNodeWithText("Add folder").assertIsDisplayed()
+        composeRule.onNodeWithText("Settings").assertIsDisplayed()
         composeRule.onNodeWithText("Pick BIOS folder").assertIsDisplayed()
     }
 

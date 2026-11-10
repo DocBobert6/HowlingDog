@@ -1,6 +1,7 @@
 package app.howlingdog
 
 import android.app.Activity
+import android.content.Context
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
@@ -30,6 +31,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -106,7 +109,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private enum class Screen { Library, Playing }
+    private enum class Screen { Library, Playing, Settings }
 
     private data class Held(
         val up: Boolean = false,
@@ -131,11 +134,22 @@ class MainActivity : ComponentActivity() {
         var status by remember { mutableStateOf("") }
         var playingGame by remember { mutableStateOf<GameEntry?>(null) }
         var confirmRemove by remember { mutableStateOf<GameEntry?>(null) }
+        var modePickerFor by remember { mutableStateOf<GameEntry?>(null) }
+        var settingsFrom by remember { mutableStateOf(Screen.Library) }
         var held by remember { mutableStateOf(Held()) }
         var gameView by remember { mutableStateOf<GameView?>(null) }
 
         val gamesDir = File(context.filesDir, "games")
         val biosDir = File(context.filesDir, "bios")
+        val settings = remember {
+            CoreSettings(
+                SharedPrefsStore(
+                    context.getSharedPreferences(
+                        "howlingdog-settings", Context.MODE_PRIVATE,
+                    ),
+                ),
+            )
+        }
         val library = remember {
             GameLibrary(
                 gamesDir = gamesDir,
@@ -178,10 +192,15 @@ class MainActivity : ComponentActivity() {
 
         fun startGame(entry: GameEntry) {
             val b = bios ?: library.biosStatus()
-            if (!library.biosReadyFor(entry.mainFile, b)) {
+            if (!library.biosReadyFor(entry, b)) {
                 status = "This game needs its system files — pick the BIOS folder."
                 return
             }
+            // Push the stored options and this game's mode into the
+            // bridge BEFORE the session starts: the core reads the
+            // system types only at retro_init.
+            settings.applyAll()
+            settings.applyMode(entry)
             val saveDir = File(context.filesDir, "saves").apply { mkdirs() }
             status = "Starting ${entry.displayName}…"
             session = PlayerSession(
@@ -400,6 +419,12 @@ class MainActivity : ComponentActivity() {
                         Button(onClick = { folderPicker.launch(null) }) {
                             Text("Add folder")
                         }
+                        Button(onClick = {
+                            settingsFrom = Screen.Library
+                            screen = Screen.Settings
+                        }) {
+                            Text("Settings")
+                        }
                     }
                     Spacer(Modifier.height(16.dp))
                     if (games.isEmpty()) {
@@ -417,7 +442,6 @@ class MainActivity : ComponentActivity() {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { startGame(game) }
                                         .padding(vertical = 8.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically,
@@ -425,7 +449,13 @@ class MainActivity : ComponentActivity() {
                                     Text(
                                         game.displayName,
                                         style = MaterialTheme.typography.bodyLarge,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { startGame(game) },
                                     )
+                                    TextButton(onClick = { modePickerFor = game }) {
+                                        Text(modeLabel(game.effectiveMode))
+                                    }
                                     TextButton(onClick = { confirmRemove = game }) {
                                         Text("✕")
                                     }
@@ -456,6 +486,59 @@ class MainActivity : ComponentActivity() {
                         },
                         dismissButton = {
                             TextButton(onClick = { confirmRemove = null }) {
+                                Text("Cancel")
+                            }
+                        },
+                    )
+                }
+                val modeGame = modePickerFor
+                if (modeGame != null) {
+                    AlertDialog(
+                        onDismissRequest = { modePickerFor = null },
+                        title = { Text("System for ${modeGame.displayName}") },
+                        text = {
+                            Column {
+                                Text(
+                                    "Takes effect the next time this game starts.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                for (mode in modesFor(modeGame)) {
+                                    TextButton(onClick = {
+                                        val target = modeGame
+                                        lifecycleScope.launch(Dispatchers.IO) {
+                                            library.setMode(target, mode)
+                                            withContext(Dispatchers.Main) {
+                                                modePickerFor = null
+                                                refreshLibrary()
+                                                status = "${target.displayName}: ${modeLabel(mode)}."
+                                            }
+                                        }
+                                    }) {
+                                        Text(
+                                            modeLabel(mode) +
+                                                if (mode == modeGame.effectiveMode) " ✓" else "",
+                                        )
+                                    }
+                                }
+                                TextButton(onClick = {
+                                    val target = modeGame
+                                    lifecycleScope.launch(Dispatchers.IO) {
+                                        library.setMode(target, null)
+                                        withContext(Dispatchers.Main) {
+                                            modePickerFor = null
+                                            refreshLibrary()
+                                            status = "${target.displayName}: default system."
+                                        }
+                                    }
+                                }) {
+                                    Text("Use default")
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = {
+                            TextButton(onClick = { modePickerFor = null }) {
                                 Text("Cancel")
                             }
                         },
@@ -565,6 +648,69 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            Screen.Settings -> {
+                BackHandler { screen = settingsFrom }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("Settings", style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        "Options under \"Apply immediately\" take effect on the next frame, even while a game is running. Options under \"Next game\" take effect the next time you start a game.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text("Apply immediately", style = MaterialTheme.typography.titleSmall)
+                    for (opt in CoreOptions.ALL.filter { it.live }) {
+                        OptionRow(opt, settings)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Text("Next game", style = MaterialTheme.typography.titleSmall)
+                    for (opt in CoreOptions.ALL.filter { !it.live }) {
+                        OptionRow(opt, settings)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { screen = settingsFrom }) { Text("Back") }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun OptionRow(opt: CoreOption, settings: CoreSettings) {
+        var value by remember(opt.key) { mutableStateOf(settings.get(opt.key)) }
+        var expanded by remember { mutableStateOf(false) }
+        val currentLabel = opt.values.firstOrNull { it.first == value }?.second ?: value
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(opt.label, style = MaterialTheme.typography.bodyMedium)
+            Box {
+                TextButton(onClick = { expanded = true }) {
+                    Text(currentLabel)
+                }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                ) {
+                    for ((v, label) in opt.values) {
+                        DropdownMenuItem(
+                            text = { Text(label + if (v == value) " ✓" else "") },
+                            onClick = {
+                                settings.set(opt.key, v)
+                                value = v
+                                expanded = false
+                            },
+                        )
                     }
                 }
             }

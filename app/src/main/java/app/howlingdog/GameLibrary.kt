@@ -8,7 +8,11 @@ import java.io.File
  * system may clear cacheDir, and the library must survive), and the
  * index lives in [storeFile], one game per line:
  *
- *   mainFile | displayName | addedAtMillis | file1,file2,...
+ *   mainFile | displayName | addedAtMillis | file1,file2,... | mode
+ *
+ * The mode field is the per-game system mode (or empty for the type
+ * default); lines written before the mode existed have only four
+ * fields and still load, with the mode unset.
  *
  * Filenames are sanitized (see [sanitize]: letters, digits, '.', '_',
  * '-' only), so '|' and ',' can never appear in a stored name and the
@@ -17,7 +21,8 @@ import java.io.File
  * A game is a game: the library never shows or sorts by media type.
  * The kind is derived from the main file's extension only where the
  * app must know it internally (which system files a game needs to
- * boot). Code may say cd; the UI never does.
+ * boot). The UI may say CD now (rule lifted 2026-11-09); it never
+ * shows disc imagery or sorts by media.
  *
  * BIOS files live in [biosDir] (the spike's filesDir/bios/). The
  * library only reads them; picking/copying stays in the UI (SAF).
@@ -37,13 +42,37 @@ data class GameEntry(
     val files: List<String>,
     /** Epoch millis the game was (first) added; stable sort tiebreak. */
     val addedAt: Long,
+    /** Per-game system mode ("aes", "mvs", "cd", "cdz"), or null for the type default. */
+    val mode: String? = null,
 ) {
     /** The file the core loads: the main file's path under [gamesDir]. */
     fun mainPath(gamesDir: File): File = File(gamesDir, mainFile)
 
     /** True when the main file is a cue sheet (its data files travel with it). */
     val isCue: Boolean get() = mainFile.lowercase().endsWith(".cue")
+
+    /** True for the disc games (cue sheets and single-file images). */
+    val isDisc: Boolean get() = isCue || mainFile.lowercase().endsWith(".chd")
+
+    /** The mode this game boots with: the stored mode, or the type default (Home console for carts, Neo Geo CDZ for discs). */
+    val effectiveMode: String get() = mode ?: if (isDisc) "cdz" else "aes"
 }
+
+/** Display label for a system mode value. */
+fun modeLabel(mode: String): String = when (mode) {
+    "aes" -> "Home console"
+    "mvs" -> "Arcade"
+    "cd" -> "Neo Geo CD"
+    "cdz" -> "Neo Geo CDZ"
+    else -> mode
+}
+
+/** The modes a game can boot with: the two cart systems, or the two disc systems. */
+fun modesFor(entry: GameEntry): List<String> =
+    if (entry.isDisc) listOf("cd", "cdz") else listOf("aes", "mvs")
+
+/** The system modes a stored mode value may hold. */
+val KNOWN_MODES: Set<String> = setOf("aes", "mvs", "cd", "cdz")
 
 data class BiosStatus(
     val home: Boolean, // aes.zip
@@ -126,17 +155,28 @@ class GameLibrary(
         return all
     }
 
-    /** Add or replace a game (deduplicate by main file name). Files must already be in [gamesDir]. */
+    /** Add or replace a game (deduplicate by main file name). Files must already be in [gamesDir]. A re-import keeps the game's stored mode. */
     fun register(mainFile: String, files: List<String>): GameEntry {
+        val existing = load().find { it.mainFile == mainFile }
         val entry = GameEntry(
             mainFile = mainFile,
             displayName = displayNameFor(mainFile),
             files = files,
             addedAt = System.currentTimeMillis(),
+            mode = existing?.mode,
         )
         val all = load().filter { it.mainFile != mainFile } + entry
         save(all.sortedWith(compareBy({ it.displayName.lowercase() }, { it.addedAt })))
         return entry
+    }
+
+    /** Set (or clear, with null) a game's system mode; returns the updated entry. */
+    fun setMode(entry: GameEntry, mode: String?): GameEntry {
+        require(mode == null || mode in KNOWN_MODES) { "unknown mode: $mode" }
+        val updated = entry.copy(mode = mode)
+        val all = load().filter { it.mainFile != entry.mainFile } + updated
+        save(all.sortedWith(compareBy({ it.displayName.lowercase() }, { it.addedAt })))
+        return updated
     }
 
     /** Remove a game from the library and delete its stored files. */
@@ -167,16 +207,18 @@ class GameLibrary(
     }
 
     /**
-     * Whether a game can boot under the core's current defaults:
-     * carts boot on the home console (aes.zip); cue/chd games boot
-     * on the Neo Geo CDZ (neocdz.zip, the core's default). If this
-     * is false the UI says so instead of starting a game that cannot
-     * load; the core's own load error still surfaces if it fails.
+     * Whether a game can boot under its effective mode: Home console
+     * needs aes.zip, Arcade needs neogeo.zip, Neo Geo CD needs
+     * neocd.zip, Neo Geo CDZ needs neocdz.zip. If this is false the
+     * UI says so instead of starting a game that cannot load; the
+     * core's own load error still surfaces if it fails.
      */
-    fun biosReadyFor(mainFile: String, status: BiosStatus): Boolean {
-        return when (mainFile.substringAfterLast('.', "").lowercase()) {
-            "neo" -> status.home
-            "cue", "chd" -> status.system1995
+    fun biosReadyFor(entry: GameEntry, status: BiosStatus): Boolean {
+        return when (entry.effectiveMode) {
+            "aes" -> status.home
+            "mvs" -> status.arcade
+            "cd" -> status.system1994
+            "cdz" -> status.system1995
             else -> false
         }
     }
@@ -262,14 +304,20 @@ class GameLibrary(
             for (line in storeFile.readLines()) {
                 if (line.isBlank()) continue
                 val parts = line.split('|')
-                if (parts.size != 4) continue
+                // Four fields: written before per-game modes existed.
+                if (parts.size != 4 && parts.size != 5) continue
                 val main = parts[0].trim()
                 val name = parts[1].trim()
                 val added = parts[2].trim().toLongOrNull() ?: continue
                 val files = parts[3].split(',').map { it.trim() }.filter { it.isNotEmpty() }
                 if (main.isEmpty() || name.isEmpty() || files.isEmpty()) continue
                 if (files[0] != main) continue
-                out.add(GameEntry(main, name, files, added))
+                val mode = if (parts.size == 5) {
+                    parts[4].trim().ifEmpty { null }?.takeIf { it in KNOWN_MODES }
+                } else {
+                    null
+                }
+                out.add(GameEntry(main, name, files, added, mode))
             }
         } catch (_: Exception) {
             return emptyList()
@@ -282,7 +330,7 @@ class GameLibrary(
             storeFile.parentFile?.mkdirs()
             val text = entries.joinToString("\n") { e ->
                 val safeName = e.displayName.replace('|', ' ').replace('\n', ' ').trim()
-                "${e.mainFile}|$safeName|${e.addedAt}|${e.files.joinToString(",")}"
+                "${e.mainFile}|$safeName|${e.addedAt}|${e.files.joinToString(",")}|${e.mode ?: ""}"
             }
             storeFile.writeText(if (text.isEmpty()) "" else text + "\n")
         } catch (_: Exception) {
