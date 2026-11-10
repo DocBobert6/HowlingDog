@@ -119,25 +119,31 @@ fun GameTile(
                 fontWeight = FontWeight.Black,
             )
         }
-        Text(
-            text = entry.displayName,
-            color = Color(EraUi.Palette.TEXT),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            style = TextStyle(
-                shadow = Shadow(
-                    color = Color.Black,
-                    offset = Offset(1f, 1f),
-                    blurRadius = 2f,
+        // Audit fix (c): the name is only drawn when there is no
+        // art — the box art already carries the title, so printing
+        // the filename stem over it clashed with it. The typographic
+        // tile (cover == null) keeps its name as before.
+        if (cover == null) {
+            Text(
+                text = entry.displayName,
+                color = Color(EraUi.Palette.TEXT),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                style = TextStyle(
+                    shadow = Shadow(
+                        color = Color.Black,
+                        offset = Offset(1f, 1f),
+                        blurRadius = 2f,
+                    ),
                 ),
-            ),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(6.dp),
-        )
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(6.dp),
+            )
+        }
     }
 }
 
@@ -181,21 +187,27 @@ fun SelectedPortrait(
                 .fillMaxSize()
                 .padding(12.dp),
         ) {
-            Text(
-                text = entry.displayName,
-                color = Color(EraUi.Palette.TEXT),
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Black,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                style = TextStyle(
-                    shadow = Shadow(
-                        color = Color.Black,
-                        offset = Offset(1f, 1f),
-                        blurRadius = 3f,
+            // Audit fix (c): same as GameTile — the name is only
+            // drawn when there is no art. The system label below
+            // stays: it is not part of the art, it says which system
+            // the game will run on.
+            if (cover == null) {
+                Text(
+                    text = entry.displayName,
+                    color = Color(EraUi.Palette.TEXT),
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = TextStyle(
+                        shadow = Shadow(
+                            color = Color.Black,
+                            offset = Offset(1f, 1f),
+                            blurRadius = 3f,
+                        ),
                     ),
-                ),
-            )
+                )
+            }
             Text(
                 text = modeLabel(entry.effectiveMode),
                 color = Color(EraUi.Palette.TEXT),
