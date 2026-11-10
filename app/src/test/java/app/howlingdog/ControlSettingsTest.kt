@@ -105,6 +105,24 @@ class ControlSettingsTest {
     }
 
     @Test
+    fun leftControlDefaultsToStickAndRoundTrips() {
+        val s = ControlSettings(MapStore())
+        assertEquals(LeftControl.STICK, s.leftControl())
+        s.setLeftControl(LeftControl.DPAD)
+        assertEquals(LeftControl.DPAD, s.leftControl())
+        s.setLeftControl(LeftControl.STICK)
+        assertEquals(LeftControl.STICK, s.leftControl())
+    }
+
+    @Test
+    fun invalidLeftControlFallsBackToStick() {
+        val store = MapStore()
+        store.put(ControlSettings.KEY_LEFT_CONTROL, "joystick")
+        val s = ControlSettings(store)
+        assertEquals(LeftControl.STICK, s.leftControl())
+    }
+
+    @Test
     fun buttonOffsetsDefaultToNone() {
         val s = ControlSettings(MapStore())
         assertEquals(emptyMap<String, Pair<Float, Float>>(), s.buttonOffsets())

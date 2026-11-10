@@ -27,6 +27,12 @@ enum class ControlSize(val scale: Float) {
     LARGE(1.18f),
 }
 
+/** The on-screen left control: the arcade stick, or the 8-way D-pad. */
+enum class LeftControl {
+    STICK,
+    DPAD,
+}
+
 class ControlSettings(private val store: OptionStore) {
 
     companion object {
@@ -35,6 +41,7 @@ class ControlSettings(private val store: OptionStore) {
         const val KEY_SIZE = "controls.size"
         const val KEY_STICK_POS = "controls.stickPos" // "x,y" fractions
         const val KEY_BUTTONS_POS = "controls.buttonsPos"
+        const val KEY_LEFT_CONTROL = "controls.leftControl" // "stick" / "dpad"
         const val KEY_STICK_SCALE = "controls.stickScale" // float, 0.7..1.5
         const val KEY_BUTTONS_SCALE = "controls.buttonsScale"
         /** Per-button offset overrides, "dx,dy" in dp at scale 1.0
@@ -49,6 +56,7 @@ class ControlSettings(private val store: OptionStore) {
         val DEFAULT_HAPTICS = HapticLevel.LIGHT
         const val DEFAULT_OPACITY = 60 // percent — matches the old fixed 0.6 alpha
         val DEFAULT_SIZE = ControlSize.MEDIUM
+        val DEFAULT_LEFT_CONTROL = LeftControl.STICK
         val DEFAULT_STICK_POS = ControlPosition(0.14f, 0.72f)
         val DEFAULT_BUTTONS_POS = ControlPosition(0.86f, 0.72f)
         const val DEFAULT_GROUP_SCALE = 1.0f
@@ -94,6 +102,19 @@ class ControlSettings(private val store: OptionStore) {
 
     fun setSize(size: ControlSize) {
         store.put(KEY_SIZE, size.name.lowercase())
+    }
+
+    /** The on-screen left control (default the stick). */
+    fun leftControl(): LeftControl {
+        return when (store.get(KEY_LEFT_CONTROL)?.lowercase()) {
+            "dpad", "d-pad" -> LeftControl.DPAD
+            "stick" -> LeftControl.STICK
+            else -> DEFAULT_LEFT_CONTROL
+        }
+    }
+
+    fun setLeftControl(control: LeftControl) {
+        store.put(KEY_LEFT_CONTROL, control.name.lowercase())
     }
 
     fun stickPosition(): ControlPosition = readPosition(KEY_STICK_POS, DEFAULT_STICK_POS)

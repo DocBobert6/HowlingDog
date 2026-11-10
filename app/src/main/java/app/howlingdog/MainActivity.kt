@@ -62,7 +62,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -333,6 +335,8 @@ class MainActivity : ComponentActivity() {
         var hapticsLevel by remember { mutableStateOf(controlSettings.haptics()) }
         var overlayOpacity by remember { mutableStateOf(controlSettings.opacity()) }
         var controlSize by remember { mutableStateOf(controlSettings.size()) }
+        // The on-screen left control (stick or 8-way D-pad).
+        var leftControl by remember { mutableStateOf(controlSettings.leftControl()) }
         var showBoot by remember { mutableStateOf(appSettings.showBoot()) }
         var stickPos by remember { mutableStateOf(controlSettings.stickPosition()) }
         var buttonsPos by remember { mutableStateOf(controlSettings.buttonsPosition()) }
@@ -376,6 +380,7 @@ class MainActivity : ComponentActivity() {
                 hapticsLevel = controlSettings.haptics()
                 overlayOpacity = controlSettings.opacity()
                 controlSize = controlSettings.size()
+                leftControl = controlSettings.leftControl()
                 stickPos = controlSettings.stickPosition()
                 buttonsPos = controlSettings.buttonsPosition()
                 stickScale = controlSettings.stickScale()
@@ -1397,32 +1402,66 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 Modifier
                             }
-                            PsStick(
-                                size = (140f * stickScaleEff).dp,
-                                grabMargin = (16f * stickScaleEff).dp,
-                                baseTop = overlayTheme.stickBaseTop,
-                                baseBottom = overlayTheme.stickBaseBottom,
-                                nubTop = overlayTheme.stickNubTop,
-                                nubBottom = overlayTheme.stickNubBottom,
-                                accent = overlayTheme.accent,
-                                onDirection = { mask ->
-                                    held = held.copy(
-                                        up = mask and (1 shl InputMask.JOY_UP) != 0,
-                                        down = mask and (1 shl InputMask.JOY_DOWN) != 0,
-                                        left = mask and (1 shl InputMask.JOY_LEFT) != 0,
-                                        right = mask and (1 shl InputMask.JOY_RIGHT) != 0,
-                                    )
-                                    pushMask()
-                                },
-                                onDirectionChange = { mask ->
-                                    if (mask != 0) playHaptic()
-                                },
-                                enabled = !editControls,
-                                modifier = Modifier
-                                    .offset { stickOffset }
-                                    .size(stickTouchDp.dp)
-                                    .then(stickDrag),
-                            )
+                            // The left control: the arcade stick, or
+                            // the 8-way D-pad (Settings toggle). Both
+                            // sit in the same slot, at the same
+                            // position and size, and both drive the
+                            // same direction mask.
+                            if (leftControl == LeftControl.DPAD) {
+                                Dpad(
+                                    size = (140f * stickScaleEff).dp,
+                                    grabMargin = (16f * stickScaleEff).dp,
+                                    baseTop = overlayTheme.stickBaseTop,
+                                    baseBottom = overlayTheme.stickBaseBottom,
+                                    armTop = overlayTheme.stickNubTop,
+                                    armBottom = overlayTheme.stickNubBottom,
+                                    accent = overlayTheme.accent,
+                                    onDirection = { mask ->
+                                        held = held.copy(
+                                            up = mask and (1 shl InputMask.JOY_UP) != 0,
+                                            down = mask and (1 shl InputMask.JOY_DOWN) != 0,
+                                            left = mask and (1 shl InputMask.JOY_LEFT) != 0,
+                                            right = mask and (1 shl InputMask.JOY_RIGHT) != 0,
+                                        )
+                                        pushMask()
+                                    },
+                                    onDirectionChange = { mask ->
+                                        if (mask != 0) playHaptic()
+                                    },
+                                    enabled = !editControls,
+                                    modifier = Modifier
+                                        .offset { stickOffset }
+                                        .size(stickTouchDp.dp)
+                                        .then(stickDrag),
+                                )
+                            } else {
+                                PsStick(
+                                    size = (140f * stickScaleEff).dp,
+                                    grabMargin = (16f * stickScaleEff).dp,
+                                    baseTop = overlayTheme.stickBaseTop,
+                                    baseBottom = overlayTheme.stickBaseBottom,
+                                    nubTop = overlayTheme.stickNubTop,
+                                    nubBottom = overlayTheme.stickNubBottom,
+                                    accent = overlayTheme.accent,
+                                    onDirection = { mask ->
+                                        held = held.copy(
+                                            up = mask and (1 shl InputMask.JOY_UP) != 0,
+                                            down = mask and (1 shl InputMask.JOY_DOWN) != 0,
+                                            left = mask and (1 shl InputMask.JOY_LEFT) != 0,
+                                            right = mask and (1 shl InputMask.JOY_RIGHT) != 0,
+                                        )
+                                        pushMask()
+                                    },
+                                    onDirectionChange = { mask ->
+                                        if (mask != 0) playHaptic()
+                                    },
+                                    enabled = !editControls,
+                                    modifier = Modifier
+                                        .offset { stickOffset }
+                                        .size(stickTouchDp.dp)
+                                        .then(stickDrag),
+                                )
+                            }
                             // Neo Geo buttons, placed by the theme
                             // layout's offsets (AES arc, MVS BCD/A,
                             // CD diamond, or the 2x2 grid) — each
@@ -1609,6 +1648,22 @@ class MainActivity : ComponentActivity() {
                         controlSettings.setSize(size)
                         controlSize = size
                     }
+                    ControlDropdownRow(
+                        "Left control",
+                        listOf(
+                            "stick" to "Joystick",
+                            "dpad" to "D-pad",
+                        ),
+                        leftControl.name.lowercase(),
+                    ) { value ->
+                        val control = LeftControl.valueOf(value.uppercase())
+                        controlSettings.setLeftControl(control)
+                        leftControl = control
+                    }
+                    Text(
+                        "The D-pad is eight-way, like the stick — its corners are diagonals. It never switches to four-way.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2049,6 +2104,179 @@ class MainActivity : ComponentActivity() {
                     center = nubCentre,
                     style = Stroke(width = 1.dp.toPx()),
                 )
+            }
+        }
+    }
+
+    /**
+     * The 8-way D-pad: the alternative left control (Settings
+     * toggle). This is NOT the old four-way D-pad (Robert called
+     * that one too simple): it is an eight-way pad with working
+     * diagonals, using exactly the stick's logic — the same 0.22
+     * dead zone and the same 0.35 square-gate diagonal band
+     * ([DpadInput], which delegates to [StickInput]). A press in a
+     * corner reports both directions; a press on an edge reports
+     * the one direction.
+     *
+     * The look: a rounded-square base with a plus (cross) on top,
+     * in the per-system theme's colours (maroon on the stick
+     * systems, grey on the CD systems, gold hairline). The pressed
+     * direction(s) light up in gold — for a diagonal, two dots.
+     * The pad is fixed in place (it never follows the thumb):
+     * press anywhere inside it and the direction comes from the
+     * press offset, like the stick; sliding the thumb across
+     * zones changes the direction; release clears it. A cancelled
+     * gesture clears it too, in the finally block. Only one
+     * pointer is tracked, so a second thumb on the buttons cannot
+     * steal the pad. It sits in the same slot as the stick —
+     * same size, position, drag/resize handling.
+     */
+    @Composable
+    private fun Dpad(
+        size: Dp, // base size (same slot as the stick)
+        grabMargin: Dp,
+        baseTop: Int = EraUi.Palette.MAROON,
+        baseBottom: Int = EraUi.Palette.SURFACE_RAISED,
+        armTop: Int = EraUi.Palette.MAROON_LIGHT,
+        armBottom: Int = EraUi.Palette.MAROON,
+        accent: Int = EraUi.Palette.GOLD,
+        onDirection: (Int) -> Unit,
+        onDirectionChange: (Int) -> Unit,
+        modifier: Modifier = Modifier,
+        enabled: Boolean = true,
+    ) {
+        val density = LocalDensity.current
+        val touchPx = with(density) { (size + grabMargin * 2).toPx() }
+        val baseR = touchPx / 2f - with(density) { grabMargin.toPx() }
+        var heldMask by remember { mutableStateOf(0) }
+        Box(
+            modifier = modifier
+                .pointerInput(enabled, touchPx) {
+                    if (!enabled) return@pointerInput
+                    awaitPointerEventScope {
+                        var activeId: PointerId? = null
+                        var lastMask = 0
+                        fun setDirection(mask: Int) {
+                            if (mask != lastMask) {
+                                lastMask = mask
+                                heldMask = mask
+                                onDirection(mask)
+                                if (mask != 0) onDirectionChange(mask)
+                            }
+                        }
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                when (event.type) {
+                                    PointerEventType.Press -> {
+                                        if (activeId == null) {
+                                            val change = event.changes
+                                                .firstOrNull { it.pressed }
+                                            if (change != null) {
+                                                activeId = change.id
+                                                setDirection(
+                                                    DpadInput.directionFromPress(
+                                                        change.position.x,
+                                                        change.position.y,
+                                                        touchPx,
+                                                    ),
+                                                )
+                                            }
+                                        }
+                                    }
+                                    PointerEventType.Move -> {
+                                        val id = activeId ?: continue
+                                        val change = event.changes
+                                            .firstOrNull { it.id == id }
+                                        if (change != null && change.pressed) {
+                                            setDirection(
+                                                DpadInput.directionFromPress(
+                                                    change.position.x,
+                                                    change.position.y,
+                                                    touchPx,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                    PointerEventType.Release,
+                                    PointerEventType.Exit -> {
+                                        val id = activeId
+                                        if (id != null && event.changes.any { it.id == id }) {
+                                            activeId = null
+                                            setDirection(0)
+                                        }
+                                    }
+                                }
+                            }
+                        } finally {
+                            activeId = null
+                            setDirection(0)
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val centre = Offset(this.size.width / 2f, this.size.height / 2f)
+                val gold = Color(accent)
+                // Base: a rounded square, lighter at the top.
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        listOf(Color(baseTop), Color(baseBottom)),
+                        startY = centre.y - baseR,
+                        endY = centre.y + baseR,
+                    ),
+                    topLeft = Offset(centre.x - baseR, centre.y - baseR),
+                    size = Size(baseR * 2f, baseR * 2f),
+                    cornerRadius = CornerRadius(baseR * 0.25f),
+                )
+                drawRoundRect(
+                    color = gold.copy(alpha = 0.6f),
+                    topLeft = Offset(centre.x - baseR, centre.y - baseR),
+                    size = Size(baseR * 2f, baseR * 2f),
+                    cornerRadius = CornerRadius(baseR * 0.25f),
+                    style = Stroke(width = 1.dp.toPx()),
+                )
+                // The plus: a vertical bar and a horizontal bar,
+                // each 1/3 of the base wide.
+                val armW = baseR * 2f / 3f
+                val armLen = baseR * 2f
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        listOf(Color(armTop), Color(armBottom)),
+                        startY = centre.y - baseR,
+                        endY = centre.y + baseR,
+                    ),
+                    topLeft = Offset(centre.x - armW / 2f, centre.y - baseR),
+                    size = Size(armW, armLen),
+                    cornerRadius = CornerRadius(armW / 2f),
+                )
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        listOf(Color(armTop), Color(armBottom)),
+                        startY = centre.y - armW / 2f,
+                        endY = centre.y + armW / 2f,
+                    ),
+                    topLeft = Offset(centre.x - baseR, centre.y - armW / 2f),
+                    size = Size(armLen, armW),
+                    cornerRadius = CornerRadius(armW / 2f),
+                )
+                // Light up the pressed direction(s): a gold dot
+                // on each pressed arm. A diagonal lights two.
+                val dotR = armW * 0.38f
+                val dotOff = baseR * 0.55f
+                if (heldMask and (1 shl InputMask.JOY_UP) != 0) {
+                    drawCircle(gold, dotR, Offset(centre.x, centre.y - dotOff))
+                }
+                if (heldMask and (1 shl InputMask.JOY_DOWN) != 0) {
+                    drawCircle(gold, dotR, Offset(centre.x, centre.y + dotOff))
+                }
+                if (heldMask and (1 shl InputMask.JOY_LEFT) != 0) {
+                    drawCircle(gold, dotR, Offset(centre.x - dotOff, centre.y))
+                }
+                if (heldMask and (1 shl InputMask.JOY_RIGHT) != 0) {
+                    drawCircle(gold, dotR, Offset(centre.x + dotOff, centre.y))
+                }
             }
         }
     }
