@@ -83,6 +83,39 @@ class GamepadInputTest {
     }
 
     @Test
+    fun quickSaveLoadCombos() {
+        // The shoulder buttons are not game inputs (they map to no
+        // joypad bit), so the combos never reach the game and never
+        // conflict with START+SELECT (pause).
+        val l1 = KeyEvent.KEYCODE_BUTTON_L1
+        val r1 = KeyEvent.KEYCODE_BUTTON_R1
+        val l2 = KeyEvent.KEYCODE_BUTTON_L2
+        val r2 = KeyEvent.KEYCODE_BUTTON_R2
+        assertTrue(GamepadInput.isQuickComboButton(l1))
+        assertTrue(GamepadInput.isQuickComboButton(r1))
+        assertTrue(GamepadInput.isQuickComboButton(l2))
+        assertTrue(GamepadInput.isQuickComboButton(r2))
+        assertFalse(GamepadInput.isQuickComboButton(KeyEvent.KEYCODE_BUTTON_A))
+        assertFalse(GamepadInput.isQuickComboButton(KeyEvent.KEYCODE_BUTTON_START))
+        // Quick save: both bumpers together. Extra held buttons do
+        // not cancel it — the activity fires the pair that just
+        // completed, one key-down event at a time.
+        assertTrue(GamepadInput.isQuickSaveCombo(setOf(l1, r1)))
+        assertTrue(GamepadInput.isQuickSaveCombo(setOf(l1, r1, l2)))
+        assertFalse(GamepadInput.isQuickSaveCombo(setOf(l1)))
+        assertFalse(GamepadInput.isQuickSaveCombo(setOf(r1)))
+        assertFalse(GamepadInput.isQuickSaveCombo(setOf(l2, r2)))
+        assertFalse(GamepadInput.isQuickSaveCombo(emptySet()))
+        // Quick load: both triggers together.
+        assertTrue(GamepadInput.isQuickLoadCombo(setOf(l2, r2)))
+        assertTrue(GamepadInput.isQuickLoadCombo(setOf(l2, r2, l1)))
+        assertFalse(GamepadInput.isQuickLoadCombo(setOf(l2)))
+        assertFalse(GamepadInput.isQuickLoadCombo(setOf(r2)))
+        assertFalse(GamepadInput.isQuickLoadCombo(setOf(l1, r1)))
+        assertFalse(GamepadInput.isQuickLoadCombo(emptySet()))
+    }
+
+    @Test
     fun padMaskCombinesWithTouchMask() {
         // The activity ORs the pad mask with the touch mask; the two
         // never share a bit for the same physical input.

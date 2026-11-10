@@ -94,6 +94,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Phase 5 era skin: the fighting-game select grid (KOF '94/'95,
@@ -141,6 +143,24 @@ class MainActivity : ComponentActivity() {
     private var onPadMask: ((Int) -> Unit)? = null
     /** Set by the UI; called by the START+SELECT pause hotkey. */
     private var onPauseHotkey: (() -> Unit)? = null
+    /** Set by the UI; called by the L1+R1 quick-save and L2+R2 quick-load hotkeys. */
+    private var onQuickSaveHotkey: (() -> Unit)? = null
+    private var onQuickLoadHotkey: (() -> Unit)? = null
+    /**
+     * Shoulder buttons held for the quick-save/load combos (L1/R1/
+     * L2/R2). Tracked separately from padButtonsHeld: they are not
+     * Neo Geo inputs, so they must never reach the game mask, and
+     * they are dropped when the game pauses, so a shoulder held
+     * across a pause cannot fire a combo on resume.
+     */
+    private val padQuickHeld = mutableSetOf<Int>()
+    /**
+     * True while a quick save/load is in progress (set on the main
+     * thread, cleared when it completes). resumeGame() waits it out:
+     * a resume landing mid-snapshot would let retro_run race the
+     * serialize. A second quick trigger while one runs is ignored.
+     */
+    private var quickBusy = false
     /**
      * The GL game view (an Activity field, not composable state,
      * so onPause/onResume can forward to it: a GLSurfaceView
@@ -204,11 +224,31 @@ class MainActivity : ComponentActivity() {
     private fun clearPadState() {
         padButtonsHeld.clear()
         padAxesMask = 0
+        padQuickHeld.clear()
         pushPadMask()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (!inputActive || event.repeatCount != 0) return super.onKeyDown(keyCode, event)
+        // Quick-save/load shoulder combos (L1+R1 / L2+R2): these
+        // buttons are not game inputs, so they are tracked apart
+        // from the joypad mask and never reach the game. The combo
+        // fires when the second button of the pair goes down. This
+        // runs before the isGamepadButton check below, which would
+        // otherwise swallow the shoulder buttons (they map to no
+        // joypad bit).
+        if (GamepadInput.isQuickComboButton(keyCode)) {
+            padQuickHeld.add(keyCode)
+            if (GamepadInput.isQuickSaveCombo(padQuickHeld)) {
+                onQuickSaveHotkey?.invoke()
+                return true
+            }
+            if (GamepadInput.isQuickLoadCombo(padQuickHeld)) {
+                onQuickLoadHotkey?.invoke()
+                return true
+            }
+            return true
+        }
         if (!GamepadInput.isGamepadButton(keyCode)) return super.onKeyDown(keyCode, event)
         // START+SELECT together pauses (the emulator-menu hotkey).
         // Start on its own stays the in-game Start button, and the
@@ -232,6 +272,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (!inputActive) return super.onKeyUp(keyCode, event)
+        if (padQuickHeld.remove(keyCode)) {
+            return true
+        }
         if (padButtonsHeld.remove(keyCode)) {
             pushPadMask()
             return true
@@ -295,6 +338,10 @@ class MainActivity : ComponentActivity() {
         var settingsFrom by remember { mutableStateOf(Screen.Library) }
         var paused by remember { mutableStateOf(false) }
         var pauseStatus by remember { mutableStateOf("") }
+        // Quick save/load status: a brief note on the game screen
+        // ("Saved." / "Loaded." / "No save yet."), cleared after a
+        // couple of seconds. The pause menu keeps its own status.
+        var quickStatus by remember { mutableStateOf("") }
         // Phase 5 — era skin state. The select grid's picked game is
         // a main-file name, derived fresh from `games` below, so it
         // never goes stale when the library reloads. The countdowns
@@ -447,6 +494,17 @@ class MainActivity : ComponentActivity() {
                 timeLeft = t
             }
         }
+        // Quick save/load status: a brief note on the game screen,
+        // cleared after a couple of seconds. The effect restarts
+        // when the status changes, so a second quick action
+        // re-arms the timer instead of being cleared early.
+        LaunchedEffect(quickStatus) {
+            if (quickStatus.isNotEmpty()) {
+                delay(2000)
+                quickStatus = ""
+            }
+        }
+
         // Pause countdown: the same treatment, only while paused.
         LaunchedEffect(paused) {
             if (!paused) return@LaunchedEffect
@@ -525,6 +583,10 @@ class MainActivity : ComponentActivity() {
         fun pauseGame() {
             if (session == null || paused) return
             inputActive = false
+            // Drop any shoulder buttons held for a quick-save/load
+            // combo, so one held across the pause cannot fire a
+            // combo the moment the game resumes.
+            padQuickHeld.clear()
             session?.pause()
             paused = true
             pauseStatus = ""
@@ -532,15 +594,20 @@ class MainActivity : ComponentActivity() {
 
         fun resumeGame() {
             if (!paused) return
+            // A quick save/load owns the paused session until it
+            // finishes; resuming mid-snapshot would let retro_run
+            // race the serialize. The pause menu stays open and the
+            // Resume tap is simply re-tried once it completes.
+            if (quickBusy) return
             session?.resume()
             paused = false
             pauseStatus = ""
             inputActive = true
         }
 
-        /** One save slot per game, in the saves folder. */
+        /** One save slot per game, in the saves folder (shared by the pause menu and quick save/load). */
         fun stateFileFor(entry: GameEntry): File =
-            File(File(context.filesDir, "saves"), "${entry.mainFile}.state")
+            QuickSave.stateFile(File(context.filesDir, "saves"), entry.mainFile)
 
         fun saveState() {
             val game = playingGame ?: return
@@ -579,6 +646,106 @@ class MainActivity : ComponentActivity() {
                 resumeGame()
             } else {
                 pauseStatus = "That save doesn't match this game setup."
+            }
+        }
+
+        /**
+         * Quick save/load: save and load the per-game state slot
+         * instantly, without opening the pause menu. The slot is
+         * the SAME file the pause menu uses (stateFileFor), so the
+         * two paths always see the same state; there is no second
+         * slot.
+         *
+         * The game is paused only for the snapshot itself, and
+         * resumes right after, so gameplay is interrupted for a
+         * fraction of a second at most. The serialize runs on the
+         * emu thread (via postPausedTask, which can never race
+         * retro_run) and the blocking work (the pause wait, the
+         * file IO) runs on a worker thread — the UI thread is never
+         * blocked. A quick load with no save yet shows "No save
+         * yet." and touches nothing (the game is not even paused).
+         * A second quick trigger while one is in progress is
+         * ignored, and resumeGame() waits one out (see quickBusy).
+         */
+        fun quickSave() {
+            val game = playingGame ?: return
+            val s = session ?: return
+            if (paused || quickBusy) return
+            quickBusy = true
+            lifecycleScope.launch(Dispatchers.Default) {
+                s.pause()
+                val file = stateFileFor(game)
+                val done = CountDownLatch(1)
+                var ok = false
+                s.postPausedTask {
+                    val bytes = s.serializeState()
+                    ok = if (bytes != null) {
+                        try {
+                            file.parentFile?.mkdirs()
+                            file.writeBytes(bytes)
+                            true
+                        } catch (e: Exception) {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                    done.countDown()
+                }
+                // The task runs on the emu thread within ~50ms of
+                // the pause; the timeout only guards a session that
+                // stopped mid-save (quit), in which case the game is
+                // gone and resume() below is a no-op.
+                if (!done.await(2, TimeUnit.SECONDS)) {
+                    s.postPausedTask { }
+                }
+                withContext(Dispatchers.Main) {
+                    // Only resume if the user has not opened the
+                    // pause menu meanwhile — then the pause menu owns
+                    // the paused session and the quick save must not
+                    // resume it.
+                    if (!paused) s.resume()
+                    quickStatus = if (ok) "Saved." else "Could not save right now."
+                    quickBusy = false
+                }
+            }
+        }
+
+        fun quickLoad() {
+            val game = playingGame ?: return
+            val s = session ?: return
+            if (paused || quickBusy) return
+            val file = stateFileFor(game)
+            if (!QuickSave.loadAvailable(file)) {
+                quickStatus = "No save yet."
+                return
+            }
+            quickBusy = true
+            lifecycleScope.launch(Dispatchers.Default) {
+                val bytes = try {
+                    file.readBytes()
+                } catch (e: Exception) {
+                    null
+                }
+                s.pause()
+                val done = CountDownLatch(1)
+                var ok = false
+                s.postPausedTask {
+                    ok = bytes != null && s.unserializeState(bytes)
+                    done.countDown()
+                }
+                if (!done.await(2, TimeUnit.SECONDS)) {
+                    s.postPausedTask { }
+                }
+                withContext(Dispatchers.Main) {
+                    if (!paused) s.resume()
+                    quickStatus = when {
+                        bytes == null -> "Could not read the save."
+                        ok -> "Loaded."
+                        else -> "That save doesn't match this game setup."
+                    }
+                    quickBusy = false
+                }
             }
         }
 
@@ -621,9 +788,13 @@ class MainActivity : ComponentActivity() {
         DisposableEffect(Unit) {
             onPadMask = { mask -> padMask = mask; pushMask() }
             onPauseHotkey = { pauseGame() }
+            onQuickSaveHotkey = { quickSave() }
+            onQuickLoadHotkey = { quickLoad() }
             onDispose {
                 onPadMask = null
                 onPauseHotkey = null
+                onQuickSaveHotkey = null
+                onQuickLoadHotkey = null
             }
         }
 
@@ -1123,7 +1294,18 @@ class MainActivity : ComponentActivity() {
                                 Button(onClick = { exitEditMode() }) { Text("Done") }
                             }
                         } else {
-                            Button(onClick = { pauseGame() }) { Text("Pause") }
+                            // Quick save/load sit beside Pause, in
+                            // the title row — never over the game area
+                            // and never fighting the stick or the
+                            // buttons. They write and read the same
+                            // per-game slot the pause menu uses.
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Button(onClick = { quickSave() }) { Text("SAVE") }
+                                Spacer(Modifier.width(8.dp))
+                                Button(onClick = { quickLoad() }) { Text("LOAD") }
+                                Spacer(Modifier.width(8.dp))
+                                Button(onClick = { pauseGame() }) { Text("Pause") }
+                            }
                         }
                     }
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -1624,6 +1806,26 @@ class MainActivity : ComponentActivity() {
                                     .align(Alignment.TopCenter)
                                     .background(Color.Black.copy(alpha = 0.6f))
                                     .padding(4.dp),
+                            )
+                        }
+                        // Quick save/load status: a brief note over
+                        // the game area, cleared after a couple of
+                        // seconds (see the LaunchedEffect above).
+                        // Hidden while paused — the pause menu has
+                        // its own status line.
+                        if (quickStatus.isNotEmpty() && !paused) {
+                            Text(
+                                quickStatus,
+                                color = Color(EraUi.Palette.GOLD),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 8.dp)
+                                    .background(
+                                        Color(EraUi.Palette.SURFACE),
+                                        RoundedCornerShape(4.dp),
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
                             )
                         }
                         // Pause overlay: covers the game and the

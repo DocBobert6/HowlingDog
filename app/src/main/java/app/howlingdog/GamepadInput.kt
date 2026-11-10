@@ -45,6 +45,28 @@ object GamepadInput {
     /** True when this key is a gamepad button we map. */
     fun isGamepadButton(keyCode: Int): Boolean = maskForButton(keyCode) != 0
 
+    /** True for a shoulder button used by the quick-save/load combos: not a Neo Geo input. */
+    fun isQuickComboButton(keyCode: Int): Boolean = when (keyCode) {
+        KeyEvent.KEYCODE_BUTTON_L1,
+        KeyEvent.KEYCODE_BUTTON_R1,
+        KeyEvent.KEYCODE_BUTTON_L2,
+        KeyEvent.KEYCODE_BUTTON_R2 -> true
+        else -> false
+    }
+
+    /**
+     * Quick-save combo: both shoulder bumpers held together (L1+R1).
+     * Quick-load combo: both triggers held together (L2+R2). The
+     * shoulder buttons are not Neo Geo inputs, so the combos never
+     * reach the game and never conflict with START+SELECT (pause).
+     * [held] is the set of gamepad keycodes currently held.
+     */
+    fun isQuickSaveCombo(held: Set<Int>): Boolean =
+        KeyEvent.KEYCODE_BUTTON_L1 in held && KeyEvent.KEYCODE_BUTTON_R1 in held
+
+    fun isQuickLoadCombo(held: Set<Int>): Boolean =
+        KeyEvent.KEYCODE_BUTTON_L2 in held && KeyEvent.KEYCODE_BUTTON_R2 in held
+
     /**
      * Direction bits from the stick/hat axis values, with the dead
      * zone. Negative X is left, positive X right; negative Y is up,

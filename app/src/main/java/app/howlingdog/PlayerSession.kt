@@ -48,6 +48,27 @@ class PlayerSession(
     @Volatile
     private var inFrame = false
 
+    /**
+     * A one-shot task the emu thread runs while paused (see
+     * [postPausedTask]). Held in a volatile so any thread can queue
+     * it; the emu loop takes it exactly once.
+     */
+    @Volatile
+    private var pausedTask: (() -> Unit)? = null
+
+    /**
+     * Queue a task to run on the emu thread the next time it is
+     * paused. The task runs on the emu thread itself, so it can
+     * safely call [serializeState]/[unserializeState] (which must
+     * never race retro_run). Only one task is held; a new one
+     * replaces a pending one, and a task queued after the session
+     * stops is dropped. The caller must have paused the session
+     * first (or the task waits for the next pause).
+     */
+    fun postPausedTask(task: () -> Unit) {
+        pausedTask = task
+    }
+
     private var emuThread: Thread? = null
     private var audioThread: Thread? = null
     private var audioTrack: AudioTrack? = null
@@ -202,6 +223,19 @@ class PlayerSession(
 
         while (running) {
             if (paused) {
+                // A task queued for the paused emu thread (quick
+                // save/load): run it here, on the emu thread
+                // itself, so a state snapshot can never race
+                // retro_run. One-shot: taken before it runs, so a
+                // task that re-queues itself cannot loop.
+                pausedTask?.let { task ->
+                    pausedTask = null
+                    try {
+                        task()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "paused task failed", e)
+                    }
+                }
                 // Idle: no retro_run, no new frames. The last frame
                 // stays on screen behind the pause screen.
                 try {
