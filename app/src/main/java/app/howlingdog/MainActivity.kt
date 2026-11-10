@@ -1097,15 +1097,24 @@ class MainActivity : ComponentActivity() {
                                 (stickPos.x * boxW - stickTouchPx / 2).roundToInt(),
                                 (stickPos.y * boxH - stickTouchPx / 2).roundToInt(),
                             )
+                            // Per-system overlay theme: the button
+                            // arrangement and colours for the game
+                            // being played (AES arc, MVS BCD/A, CD
+                            // diamond) and the stick's colours.
+                            // Appearance only — the input is identical
+                            // on all four systems.
+                            val overlayTheme = OverlayTheme.themeFor(
+                                playingGame?.effectiveMode ?: "aes",
+                            )
+                            val buttonOffsets =
+                                OverlayTheme.buttonOffsets(overlayTheme.layout)
                             // Button cluster geometry (dp, scaled):
-                            // 2x2 of 56dp buttons, 8dp gaps, then a
-                            // 12dp gap and the 48dp Coin/Start row.
-                            val buttonDp = 56f * buttonsScaleEff
-                            val smallDp = 48f * buttonsScaleEff
-                            val gapDp = 8f * buttonsScaleEff
-                            val rowGapDp = 12f * buttonsScaleEff
-                            val buttonsWdp = 2 * buttonDp + gapDp
-                            val buttonsHdp = 2 * buttonDp + gapDp + rowGapDp + smallDp
+                            // the theme layout's bounding box at
+                            // scale 1, times the effective scale.
+                            val (clusterWdp1, clusterHdp1) =
+                                OverlayTheme.clusterSize(overlayTheme.layout)
+                            val buttonsWdp = clusterWdp1 * buttonsScaleEff
+                            val buttonsHdp = clusterHdp1 * buttonsScaleEff
                             val buttonsWPx = with(density) { buttonsWdp.dp.toPx() }
                             val buttonsHPx = with(density) { buttonsHdp.dp.toPx() }
                             val buttonsOffset = IntOffset(
@@ -1147,6 +1156,8 @@ class MainActivity : ComponentActivity() {
                             val stickTouchPxState = rememberUpdatedState(stickTouchPx)
                             val buttonsWPxState = rememberUpdatedState(buttonsWPx)
                             val buttonsHPxState = rememberUpdatedState(buttonsHPx)
+                            val clusterSizeState =
+                                rememberUpdatedState(OverlayTheme.clusterSize(overlayTheme.layout))
                             val presetScaleState = rememberUpdatedState(controlSize.scale)
                             val handlePx = with(density) { 28.dp.toPx() }
                             val handlePxState = rememberUpdatedState(handlePx)
@@ -1241,15 +1252,16 @@ class MainActivity : ComponentActivity() {
                                                             ControlSettings.MAX_GROUP_SCALE,
                                                         )
                                                     buttonsScale = newScale
-                                                    // Cluster width 120dp, height 180dp
-                                                    // at scale 1 (2x56 + 8 wide;
-                                                    // 2x56 + 8 + 12 + 48 tall).
+                                                    // The cluster's bounding box at scale
+                                                    // 1 comes from the theme layout, so a
+                                                    // resized cluster still fits.
                                                     val eff = presetScaleState.value * newScale
+                                                    val (cw1, ch1) = clusterSizeState.value
                                                     val newWPx = with(density) {
-                                                        (120f * eff).dp.toPx()
+                                                        (cw1 * eff).dp.toPx()
                                                     }
                                                     val newHPx = with(density) {
-                                                        (180f * eff).dp.toPx()
+                                                        (ch1 * eff).dp.toPx()
                                                     }
                                                     val halfW = newWPx / 2 / boxW
                                                     val halfH = newHPx / 2 / boxH
@@ -1280,6 +1292,11 @@ class MainActivity : ComponentActivity() {
                             PsStick(
                                 size = (140f * stickScaleEff).dp,
                                 grabMargin = (16f * stickScaleEff).dp,
+                                baseTop = overlayTheme.stickBaseTop,
+                                baseBottom = overlayTheme.stickBaseBottom,
+                                nubTop = overlayTheme.stickNubTop,
+                                nubBottom = overlayTheme.stickNubBottom,
+                                accent = overlayTheme.accent,
                                 onDirection = { mask ->
                                     held = held.copy(
                                         up = mask and (1 shl InputMask.JOY_UP) != 0,
@@ -1298,14 +1315,18 @@ class MainActivity : ComponentActivity() {
                                     .size(stickTouchDp.dp)
                                     .then(stickDrag),
                             )
-                            // Neo Geo buttons (A B / C D) with
-                            // Start / Coin in a row beneath them.
-                            // In edit mode the cluster shows a thin
-                            // outline so it reads as draggable, and
-                            // its buttons stop taking input.
-                            Column(
+                            // Neo Geo buttons, placed by the theme
+                            // layout's offsets (AES arc, MVS BCD/A,
+                            // CD diamond, or the 2x2 grid) — each
+                            // button centred on its offset from the
+                            // cluster centre, in the theme's rainbow
+                            // colours. In edit mode the cluster shows
+                            // a thin outline so it reads as draggable,
+                            // and its buttons stop taking input.
+                            Box(
                                 modifier = Modifier
                                     .offset { buttonsOffset }
+                                    .size(buttonsWdp.dp, buttonsHdp.dp)
                                     .then(buttonsDrag)
                                     .then(
                                         if (editControls) {
@@ -1318,37 +1339,46 @@ class MainActivity : ComponentActivity() {
                                             Modifier
                                         },
                                     ),
-                                horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                Row {
-                                    HoldButton("A", { pressed ->
-                                        held = held.copy(a = pressed); pushMask()
-                                    }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
-                                    Spacer(Modifier.width(gapDp.dp))
-                                    HoldButton("B", { pressed ->
-                                        held = held.copy(b = pressed); pushMask()
-                                    }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
+                                // Top-left of a button, in px, from
+                                // its theme offset (dp at scale 1)
+                                // and the cluster's effective scale.
+                                fun place(id: String): IntOffset {
+                                    val off = buttonOffsets.getValue(id)
+                                    val sizePx = with(density) {
+                                        (OverlayTheme.buttonSize(id) * buttonsScaleEff).dp.toPx()
+                                    }
+                                    return IntOffset(
+                                        (buttonsWPx / 2f +
+                                            with(density) { (off.first * buttonsScaleEff).dp.toPx() } -
+                                            sizePx / 2f).roundToInt(),
+                                        (buttonsHPx / 2f +
+                                            with(density) { (off.second * buttonsScaleEff).dp.toPx() } -
+                                            sizePx / 2f).roundToInt(),
+                                    )
                                 }
-                                Spacer(Modifier.height(gapDp.dp))
-                                Row {
-                                    HoldButton("C", { pressed ->
-                                        held = held.copy(c = pressed); pushMask()
-                                    }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
-                                    Spacer(Modifier.width(gapDp.dp))
-                                    HoldButton("D", { pressed ->
-                                        held = held.copy(d = pressed); pushMask()
-                                    }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
-                                }
-                                Spacer(Modifier.height(rowGapDp.dp))
-                                Row {
-                                    HoldButton("Coin", { pressed ->
-                                        held = held.copy(coin = pressed); pushMask()
-                                    }, small = true, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
-                                    Spacer(Modifier.width(gapDp.dp))
-                                    HoldButton("Start", { pressed ->
-                                        held = held.copy(start = pressed); pushMask()
-                                    }, small = true, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
-                                }
+                                val styleA = overlayTheme.buttonStyles.getValue("A")
+                                val styleB = overlayTheme.buttonStyles.getValue("B")
+                                val styleC = overlayTheme.buttonStyles.getValue("C")
+                                val styleD = overlayTheme.buttonStyles.getValue("D")
+                                HoldButton("A", { pressed ->
+                                    held = held.copy(a = pressed); pushMask()
+                                }, modifier = Modifier.offset { place("A") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls, color = styleA.background, labelColor = styleA.label)
+                                HoldButton("B", { pressed ->
+                                    held = held.copy(b = pressed); pushMask()
+                                }, modifier = Modifier.offset { place("B") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls, color = styleB.background, labelColor = styleB.label)
+                                HoldButton("C", { pressed ->
+                                    held = held.copy(c = pressed); pushMask()
+                                }, modifier = Modifier.offset { place("C") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls, color = styleC.background, labelColor = styleC.label)
+                                HoldButton("D", { pressed ->
+                                    held = held.copy(d = pressed); pushMask()
+                                }, modifier = Modifier.offset { place("D") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls, color = styleD.background, labelColor = styleD.label)
+                                HoldButton("Coin", { pressed ->
+                                    held = held.copy(coin = pressed); pushMask()
+                                }, modifier = Modifier.offset { place("Coin") }, small = true, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
+                                HoldButton("Start", { pressed ->
+                                    held = held.copy(start = pressed); pushMask()
+                                }, modifier = Modifier.offset { place("Start") }, small = true, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
                             }
                             // Resize grips (edit mode only): a visible
                             // "↘" grip at each unit's bottom-end
@@ -1609,6 +1639,10 @@ class MainActivity : ComponentActivity() {
         scale: Float = 1f,
         onHaptic: (() -> Unit)? = null,
         enabled: Boolean = true,
+        /** ARGB background when not held (null = the raised maroon). */
+        color: Int? = null,
+        /** ARGB label when not held (null = the off-white text). */
+        labelColor: Int? = null,
     ) {
         var held by remember { mutableStateOf(false) }
         val size = (if (small) 48.dp else 56.dp) * scale
@@ -1657,7 +1691,8 @@ class MainActivity : ComponentActivity() {
             modifier = modifier
                 .size(size)
                 .background(
-                    if (held) Color(EraUi.Palette.GOLD) else Color(EraUi.Palette.SURFACE_RAISED),
+                    if (held) Color(EraUi.Palette.GOLD)
+                    else color?.let { Color(it) } ?: Color(EraUi.Palette.SURFACE_RAISED),
                     CircleShape,
                 )
                 .then(inputModifier),
@@ -1665,7 +1700,8 @@ class MainActivity : ComponentActivity() {
         ) {
             Text(
                 label,
-                color = if (held) Color(EraUi.Palette.ON_GOLD) else Color(EraUi.Palette.TEXT),
+                color = if (held) Color(EraUi.Palette.ON_GOLD)
+                else labelColor?.let { Color(it) } ?: Color(EraUi.Palette.TEXT),
             )
         }
     }
@@ -1719,8 +1755,13 @@ class MainActivity : ComponentActivity() {
      * offset (clamped to the base radius), so at full
      * deflection its edge sits flush with the base edge.
      * Mariner's frost is near-white; here the discs are
-     * maroon with a gold hairline, so the stick sits in
-     * HowlingDog's palette instead of clashing with it.
+     * maroon with a gold hairline by default, so the stick
+     * sits in HowlingDog's palette instead of clashing with
+     * it. The colours are parameters (baseTop/baseBottom/
+     * nubTop/nubBottom/accent) so the per-system theme can
+     * restyle them — the AES/MVS ball-top is red-tinted,
+     * the CD systems are the pad's grey — without changing
+     * the shape.
      *
      * Behaviour: fixed in place (it never follows the thumb
      * around the screen). Touch down inside the base (plus
@@ -1739,6 +1780,11 @@ class MainActivity : ComponentActivity() {
     private fun PsStick(
         size: Dp, // base diameter
         grabMargin: Dp,
+        baseTop: Int = EraUi.Palette.MAROON,
+        baseBottom: Int = EraUi.Palette.SURFACE_RAISED,
+        nubTop: Int = EraUi.Palette.MAROON_LIGHT,
+        nubBottom: Int = EraUi.Palette.MAROON,
+        accent: Int = EraUi.Palette.GOLD,
         onDirection: (Int) -> Unit,
         onDirectionChange: (Int) -> Unit,
         modifier: Modifier = Modifier,
@@ -1840,7 +1886,7 @@ class MainActivity : ComponentActivity() {
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val centre = Offset(this.size.width / 2f, this.size.height / 2f)
-                val gold = Color(EraUi.Palette.GOLD)
+                val gold = Color(accent)
                 // Soft drop shadow under the base (Mariner's
                 // frostBar carries a 6dp elevation; the game area
                 // is dark, so this only reads on bright game art).
@@ -1851,12 +1897,13 @@ class MainActivity : ComponentActivity() {
                 )
                 // Base: a filled disc, lighter at the top, like
                 // Mariner's frost base — maroon, not frost white,
-                // so it sits in HowlingDog's palette.
+                // so it sits in HowlingDog's palette (or grey on
+                // the CD systems, the pad's shell colour).
                 drawCircle(
                     brush = Brush.verticalGradient(
                         listOf(
-                            Color(EraUi.Palette.MAROON),
-                            Color(EraUi.Palette.SURFACE_RAISED),
+                            Color(baseTop),
+                            Color(baseBottom),
                         ),
                         startY = centre.y - baseR,
                         endY = centre.y + baseR,
@@ -1871,14 +1918,16 @@ class MainActivity : ComponentActivity() {
                     style = Stroke(width = 1.dp.toPx()),
                 )
                 // Nub: a smaller filled disc riding inside the
-                // base, a lighter maroon so it reads against the
-                // base, with the same gold hairline.
+                // base, a lighter shade so it reads against the
+                // base, with the same gold hairline. On the
+                // stick systems the nub is red-tinted (the
+                // ball-top); on the CD systems it is grey.
                 val nubCentre = centre + knob
                 drawCircle(
                     brush = Brush.verticalGradient(
                         listOf(
-                            Color(EraUi.Palette.MAROON_LIGHT),
-                            Color(EraUi.Palette.MAROON),
+                            Color(nubTop),
+                            Color(nubBottom),
                         ),
                         startY = nubCentre.y - knobR,
                         endY = nubCentre.y + knobR,
