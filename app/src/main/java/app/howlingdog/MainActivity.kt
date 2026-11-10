@@ -944,6 +944,27 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Back navigation, one handler for the whole UI (audit fix
+        // for "closing out of a game closes the whole app"): a
+        // single BackHandler, always composed and always
+        // registered, routes by the current screen — instead of a
+        // handler inside each `when` branch, which registers and
+        // unregisters on every screen change and lets a back
+        // press fall through to the Activity's default (finish)
+        // when the branch handler is not the dispatcher's active
+        // callback. The Library and Boot screens have no handler
+        // here, so back there still exits the app, as usual.
+        // Playing: back pauses the game; a second back, from the
+        // pause menu, quits to the library — closing out of a game
+        // returns to the library, never to the Android home screen.
+        BackHandler(enabled = screen == Screen.Playing) {
+            when {
+                editControls -> exitEditMode()
+                paused -> quitToLibrary()
+                else -> pauseGame()
+            }
+        }
+
         when (screen) {
             Screen.Boot -> {
                 // VS-style splash: the icon, HOWLINGDOG, PRESS
@@ -1226,13 +1247,6 @@ class MainActivity : ComponentActivity() {
             }
 
             Screen.Playing -> {
-                BackHandler {
-                    when {
-                        editControls -> exitEditMode()
-                        paused -> resumeGame()
-                        else -> pauseGame()
-                    }
-                }
                 DisposableEffect(Unit) {
                     activity.requestedOrientation =
                         ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
