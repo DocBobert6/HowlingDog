@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,17 +24,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,17 +60,20 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Phase 2 spike UI. Plain Material3, no era skin yet (the
- * fighting-game select grid arrives with the library in Phase 3+).
+ * Phase 3 library UI. Plain Material3, no era skin yet (the
+ * fighting-game select grid arrives in Phase 5).
  *
- * Setup screen: pick a game file (.neo) and a folder holding the
- * BIOS zips. Both are COPIED into app-private storage (the core only
- * reads real file paths): the game to cacheDir/games/, the zips to
- * filesDir/bios/. Nothing is uploaded anywhere.
+ * Library screen (the home screen): the persistent game list, the
+ * system-files status, and import — one game file, or a whole folder
+ * (a folder import brings a cue's data files with it). Games are
+ * COPIED into app-private storage (the core only reads real file
+ * paths): games to filesDir/games/, system files to filesDir/bios/.
+ * Nothing is uploaded anywhere. A game is a game: the list shows
+ * names only, never a media type, and the UI never says the banned
+ * words for the 1990s systems.
  *
- * Game screen: the frame, plus minimal touch controls (directions,
- * A/B/C/D, Start, Coin) — just enough to prove input reaches the
- * core and the game can be steered.
+ * Game screen: the frame, plus the touch controls floating over it
+ * (directions, A/B/C/D, Start, Coin) — just enough to play.
  *
  * No native code is touched here: Bridge loads its libraries lazily
  * when a game starts, so this activity launches with no native code
@@ -72,12 +81,9 @@ import java.io.FileOutputStream
  *
  * Rotation: MainActivity declares configChanges in the manifest, so
  * entering the game screen's forced landscape does not recreate the
- * activity. The picked game/BIOS state is rememberSaveable as a
- * second brace — the Phase 2 device test showed the picks vanishing
- * when the rotation recreated the activity (Start flashed back to a
- * fresh setup screen). screen/held/gameView stay plain remember:
- * if the activity is ever recreated, the safe fallback is the setup
- * screen with the session stopped.
+ * activity. The library itself lives on disk (GameLibrary), so a
+ * recreation loses nothing — the safe fallback is the library screen
+ * with the session stopped.
  */
 class MainActivity : ComponentActivity() {
 
@@ -88,7 +94,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    SpikeUi()
+                    HowlingDogUi()
                 }
             }
         }
@@ -100,7 +106,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private enum class Screen { Setup, Playing }
+    private enum class Screen { Library, Playing }
 
     private data class Held(
         val up: Boolean = false,
@@ -116,21 +122,41 @@ class MainActivity : ComponentActivity() {
     )
 
     @Composable
-    private fun SpikeUi() {
+    private fun HowlingDogUi() {
         val context = LocalContext.current
         val activity = context as Activity
-        var screen by remember { mutableStateOf(Screen.Setup) }
-        // Picked state survives recreation (rememberSaveable). File is
-        // not saveable, so the path is what is saved and the File is
-        // derived from it. The copied files themselves live on disk
-        // (cacheDir/games, filesDir/bios), so a restored path is valid.
-        var gamePath by rememberSaveable { mutableStateOf<String?>(null) }
-        var gameName by rememberSaveable { mutableStateOf<String?>(null) }
-        var biosCount by rememberSaveable { mutableStateOf(0) }
-        var status by rememberSaveable { mutableStateOf("Pick a game file and a BIOS folder, then Start.") }
-        val gameFile: File? = gamePath?.let { File(it) }
+        var screen by remember { mutableStateOf(Screen.Library) }
+        var games by remember { mutableStateOf<List<GameEntry>>(emptyList()) }
+        var bios by remember { mutableStateOf<BiosStatus?>(null) }
+        var status by remember { mutableStateOf("") }
+        var playingGame by remember { mutableStateOf<GameEntry?>(null) }
+        var confirmRemove by remember { mutableStateOf<GameEntry?>(null) }
         var held by remember { mutableStateOf(Held()) }
         var gameView by remember { mutableStateOf<GameView?>(null) }
+
+        val gamesDir = File(context.filesDir, "games")
+        val biosDir = File(context.filesDir, "bios")
+        val library = remember {
+            GameLibrary(
+                gamesDir = gamesDir,
+                biosDir = biosDir,
+                storeFile = File(context.filesDir, "library.txt"),
+                legacyGamesDir = File(context.cacheDir, "games"),
+            )
+        }
+
+        fun refreshLibrary() {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val loaded = library.load()
+                val b = library.biosStatus()
+                withContext(Dispatchers.Main) {
+                    games = loaded
+                    bios = b
+                }
+            }
+        }
+
+        LaunchedEffect(Unit) { refreshLibrary() }
 
         fun pushMask() {
             session?.setInput(
@@ -146,7 +172,33 @@ class MainActivity : ComponentActivity() {
             session?.stop()
             session = null
             held = Held()
-            screen = Screen.Setup
+            playingGame = null
+            screen = Screen.Library
+        }
+
+        fun startGame(entry: GameEntry) {
+            val b = bios ?: library.biosStatus()
+            if (!library.biosReadyFor(entry.mainFile, b)) {
+                status = "This game needs its system files — pick the BIOS folder."
+                return
+            }
+            val saveDir = File(context.filesDir, "saves").apply { mkdirs() }
+            status = "Starting ${entry.displayName}…"
+            session = PlayerSession(
+                systemDir = biosDir.absolutePath,
+                saveDir = saveDir.absolutePath,
+                gamePath = entry.mainPath(gamesDir).absolutePath,
+                onFrame = { bitmap -> gameView?.setBitmap(bitmap) },
+                onError = { message ->
+                    status = message
+                    session = null
+                    playingGame = null
+                    screen = Screen.Library
+                },
+            )
+            playingGame = entry
+            screen = Screen.Playing
+            session?.start()
         }
 
         val gamePicker = rememberLauncherForActivityResult(
@@ -156,26 +208,102 @@ class MainActivity : ComponentActivity() {
             lifecycleScope.launch(Dispatchers.IO) {
                 val name = displayName(uri) ?: "game.neo"
                 val ext = name.substringAfterLast('.', "").lowercase()
-                if (ext !in setOf("neo", "cue", "chd")) {
-                    withContext(Dispatchers.Main) {
-                        status = "That file is not a game this spike plays (need .neo, .cue or .chd)."
+                when (ext) {
+                    "neo", "chd" -> {
+                        val dest = File(gamesDir.apply { mkdirs() }, sanitize(name))
+                        try {
+                            contentResolver.openInputStream(uri)?.use { input ->
+                                FileOutputStream(dest).use { output -> input.copyTo(output) }
+                            }
+                            val entry = library.register(dest.name, listOf(dest.name))
+                            withContext(Dispatchers.Main) {
+                                refreshLibrary()
+                                status = "Added ${entry.displayName}."
+                            }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                status = "Could not copy the game file: ${e.message}"
+                            }
+                        }
                     }
-                    return@launch
+                    "cue" -> withContext(Dispatchers.Main) {
+                        status = "This game needs its data files too — add it with Add folder."
+                    }
+                    else -> withContext(Dispatchers.Main) {
+                        status = "That file is not a game this app plays."
+                    }
                 }
-                val dir = File(cacheDir, "games").apply { mkdirs() }
-                val dest = File(dir, sanitize(name))
+            }
+        }
+
+        val folderPicker = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocumentTree(),
+        ) { uri: Uri? ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            lifecycleScope.launch(Dispatchers.IO) {
+                gamesDir.mkdirs()
+                var added = 0
+                var skipped = 0
                 try {
-                    contentResolver.openInputStream(uri)?.use { input ->
-                        FileOutputStream(dest).use { output -> input.copyTo(output) }
+                    val tree = DocumentFile.fromTreeUri(context, uri)
+                    val files = tree?.listFiles()?.filter { it.isFile } ?: emptyList()
+                    val byLower = files.associateBy { (it.name ?: "").lowercase() }
+                    for (doc in files) {
+                        val name = doc.name ?: continue
+                        val ext = name.substringAfterLast('.', "").lowercase()
+                        when (ext) {
+                            "neo", "chd" -> {
+                                val dest = File(gamesDir, sanitize(name))
+                                contentResolver.openInputStream(doc.uri)?.use { input ->
+                                    FileOutputStream(dest).use { output -> input.copyTo(output) }
+                                }
+                                library.register(dest.name, listOf(dest.name))
+                                added++
+                            }
+                            "cue" -> {
+                                val cueText = try {
+                                    contentResolver.openInputStream(doc.uri)
+                                        ?.bufferedReader()?.readText() ?: ""
+                                } catch (_: Exception) {
+                                    ""
+                                }
+                                val bins = parseCueBinFiles(cueText)
+                                val resolved = bins.map { byLower[it.lowercase()] }
+                                if (resolved.any { it == null }) {
+                                    skipped++
+                                    continue
+                                }
+                                val binDocs = resolved.filterNotNull()
+                                val destCue = File(gamesDir, sanitize(name))
+                                contentResolver.openInputStream(doc.uri)?.use { input ->
+                                    FileOutputStream(destCue).use { output -> input.copyTo(output) }
+                                }
+                                val stored = mutableListOf(destCue.name)
+                                for ((binName, binDoc) in bins.zip(binDocs)) {
+                                    val destBin = File(gamesDir, sanitize(binName))
+                                    contentResolver.openInputStream(binDoc.uri)?.use { input ->
+                                        FileOutputStream(destBin).use { output -> input.copyTo(output) }
+                                    }
+                                    stored.add(destBin.name)
+                                }
+                                library.register(destCue.name, stored)
+                                added++
+                            }
+                            // Anything else (data files on their own,
+                            // stray files) is not a game: ignored.
+                            else -> { /* no-op */ }
+                        }
                     }
                     withContext(Dispatchers.Main) {
-                        gamePath = dest.absolutePath
-                        gameName = name
-                        status = "Game ready: $name"
+                        refreshLibrary()
+                        status = buildString {
+                            append("Added $added game${if (added == 1) "" else "s"}")
+                            if (skipped > 0) append(" · $skipped skipped (missing data files)")
+                        }
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
-                        status = "Could not copy the game file: ${e.message}"
+                        status = "Could not import from that folder: ${e.message}"
                     }
                 }
             }
@@ -186,7 +314,7 @@ class MainActivity : ComponentActivity() {
         ) { uri: Uri? ->
             if (uri == null) return@rememberLauncherForActivityResult
             lifecycleScope.launch(Dispatchers.IO) {
-                val dir = File(filesDir, "bios").apply { mkdirs() }
+                val dir = biosDir.apply { mkdirs() }
                 var count = 0
                 try {
                     val tree = DocumentFile.fromTreeUri(context, uri)
@@ -202,12 +330,13 @@ class MainActivity : ComponentActivity() {
                         }
                         count++
                     }
+                    val b = library.biosStatus()
                     withContext(Dispatchers.Main) {
-                        biosCount = count
+                        bios = b
                         status = if (count > 0) {
-                            "$count BIOS file(s) ready."
+                            "System files: ${b.readyCount} of ${b.totalCount} ready."
                         } else {
-                            "No .zip files in that folder. Pick the folder holding the BIOS zips."
+                            "No .zip files in that folder. Pick the folder holding the BIOS files."
                         }
                     }
                 } catch (e: Exception) {
@@ -219,60 +348,111 @@ class MainActivity : ComponentActivity() {
         }
 
         when (screen) {
-            Screen.Setup -> {
+            Screen.Library -> {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(24.dp),
-                    verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text("HowlingDog", style = MaterialTheme.typography.headlineMedium)
                     Text(
-                        "Phase 2 spike — bare player",
+                        "Tap a game to play.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Spacer(Modifier.height(24.dp))
-                    Button(onClick = { gamePicker.launch(arrayOf("*/*")) }) {
-                        Text("Pick game file")
-                    }
-                    Text(gameName ?: "No game picked yet")
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = { biosPicker.launch(null) }) {
-                        Text("Pick BIOS folder")
-                    }
-                    Text(if (biosCount > 0) "$biosCount BIOS file(s) ready" else "No BIOS files yet")
-                    Text(
-                        "The BIOS folder needs the BIOS zips (aes.zip, neogeo.zip).",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(24.dp))
-                    Button(
-                        onClick = {
-                            val file = gameFile ?: return@Button
-                            val biosDir = File(filesDir, "bios")
-                            val saveDir = File(filesDir, "saves").apply { mkdirs() }
-                            status = "Starting ${gameName ?: "game"}…"
-                            session = PlayerSession(
-                                systemDir = biosDir.absolutePath,
-                                saveDir = saveDir.absolutePath,
-                                gamePath = file.absolutePath,
-                                onFrame = { bitmap -> gameView?.setBitmap(bitmap) },
-                                onError = { message ->
-                                    status = message
-                                    session = null
-                                    screen = Screen.Setup
-                                },
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                RoundedCornerShape(8.dp),
                             )
-                            screen = Screen.Playing
-                            session?.start()
-                        },
-                        enabled = gameFile != null && biosCount > 0,
+                            .padding(12.dp),
                     ) {
-                        Text("Start")
+                        Text("System files", style = MaterialTheme.typography.titleSmall)
+                        val b = bios
+                        if (b == null) {
+                            Text("Checking…", style = MaterialTheme.typography.bodyMedium)
+                        } else {
+                            Text(
+                                "System files: ${b.readyCount} of ${b.totalCount} ready",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            BiosRow("Home console", b.home)
+                            BiosRow("Arcade", b.arcade)
+                            BiosRow("1994 system", b.system1994)
+                            BiosRow("1995 system", b.system1995)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { biosPicker.launch(null) }) {
+                            Text("Pick BIOS folder")
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { gamePicker.launch(arrayOf("*/*")) }) {
+                            Text("Add game")
+                        }
+                        Button(onClick = { folderPicker.launch(null) }) {
+                            Text("Add folder")
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    if (games.isEmpty()) {
+                        Text(
+                            "No games yet. Add a game to start.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                            items(games, key = { it.mainFile }) { game ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { startGame(game) }
+                                        .padding(vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        game.displayName,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                    )
+                                    TextButton(onClick = { confirmRemove = game }) {
+                                        Text("✕")
+                                    }
+                                }
+                            }
+                        }
                     }
                     Spacer(Modifier.height(16.dp))
                     Text(status, style = MaterialTheme.typography.bodyMedium)
+                }
+                val toRemove = confirmRemove
+                if (toRemove != null) {
+                    AlertDialog(
+                        onDismissRequest = { confirmRemove = null },
+                        title = { Text("Remove ${toRemove.displayName}?") },
+                        text = { Text("This deletes its files from the library.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    library.remove(toRemove)
+                                    withContext(Dispatchers.Main) {
+                                        confirmRemove = null
+                                        refreshLibrary()
+                                        status = "Removed ${toRemove.displayName}."
+                                    }
+                                }
+                            }) { Text("Remove") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmRemove = null }) {
+                                Text("Cancel")
+                            }
+                        },
+                    )
                 }
             }
 
@@ -300,7 +480,7 @@ class MainActivity : ComponentActivity() {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            gameName ?: "Game",
+                            playingGame?.displayName ?: "Game",
                             color = Color.White,
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -385,6 +565,20 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun BiosRow(label: String, ready: Boolean) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                if (ready) "✓" else "✗",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+
+    @Composable
     private fun HoldButton(
         label: String,
         onHoldChange: (Boolean) -> Unit,
@@ -448,11 +642,5 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             null
         }
-    }
-
-    private fun sanitize(name: String): String {
-        return name.map { c ->
-            if (c.isLetterOrDigit() || c in "._-") c else '_'
-        }.joinToString("").take(120).ifBlank { "game.neo" }
     }
 }
