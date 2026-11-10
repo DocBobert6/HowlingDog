@@ -4,6 +4,14 @@
     <!-- Haptics for the touch controls (normal permission, granted by default). -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Cover art: box art is fetched at runtime from the libretro
+         thumbnails collection (Wi-Fi only, one small image per
+         game, cached on the device) — never bundled. Both are
+         normal permissions, granted by default; INTERNET is the
+         fetch itself, ACCESS_NETWORK_STATE is the Wi-Fi check. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

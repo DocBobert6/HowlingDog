@@ -1,6 +1,8 @@
 package app.howlingdog
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -37,10 +41,14 @@ import androidx.compose.ui.unit.sp
  * portrait tiles with chunky borders, the picked game big in the
  * middle, "SELECT YOUR GAME" as the header.
  *
- * No art is ever fetched: each tile is a typographic portrait — a
+ * A tile shows the game's box art when the app has fetched it
+ * (libretro thumbnails, fetched at runtime on Wi-Fi and cached —
+ * never bundled); otherwise it is the typographic portrait — a
  * bold background colour (stable per game name, see EraUi) with a
- * big monogram and the game's name. A game is a game: tiles show no
- * media type and the grid never sorts by media.
+ * big monogram and the game's name. The art sits inside the same
+ * chunky maroon-and-gold frame; the frame and the grid never
+ * change. A game is a game: tiles show no media type and the grid
+ * never sorts by media.
  */
 
 /** A chunky square-cornered arcade button. Primary is gold on maroon, the rest are dark maroon with a gold border. */
@@ -75,13 +83,14 @@ fun ArcadeButton(
     }
 }
 
-/** One portrait tile in the select grid. Tap selects; it never starts the game. */
+/** One portrait tile in the select grid. Tap selects; it never starts the game. [cover] is the fetched box art, or null for the typographic tile. */
 @Composable
 fun GameTile(
     entry: GameEntry,
     selected: Boolean,
     onSelect: () -> Unit,
     modifier: Modifier = Modifier,
+    cover: Bitmap? = null,
 ) {
     val bg = Color(EraUi.tileColorArgb(entry.displayName))
     Box(
@@ -95,12 +104,21 @@ fun GameTile(
             .clickable { onSelect() },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = EraUi.monogram(entry.displayName),
-            color = Color(EraUi.Palette.TEXT).copy(alpha = 0.3f),
-            fontSize = 56.sp,
-            fontWeight = FontWeight.Black,
-        )
+        if (cover != null) {
+            Image(
+                bitmap = cover.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Text(
+                text = EraUi.monogram(entry.displayName),
+                color = Color(EraUi.Palette.TEXT).copy(alpha = 0.3f),
+                fontSize = 56.sp,
+                fontWeight = FontWeight.Black,
+            )
+        }
         Text(
             text = entry.displayName,
             color = Color(EraUi.Palette.TEXT),
@@ -123,7 +141,7 @@ fun GameTile(
     }
 }
 
-/** The picked game, big in the middle. Tap the portrait (or START) to play. */
+/** The picked game, big in the middle. Tap the portrait (or START) to play. [cover] is the fetched box art, or null for the typographic portrait. */
 @Composable
 fun SelectedPortrait(
     entry: GameEntry,
@@ -131,6 +149,7 @@ fun SelectedPortrait(
     onMode: () -> Unit,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
+    cover: Bitmap? = null,
 ) {
     val bg = Color(EraUi.tileColorArgb(entry.displayName))
     Box(
@@ -141,13 +160,22 @@ fun SelectedPortrait(
             .border(4.dp, Color(EraUi.Palette.GOLD))
             .clickable { onPlay() },
     ) {
-        Text(
-            text = EraUi.monogram(entry.displayName),
-            color = Color(EraUi.Palette.TEXT).copy(alpha = 0.3f),
-            fontSize = 110.sp,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.align(Alignment.Center),
-        )
+        if (cover != null) {
+            Image(
+                bitmap = cover.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Text(
+                text = EraUi.monogram(entry.displayName),
+                color = Color(EraUi.Palette.TEXT).copy(alpha = 0.3f),
+                fontSize = 110.sp,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()

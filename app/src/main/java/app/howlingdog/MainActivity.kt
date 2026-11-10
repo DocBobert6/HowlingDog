@@ -3,6 +3,7 @@ package app.howlingdog
 import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.graphics.Bitmap
 import android.hardware.input.InputManager
 import android.net.Uri
 import android.os.Bundle
@@ -287,6 +288,16 @@ class MainActivity : ComponentActivity() {
         var padMask by remember { mutableStateOf(0) }
         var held by remember { mutableStateOf(Held()) }
         var gameView by remember { mutableStateOf<GameView?>(null) }
+        // Cover art (box art fetched at runtime, Wi-Fi only,
+        // cached — see CoverArt). `covers` holds the decoded
+        // bitmap per main-file name; `artTried` remembers games
+        // with no art (or a failed fetch) so a tile is not
+        // re-attempted on every recomposition; `artIndex` is the
+        // cached libretro thumbnails filename list.
+        var artIndex by remember { mutableStateOf<List<String>?>(null) }
+        var covers by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
+        var artTried by remember { mutableStateOf<Set<String>>(emptySet()) }
+        val coverArt = remember { CoverArt(context.filesDir) }
 
         val gamesDir = File(context.filesDir, "games")
         val biosDir = File(context.filesDir, "bios")
@@ -412,6 +423,34 @@ class MainActivity : ComponentActivity() {
         }
 
         LaunchedEffect(Unit) { refreshLibrary() }
+
+        // Cover art: fetch the filename index once (Wi-Fi only,
+        // cached on the device), then one small image per game —
+        // only when its tile is shown, only on Wi-Fi, only once
+        // per game. Any failure leaves the typographic tile;
+        // nothing here blocks the library or shows an error.
+        LaunchedEffect(games, artIndex) {
+            if (artIndex == null && CoverArt.isWifi(context)) {
+                artIndex = withContext(Dispatchers.IO) { coverArt.loadIndex(isWifi = true) }
+            }
+            val index = artIndex ?: return@LaunchedEffect
+            val pending = games.filter { it.mainFile !in covers && it.mainFile !in artTried }
+            if (pending.isEmpty()) return@LaunchedEffect
+            for (game in pending) {
+                launch(Dispatchers.IO) {
+                    val artFile = coverArt.resolveArtFile(game, gamesDir, index)
+                    val bitmap = if (artFile != null) {
+                        coverArt.cachedBitmap(game) ?: coverArt.fetchBitmap(artFile, game)
+                    } else {
+                        null
+                    }
+                    withContext(Dispatchers.Main) {
+                        if (bitmap != null) covers = covers + (game.mainFile to bitmap)
+                        artTried = artTried + game.mainFile
+                    }
+                }
+            }
+        }
 
         fun pushMask() {
             session?.setInput(
@@ -852,6 +891,7 @@ class MainActivity : ComponentActivity() {
                                 onPlay = { startGame(selected) },
                                 onMode = { modePickerFor = selected },
                                 onRemove = { confirmRemove = selected },
+                                cover = covers[selected.mainFile],
                             )
                             Spacer(Modifier.height(12.dp))
                         }
@@ -871,6 +911,7 @@ class MainActivity : ComponentActivity() {
                                                 selected = game.mainFile == selected?.mainFile,
                                                 onSelect = { selectedMainFile = game.mainFile },
                                                 modifier = Modifier.weight(1f),
+                                                cover = covers[game.mainFile],
                                             )
                                         }
                                         repeat(cols - row.size) {
