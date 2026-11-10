@@ -140,8 +140,9 @@ object NeoHeader {
      * null when nothing in the index matches. Order: exact title,
      * then an NGH/NGM number carried with the title (the number
      * is the specific identifier; the title prefix keeps a bootleg
-     * from matching its parent game's art), then a title prefix.
-     * Among several prefix matches the shortest wins, and a
+     * from matching its parent game's art), then a title prefix,
+     * then a reverse prefix (the display name starts with the art
+     * title). Among several prefix matches the shortest wins, and a
      * "bootleg" file only wins when the title itself says bootleg
      * (so "Metal Slug 5" never lands on "Metal Slug 5 Plus").
      *
@@ -193,6 +194,23 @@ object NeoHeader {
             if ("bootleg" in want) return bare.minByOrNull { it.first.length }!!.first
             bare.filter { (_, norm) -> "bootleg" !in norm }
                 .minByOrNull { it.first.length }?.let { return it.first }
+        }
+        // 5. Reverse prefix: the display name starts with the art
+        // title, plus an extra suffix the strip does not remove
+        // (a revision tag, a year, or any other trailing word —
+        // "Galaxy Fight Universal Warriors … Rev 1"). The art
+        // title is the known title, so a display name that begins
+        // with it (at a word boundary) is the same game. Longest
+        // art title wins, so a more specific title beats a shorter
+        // one ("Galaxy Fight - Universal Warriors" over "Galaxy
+        // Fight"). The bootleg guard applies here too. Last resort
+        // only: steps 1–4 already failed, so this only ever fires
+        // for a game that would otherwise get no art at all.
+        val reverse = byNorm.filter { (_, norm) -> want.startsWith("$norm ") }
+        if (reverse.isNotEmpty()) {
+            if ("bootleg" in want) return reverse.maxByOrNull { it.second.length }!!.first
+            reverse.filter { (_, norm) -> "bootleg" !in norm }
+                .maxByOrNull { it.second.length }?.let { return it.first }
         }
         return null
     }

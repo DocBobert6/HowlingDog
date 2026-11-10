@@ -160,6 +160,39 @@ class NeoHeaderTest {
         )
     }
 
+    @Test fun matchesCdGalaxyFightWithUnstrippedSuffix() {
+        // The disc title carries a suffix the strip does not
+        // remove (a revision tag): the display name still starts
+        // with the art title, so the reverse-prefix step matches.
+        // This is why Galaxy Fight's art stayed missing after the
+        // region-tag fix — its cue name carries such a suffix.
+        assertEquals(
+            "Galaxy Fight - Universal Warriors.png",
+            NeoHeader.matchArtFile("Galaxy Fight Universal Warriors Japan Rev 1", null, index),
+        )
+    }
+
+    @Test fun matchesCdGalaxyFightWithYearSuffix() {
+        // Same, with a year as the unstripped trailing word.
+        assertEquals(
+            "Galaxy Fight - Universal Warriors.png",
+            NeoHeader.matchArtFile("Galaxy Fight Universal Warriors 1995", null, index),
+        )
+    }
+
+    @Test fun reversePrefixPrefersLongestTitle() {
+        // Two art titles are both a prefix of the display name;
+        // the longer (more specific) one wins.
+        val two = listOf(
+            "Galaxy Fight.png",
+            "Galaxy Fight - Universal Warriors.png",
+        )
+        assertEquals(
+            "Galaxy Fight - Universal Warriors.png",
+            NeoHeader.matchArtFile("Galaxy Fight Universal Warriors Rev 1", null, two),
+        )
+    }
+
     @Test fun stripRegionTagsStripsOnlyTrailingTags() {
         assertEquals("cyber lip", NeoHeader.stripRegionTags("cyber lip japan enja"))
         assertEquals("galaxy fight universal warriors", NeoHeader.stripRegionTags("galaxy fight universal warriors japan"))
