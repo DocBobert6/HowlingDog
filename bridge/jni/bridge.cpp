@@ -1,11 +1,17 @@
 // HowlingDog Phase 2 — bare player spike.
 //
 // JNI bridge from the app.howlingdog frontend to the stock Geolith
-// libretro core. The bridge lives in the frontend, NOT in the core:
-// nothing under the core's src/ is touched. The core is used exactly
-// as libretro defines it: the frontend supplies the environment,
-// video, audio and input callbacks, and drives retro_run() once per
-// frame from its own thread.
+// libretro core. The bridge lives in the frontend, NOT in the core.
+// ONE exception, clearly marked TEMPORARY DIAGNOSTIC: the no-video
+// bug probe (geo_diag_pal in src/geo.c) adds palette/VRAM write
+// counters and a 68k-PC snapshot to the core so the DIAG readout can
+// tell whether the game ever writes palette RAM. It counts only and
+// does not change emulation behaviour; revert it with the rest of
+// the diagnostic when the bug is fixed. Everything else under the
+// core's src/ is untouched: the core is used exactly as libretro
+// defines it: the frontend supplies the environment, video, audio
+// and input callbacks, and drives retro_run() once per frame from
+// its own thread.
 //
 // SPIKE-ONLY shortcuts, all marked as such — do not mistake them for
 // the final implementation:
@@ -34,6 +40,11 @@
 #include <string.h>
 
 #include "libretro.h"
+
+// TEMPORARY DIAGNOSTIC (no-video bug): palette/VRAM write counters,
+// first 8 palette RAM entries, palette bank, 68k PC — one-call
+// snapshot from the core (src/geo.c, exported via libretro/link.T).
+extern "C" void geo_diag_pal(uint32_t *out);
 
 #define LOG_TAG "HowlingDog"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -457,6 +468,24 @@ Java_app_howlingdog_Bridge_nativeGetSrcProbe(JNIEnv *env, jobject /* thiz */) {
     };
     pthread_mutex_unlock(&g_frame_mutex);
     env->SetIntArrayRegion(out, 0, 8, vals);
+    return out;
+}
+
+// TEMPORARY DIAGNOSTIC (no-video bug): palette/VRAM write counters,
+// first 8 palette RAM entries, palette bank, 68k PC — one-call
+// snapshot from the core (geo_diag_pal). Returns [palram writes,
+// vram writes, pal0..pal7, bank, pc]. Counts are 32-bit-truncated;
+// pal values are 16-bit; PC is a 24-bit 68k address. Called from
+// the emu thread in the once-a-second DIAG emission, the same thread
+// that runs retro_run, so no locking is needed here.
+JNIEXPORT jintArray JNICALL
+Java_app_howlingdog_Bridge_nativeGetPalDiag(JNIEnv *env, jobject /* thiz */) {
+    jintArray out = env->NewIntArray(12);
+    if (!out)
+        return nullptr;
+    uint32_t vals[12];
+    geo_diag_pal(vals);
+    env->SetIntArrayRegion(out, 0, 12, (const jint *)vals);
     return out;
 }
 

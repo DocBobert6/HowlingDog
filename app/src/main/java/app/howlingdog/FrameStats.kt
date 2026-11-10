@@ -48,6 +48,21 @@ data class FrameStats(
     val srcPitch: Int = 0,
     /** Last error line the core logged, if any (else blank). */
     val lastError: String = "",
+    // TEMPORARY DIAGNOSTIC (no-video bug): palette/VRAM write counters
+    // and 68k PC from the core (nativeGetPalDiag). palWrites 0 = the
+    // game never writes palette RAM; pal values non-zero with a black
+    // screen = the renderer is not reading the palette. PC in
+    // 0x000000-0x0FFFFF is game ROM code; 0xC00000+ is BIOS code.
+    /** Palette-RAM writes since load (32-bit-truncated). */
+    val palWrites: Long = 0,
+    /** VRAM writes since load (32-bit-truncated). */
+    val vramWrites: Long = 0,
+    /** Active palette bank. */
+    val palBank: Int = 0,
+    /** 68k program counter, sampled between frames. */
+    val palPc: Int = 0,
+    /** First 8 palette RAM entries of the active bank (16-bit). */
+    val pal: IntArray = IntArray(0),
 )
 
 data class FrameBrightness(
@@ -106,6 +121,20 @@ fun formatDiagText(s: FrameStats): String {
             "100=0x${hex(s.srcFirst100)} 1000=0x${hex(s.srcFirst1000)} " +
             "${s.srcW}x${s.srcH} pitch=${s.srcPitch}",
     )
+    // TEMPORARY DIAGNOSTIC (no-video bug): the PAL line appears only
+    // when the core snapshot is present (8 palette entries). Reading
+    // it: pal writes 0 = the game never writes palette RAM; writes
+    // > 0 with all-zero values = the game writes zeros; writes > 0
+    // with non-zero values but a black screen = the renderer is not
+    // reading the palette. PC in game ROM is 0x000000-0x0FFFFF.
+    if (s.pal.size == 8) {
+        val palText = s.pal.joinToString(",") { "0x%04X".format(it) }
+        text.append(
+            "\nPAL writes=${s.palWrites} VRAM writes=${s.vramWrites} " +
+                "pal[0..7]=$palText bank=${s.palBank} " +
+                "PC=0x${"%06X".format(s.palPc)}",
+        )
+    }
     if (s.lastError.isNotBlank()) {
         text.append("\nERR ${s.lastError}")
     }

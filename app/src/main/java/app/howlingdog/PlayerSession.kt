@@ -161,6 +161,10 @@ class PlayerSession(
             if (now - lastStatsAtMs >= 1000) {
                 lastStatsAtMs = now
                 val probe = Bridge.nativeGetSrcProbe()
+                // TEMPORARY DIAGNOSTIC (no-video bug): palette/VRAM
+                // write counters + 68k PC from the core. The counts
+                // are unsigned 32-bit values in a signed IntArray.
+                val pal = Bridge.nativeGetPalDiag()
                 val s = FrameStats(
                     framesReceived, framesDrawn, lastW, lastH,
                     avW, avH, avFps, bright.mean,
@@ -174,6 +178,11 @@ class PlayerSession(
                     srcH = probe[6],
                     srcPitch = probe[7],
                     lastError = Bridge.nativeLastError(),
+                    palWrites = pal[0].toLong() and 0xFFFFFFFFL,
+                    vramWrites = pal[1].toLong() and 0xFFFFFFFFL,
+                    palBank = pal[10],
+                    palPc = pal[11],
+                    pal = pal.copyOfRange(2, 10),
                 )
                 // Same text as the on-screen readout, one line for
                 // logcat (pipes stand in for the newlines).

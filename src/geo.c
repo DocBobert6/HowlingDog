@@ -545,6 +545,28 @@ void geo_deinit(void) {
         free(state);
 }
 
+/* TEMPORARY DIAGNOSTIC (no-video bug): one-call snapshot of the
+   palette/VRAM write counters, the first 8 palette RAM entries of
+   the active bank, the active palette bank, and the 68k PC.
+   out[0] = palette-RAM writes, out[1] = VRAM writes,
+   out[2..9] = palette RAM[0..7], out[10] = palette bank,
+   out[11] = 68k PC. Counts are truncated to 32 bits; a session
+   cannot reach 2^32 writes. Exported from libretro.so via link.T
+   and read by the bridge's nativeGetPalDiag. */
+void geo_diag_pal(uint32_t *out)
+{
+    unsigned long pal_writes, vram_writes;
+    uint16_t pal[8];
+    unsigned palbank;
+    geo_diag_lspc(&pal_writes, &vram_writes, pal, &palbank);
+    out[0] = (uint32_t)pal_writes;
+    out[1] = (uint32_t)vram_writes;
+    for (int i = 0; i < 8; ++i)
+        out[2 + i] = pal[i];
+    out[10] = palbank;
+    out[11] = geo_m68k_get_pc();
+}
+
 int geo_state_load_raw(const void *sstate) {
     uint8_t *st = (uint8_t*)sstate;
     geo_serial_begin();

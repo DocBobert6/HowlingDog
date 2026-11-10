@@ -107,6 +107,10 @@ void geo_lspc_palram_wr08(uint32_t, uint8_t);
 void geo_lspc_palram_wr16(uint32_t, uint16_t);
 void geo_lspc_palram_bank(unsigned);
 
+/* TEMPORARY DIAGNOSTIC (no-video bug): palette/VRAM write counters,
+   first 8 palette RAM entries of the active bank, active bank. */
+void geo_diag_lspc(unsigned long *, unsigned long *, uint16_t *, unsigned *);
+
 void geo_lspc_vramaddr_wr(uint16_t);
 
 uint16_t geo_lspc_vram_rd(void);

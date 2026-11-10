@@ -70,6 +70,9 @@ void geo_m68k_set_memmap_cd(void);
 
 int geo_m68k_run(unsigned);
 
+/* TEMPORARY DIAGNOSTIC (no-video bug): current 68k program counter. */
+unsigned geo_m68k_get_pc(void);
+
 void geo_m68k_interrupt(unsigned);
 
 void geo_m68k_board_set(unsigned);

@@ -3,7 +3,9 @@ name: Android CI
 # HowlingDog Phase 2: the bare player spike — the JNI bridge from the
 # app.howlingdog frontend to the stock Geolith core, plus a minimal
 # spike UI (pick a game + BIOS folder, start, fullscreen playback
-# with touch controls). The core stays untouched (pinned 2dc88e3);
+# with touch controls). The core stays at the pinned 2dc88e3 tree
+# except for ONE clearly-marked TEMPORARY DIAGNOSTIC (the no-video
+# bug probe: geo_diag_pal in src/geo.c, exported via libretro/link.T);
 # the bridge lives in bridge/ and links the prebuilt libretro.so.
 # No releases: a push to main only builds and verifies.
 #
@@ -97,6 +99,13 @@ jobs:
               exit 1
             }
           done
+          # TEMPORARY DIAGNOSTIC (no-video bug): the palette/PC snapshot
+          # the bridge reads via nativeGetPalDiag (src/geo.c, link.T).
+          echo "$EXPORTS" | grep -q " geo_diag_pal" || {
+            echo "missing export: geo_diag_pal"
+            echo "$EXPORTS"
+            exit 1
+          }
           echo "core=geolith pin=2dc88e3fa72ff404213a65d6eb5bb33baa687f73 size=$SIZE sha256=$(sha256sum "$SO" | cut -d' ' -f1)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build bridge (arm64-v8a only)
@@ -140,14 +149,14 @@ jobs:
             "$READELF" -d "$BRIDGE"
             exit 1
           }
-          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeGetSrcProbe nativeReadAudio nativeSetInput nativeUnloadGame nativeDeinit nativeLastError nativeSystemInfo; do
+          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeGetSrcProbe nativeGetPalDiag nativeReadAudio nativeSetInput nativeUnloadGame nativeDeinit nativeLastError nativeSystemInfo; do
             "$NM" -D "$BRIDGE" | grep -q "Java_app_howlingdog_Bridge_$sym" || {
               echo "missing JNI export: $sym"
               "$NM" -D "$BRIDGE"
               exit 1
             }
           done
-          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 12 JNI entry points present"
+          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 13 JNI entry points present"
 
       - name: Stage native libs for Gradle
         run: |

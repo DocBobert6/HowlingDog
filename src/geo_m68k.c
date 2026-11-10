@@ -1330,6 +1330,14 @@ int geo_m68k_run(unsigned cycs) {
     return m68k_execute(cycs);
 }
 
+/* TEMPORARY DIAGNOSTIC (no-video bug): current 68k program counter,
+   sampled between frames. 0x000000-0x0FFFFF is game ROM code;
+   0xC00000+ is BIOS code. */
+unsigned geo_m68k_get_pc(void)
+{
+    return m68k_get_reg(NULL, M68K_REG_PC);
+}
+
 void geo_m68k_interrupt(unsigned level) {
     if ((m68k_get_virq(level)) == 0)
         m68k_set_virq(level, 1);
