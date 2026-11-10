@@ -63,19 +63,54 @@ system, each matched to the display that system was played on.
 
 ## Screenshots
 
-<!-- Screenshots are Robert's device captures, to be added. The files
-     below are the exact paths this section expects: -->
+Robert's device captures (Pixel 10a).
+
+![Boot screen](docs/screenshots/boot.png)
+
+The boot screen — the howling-dog icon, HOWLINGDOG, PRESS START.
+
 ![Library](docs/screenshots/library.png)
+
+The select grid — all 13 showcase games with their cover art.
+
+![Library, cartridges](docs/screenshots/library-carts.png)
+
+The library with the 8 cartridge games — Metal Slug 3 selected.
+
+![Library, CD games](docs/screenshots/library-cd.png)
+
+The library with the 5 CD games — Neo Turf Masters selected.
+
+![Empty library](docs/screenshots/library-empty.png)
+
+The empty library — "No games yet. Add a game to start." — with
+the icon shown in the empty state.
+
+![KOF '98 on AES](docs/screenshots/game-aes.png)
+
+The King of Fighters '98 on AES — the arc buttons (A red, B yellow,
+C green, D blue) and the red-tinted stick.
+
+![Metal Slug 3 on MVS](docs/screenshots/game-mvs.png)
+
+Metal Slug 3 on MVS — the cabinet button layout (B, C, D on the top
+row, A below-left).
+
+![Aero Fighters 2 on CD](docs/screenshots/game-cd.png)
+
+Aero Fighters 2 on Neo Geo CD — the diamond layout (C top, B left,
+D right, A bottom) and the grey stick.
+
+![KOF '99 on CDZ](docs/screenshots/game-cdz.png)
+
+The King of Fighters '99 on Neo Geo CDZ — the diamond layout and
+the grey stick.
+
 ![Settings](docs/screenshots/settings.png)
-![A game running on AES](docs/screenshots/game-aes.png)
-![A CD game running](docs/screenshots/game-cd.png)
 
-Expected files (add them to `docs/screenshots/`):
-
-- `library.png` — the select-grid library, with cover art.
-- `settings.png` — the Settings screen.
-- `game-aes.png` — a game running on AES, with the arc overlay.
-- `game-cd.png` — a CD game running, with the diamond overlay.
+Settings, scrolled to the CRT display section — the per-system chains
+(AES Hearth, Arcade Neon, Neo Geo CD Comet, Neo Geo CDZ Zenith) and
+screen curvature.
 
 ## Games and BIOS — not included
 
