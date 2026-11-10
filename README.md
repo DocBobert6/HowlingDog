@@ -1,46 +1,81 @@
+<img src="app/src/main/res/drawable/howlingdog_icon.png" width="128" alt="HowlingDog icon">
+
 # HowlingDog
 
 A standalone Neo Geo emulator for Android: an original frontend around
-the Geolith libretro core (AES / MVS / CD / CDZ).
+the Geolith libretro core — AES, MVS, Neo Geo CD, and Neo Geo CDZ in
+one app.
 
-**Status: Phase 2** — the bare player spike: the JNI bridge boots a
-game with video, audio, and touch input. See `PLAN.md` in
-`~/workspace/howlingdog/` for the locked plan; the plan file is not
-part of this repo.
-
-## Core pin
-
-Fork of `libretro/geolith-libretro`, pinned at upstream commit
-`2dc88e3fa72ff404213a65d6eb5bb33baa687f73`
-("m68k: avoid the signal-mask save in the bus error trap on
-BSD/Darwin"). The core tree is imported verbatim at the repo root
-(`src/`, `libretro/`, `deps/`); **no core changes in Phase 1**.
-Later phases may optimise the core, but only against the regression
-baseline defined in the plan — never silently.
-
-## Layout
-
-- `src/`, `libretro/`, `deps/` — Geolith core, BSD-3-Clause (see `LICENSE`)
-- `frontend/` — the Android frontend, GPL-3.0 (see `frontend/LICENSE`)
-- `app/` — the Android app module (`app.howlingdog`), Kotlin/Compose
-- `bridge/` — the JNI bridge (C++), built by ndk-build; it links the
-  prebuilt core and is the only native code the frontend owns
-- `.github/workflows/android.yml` — CI: builds the stock core, then
-  the bridge, for arm64-v8a via ndk-build; stages both .so files;
-  runs the unit tests (incl. the Robolectric startup gate); then
-  compiles the app (debug, unsigned)
-- `NOTICE` — full licence texts for every library in the compiled core
-
-## Licences
-
-- Frontend (`frontend/`, `app/`): GNU GPL-3.0 — `frontend/LICENSE`.
-- Core (`src/`, `libretro/`, `deps/`): permissive, see `LICENSE` and
-  `NOTICE` (Geolith BSD-3-Clause; ymfm BSD-3-Clause; Speex BSD-3-Clause;
-  zstd BSD; Musashi MIT; Jolly Good Z80 MIT; miniz MIT; libretro MIT;
-  LZMA public domain). The core is bundled in the APK; the notices in
-  `NOTICE` satisfy the binary-redistribution conditions.
+**First release: 0.1.0** — see
+[Releases](https://github.com/DocBobert6/HowlingDog/releases) for the
+signed APK. The app is free, with no ads.
 
 HowlingDog is not affiliated with or endorsed by SNK Corporation.
+
+## What it is
+
+One system, done properly. Instead of a multi-system frontend where
+Neo Geo is one entry in a list, HowlingDog is a dedicated Neo Geo app:
+the whole library, the controls, and the display are tuned to the
+Neo Geo and to the era it comes from — a fighting-game select grid
+for the library (KOF '94/'95, Street Fighter II style), a different
+overlay theme per system, and a different CRT shader chain per
+system, each matched to the display that system was played on.
+
+## Features
+
+- **Library** — a fighting-game select grid: the picked game big in
+  the middle, a grid of portrait tiles, "SELECT YOUR GAME", and a
+  decorative countdown. Cover art is fetched automatically from the
+  libretro thumbnails collection (Wi-Fi only, one image per game,
+  cached on the device); a typographic tile is the fallback when a
+  game has no art.
+- **All four systems** — AES (Home console), MVS (Arcade), Neo Geo
+  CD, and Neo Geo CDZ. Discs default to Neo Geo CD; CDZ is a
+  per-game pick. Cartridges are `.NEO` files (TerraOnion format);
+  discs are `.bin/.cue` or `.chd`.
+- **Per-system overlay themes** — AES gets the arc layout with
+  rainbow buttons (A red, B yellow, C green, D blue), MVS gets the
+  cabinet layout, CD and CDZ get the diamond layout with grey/silver
+  controls. The stick stays a stick in every mode. Buttons are
+  movable individually, or together with the Together toggle, and
+  resizable from the pause menu. A user-toggleable 8-way D-pad is
+  available in Settings — it is never four-way.
+- **Per-system CRT shader chains** — AES "Hearth" (1990 home CRT
+  TV), MVS "Neon" (arcade CRT monitor), Neo Geo CD "Comet" (1994
+  home CRT TV), Neo Geo CDZ "Zenith" (1995 home CRT TV), each with
+  its own screen curvature matched to its display. Both can be
+  switched off in Settings.
+- **Quick save/load** — on-screen SAVE and LOAD buttons beside
+  Pause, and L1+R1 together to quick-save / L2+R2 together to
+  quick-load on a gamepad. One save-state slot per game, shared
+  with the pause menu.
+- **Gamepad support** — physical-position mapping (bottom face =
+  Neo A, right = B, left = C, top = D; Start = Neo Start, Select =
+  Neo Coin), D-pad and left stick steer, START+SELECT pauses.
+- **Core options** — palette, aspect ratio, sprites per line,
+  overclocking, region, overscan, Universe BIOS hardware, memory
+  card (on by default), free play, and the CD speed/DMA/loading
+  options, in Settings.
+- **In-app Licences screen** — Settings → About → Licences shows
+  the full licence texts for every library in the app (see
+  [NOTICE](NOTICE)).
+
+## Screenshots
+
+<!-- Screenshots are Robert's device captures, to be added. The files
+     below are the exact paths this section expects: -->
+![Library](docs/screenshots/library.png)
+![Settings](docs/screenshots/settings.png)
+![A game running on AES](docs/screenshots/game-aes.png)
+![A CD game running](docs/screenshots/game-cd.png)
+
+Expected files (add them to `docs/screenshots/`):
+
+- `library.png` — the select-grid library, with cover art.
+- `settings.png` — the Settings screen.
+- `game-aes.png` — a game running on AES, with the arc overlay.
+- `game-cd.png` — a CD game running, with the diamond overlay.
 
 ## Games and BIOS — not included
 
@@ -54,47 +89,24 @@ none ever will be. To play, supply your own:
   (MVS + Universe BIOS), `neocd.zip` + `neocdz.zip` (CD),
   `neocdz.zip` (CDZ), `irrmaze.zip` (Irritating Maze, MVS).
 
-## Playing (Phase 2 spike)
-
-The spike UI is plain and temporary — the fighting-game select grid
-library arrives in a later phase. To test on a device, install the
-debug APK from the CI artifact (`howlingdog-apk-debug`) and supply
-your own files:
-
-1. A game file: one `.NEO` cartridge file (`.cue` / `.chd` also
-   work the same way, with the matching BIOS below).
-2. A folder holding the BIOS zips: `aes.zip` for home-console games,
-   `neogeo.zip` for arcade games; `neocd.zip` + `neocdz.zip` for
-   disc games, `neocdz.zip` for CDZ games.
-
-In the app: tap **Pick game file**, pick the `.NEO`; tap **Pick BIOS
-folder**, pick the folder holding the zips; tap **Start**. The game
-boots fullscreen with touch controls (directions, A/B/C/D, Start,
-Coin). **Stop** (or Back) returns to the setup screen.
-
-Honest limits of the spike, stated plainly:
-
-- No game has been booted locally yet — the sandbox has no games
-  and must not download any, so the first real boot happens on the
-  test device. What CI verifies: the core and bridge build, the
-  bridge links the core and exposes all 11 JNI entry points, the
-  unit tests pass (incl. the Robolectric startup gate, which
-  launches the app with no native code present), and the debug APK
-  assembles.
-- Video is a Bitmap copy path (framebuffer -> int array -> Bitmap):
-  correct, but it copies every pixel every frame. The final
-  renderer will draw the core's framebuffer directly.
-- Audio is resampled to 48 kHz in the bridge with a linear
-  interpolator, because the core's native rates (55943 Hz AES,
-  55555 Hz MVS, 44396 Hz CD) sit outside what AudioTrack accepts
-  reliably. A proper resampler belongs in a later phase.
-- Input is player 1, touch only. Gamepad input arrives in Phase 4.
-- No save states, no pause menu, no core-options UI: the core runs
-  on its defaults (AES system unless a game needs MVS).
+In the app: tap **Pick BIOS folder**, pick the folder holding the
+zips; tap **Add game** (or **Add folder**) to import games; tap a
+game to start it. The game boots with touch controls (stick or
+8-way D-pad, A/B/C/D, Start, Coin) and a pause menu
+(CONTINUE?, save/load state, Settings, Adjust controls, Quit to
+library).
 
 ## Building
 
-CI builds on every push to `main` (see `.github/workflows/android.yml`).
+CI builds on every push to `main` (see
+`.github/workflows/android.yml`): it builds the stock core and the
+bridge for arm64-v8a via ndk-build, runs the host core test and the
+unit tests (including the Robolectric startup gate and the Licences
+gate), then assembles the debug APK (`howlingdog-apk-debug`
+artifact). The signed release is built by
+`.github/workflows/release.yml`, which runs when a `v*` tag is
+pushed and publishes the signed APK to
+[Releases](https://github.com/DocBobert6/HowlingDog/releases).
 
 Locally, with the Android SDK + NDK 27 installed:
 
@@ -115,9 +127,54 @@ cp bridge/libs/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
 ./gradlew :app:assembleDebug
 ```
 
-## UI
+A release build (`assembleRelease`) needs the release keystore,
+which lives in GitHub Secrets and is only used by the release
+workflow — it is never committed to the repo.
 
-The UI is based on other UI of the mid-90s era — a fighting-game
-select grid (KOF '94/'95, Street Fighter II style) for the library —
-not on the CD console, and it never shows discs or the word "CD".
-The mascot is an original howling-dog silhouette against a full moon.
+## Layout
+
+- `src/`, `libretro/`, `deps/` — Geolith core, BSD-3-Clause (see
+  `LICENSE`); the core tree is imported from upstream, pinned at
+  commit `2dc88e3fa72ff404213a65d6eb5bb33baa687f73`, with one change:
+  the 68k is run in event-batched slices instead of one cycle at a
+  time (see `src/geo_slice.h`; the LSPC event points and the
+  per-slice bookkeeping are unchanged).
+- `app/` — the Android app module (`app.howlingdog`),
+  Kotlin/Compose. The frontend is GPL-3.0; its licence text is in
+  `frontend/LICENSE`.
+- `bridge/` — the JNI bridge (C++), built by ndk-build; it links the
+  prebuilt core and is the only native code the frontend owns. It
+  exposes the 13 JNI entry points the Kotlin side declares (CI
+  verifies all of them).
+- `tests/` — the host C test for the core's event-batched slice
+  computation.
+- `.github/workflows/android.yml` — CI: builds the core and the
+  bridge for arm64-v8a, runs the tests, assembles the debug APK.
+- `.github/workflows/release.yml` — release: builds the signed APK
+  and publishes it to Releases.
+- `NOTICE` — full licence texts for every library in the compiled
+  core (Geolith, ymfm, Speex, zstd, Musashi, Jolly Good Z80, miniz,
+  libretro, LZMA). The in-app Licences screen shows the same texts
+  (`app/src/main/res/raw/notice.txt`, kept in sync with `NOTICE`
+  by CI).
+- `NONBUGS` — quirks confirmed to exist on real hardware, so they
+  are not emulation bugs.
+- `rename-neo.sh` — upstream helper for the `.NEO` conversion
+  (see the core README below).
+
+The core's own README is `README` (upstream Geolith: systems,
+formats, BIOS files, compatibility, accuracy notes).
+
+## Licences
+
+- Frontend (`app/`): GNU GPL-3.0 — `frontend/LICENSE`.
+- Core (`src/`, `libretro/`, `deps/`): permissive, see `LICENSE`
+  and [`NOTICE`](NOTICE) (Geolith BSD-3-Clause; ymfm
+  BSD-3-Clause; Speex BSD-3-Clause; zstd BSD; Musashi MIT; Jolly
+  Good Z80 MIT; miniz MIT; libretro MIT; LZMA public domain). The
+  core is bundled in the APK; the notices in `NOTICE` satisfy the
+  binary-redistribution conditions. The in-app Licences screen
+  (Settings → About → Licences) shows the same texts.
+
+HowlingDog is not affiliated with or endorsed by SNK Corporation.
+No BIOS files, games, or SNK artwork are included.
