@@ -13,6 +13,13 @@ import android.util.Log
  * and the frame Bitmaps. One session per game start; stop() unloads
  * the game and tears the native side down.
  *
+ * Phase 4 adds pause/resume and save states. Pausing stops the
+ * emulation loop cleanly (no retro_run calls, audio silenced) while
+ * the game stays loaded, so the pause screen can save or load a
+ * state and resume without losing anything. Serialize/unserialize
+ * must only run while paused: pause() waits out any in-flight frame,
+ * so the state snapshot can never race retro_run.
+ *
  * Threading: the emulation thread calls retro_run() once per frame
  * and copies the new frame into the back Bitmap, then swaps it to the
  * front and posts it to the main thread. The audio thread drains the
@@ -33,6 +40,14 @@ class PlayerSession(
 
     @Volatile
     private var running = false
+
+    @Volatile
+    private var paused = false
+
+    /** True while a retro_run() call is in flight on the emu thread. */
+    @Volatile
+    private var inFrame = false
+
     private var emuThread: Thread? = null
     private var audioThread: Thread? = null
     private var audioTrack: AudioTrack? = null
@@ -46,6 +61,77 @@ class PlayerSession(
         if (running) Bridge.nativeSetInput(mask)
     }
 
+    /** Pause the game: the emu loop idles (no retro_run) and the audio is silenced. The game stays loaded. */
+    fun pause() {
+        if (!running || paused) return
+        paused = true
+        // Wait out any in-flight frame so a state snapshot taken
+        // after this can never race retro_run (a frame takes <1/60s;
+        // the deadline is only a safety valve).
+        val deadline = System.nanoTime() + 200_000_000L
+        while (inFrame && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(5)
+            } catch (e: InterruptedException) {
+                break
+            }
+        }
+        audioTrack?.let {
+            try {
+                it.pause()
+            } catch (_: IllegalStateException) {
+                // Already stopped; nothing to silence.
+            }
+            try {
+                it.flush()
+            } catch (_: IllegalStateException) {
+                // Nothing buffered; nothing to drop.
+            }
+        }
+    }
+
+    /** Resume a paused game. */
+    fun resume() {
+        if (!running || !paused) return
+        audioTrack?.let {
+            try {
+                it.play()
+            } catch (_: IllegalStateException) {
+                // The track is gone; the audio thread restarts it on the next frame.
+            }
+        }
+        paused = false
+    }
+
+    fun isPaused(): Boolean = paused
+
+    /**
+     * Snapshot the running state as bytes. Only call while paused
+     * (see [pause]); null when no game is loaded or the core refuses.
+     */
+    fun serializeState(): ByteArray? {
+        if (!running || !paused) return null
+        return try {
+            Bridge.nativeSerialize()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Restore a snapshot taken by [serializeState]. Only call while
+     * paused. False when the state does not match this game (the core
+     * refuses states saved under a different system type or region).
+     */
+    fun unserializeState(data: ByteArray): Boolean {
+        if (!running || !paused) return false
+        return try {
+            Bridge.nativeUnserialize(data)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun start() {
         if (running) return
         running = true
@@ -54,6 +140,7 @@ class PlayerSession(
 
     fun stop() {
         running = false
+        paused = false
         try {
             emuThread?.join(2000)
         } catch (e: InterruptedException) {
@@ -114,8 +201,23 @@ class PlayerSession(
         startAudio()
 
         while (running) {
+            if (paused) {
+                // Idle: no retro_run, no new frames. The last frame
+                // stays on screen behind the pause screen.
+                try {
+                    Thread.sleep(50)
+                } catch (e: InterruptedException) {
+                    break
+                }
+                continue
+            }
             val t0 = System.nanoTime()
-            Bridge.nativeRunFrame()
+            inFrame = true
+            try {
+                Bridge.nativeRunFrame()
+            } finally {
+                inFrame = false
+            }
             if (Bridge.nativeGetFrame(pixels, dims)) {
                 val w = dims[0]
                 val h = dims[1]
@@ -181,6 +283,16 @@ class PlayerSession(
         val track = audioTrack ?: return
         val samples = ShortArray(4096 * 2) // stereo frames * 2 channels
         while (running) {
+            if (paused) {
+                // Idle: the track is paused and flushed, so there is
+                // nothing to drain.
+                try {
+                    Thread.sleep(50)
+                } catch (e: InterruptedException) {
+                    break
+                }
+                continue
+            }
             val frames = Bridge.nativeReadAudio(samples, 4096)
             if (frames > 0) {
                 track.write(samples, 0, frames * 2, AudioTrack.WRITE_BLOCKING)

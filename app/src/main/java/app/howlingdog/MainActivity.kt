@@ -136,6 +136,8 @@ class MainActivity : ComponentActivity() {
         var confirmRemove by remember { mutableStateOf<GameEntry?>(null) }
         var modePickerFor by remember { mutableStateOf<GameEntry?>(null) }
         var settingsFrom by remember { mutableStateOf(Screen.Library) }
+        var paused by remember { mutableStateOf(false) }
+        var pauseStatus by remember { mutableStateOf("") }
         var held by remember { mutableStateOf(Held()) }
         var gameView by remember { mutableStateOf<GameView?>(null) }
 
@@ -182,12 +184,72 @@ class MainActivity : ComponentActivity() {
             )
         }
 
-        fun stopGame() {
+        fun quitToLibrary() {
             session?.stop()
             session = null
             held = Held()
             playingGame = null
+            paused = false
+            pauseStatus = ""
             screen = Screen.Library
+        }
+
+        fun pauseGame() {
+            if (session == null || paused) return
+            session?.pause()
+            paused = true
+            pauseStatus = ""
+        }
+
+        fun resumeGame() {
+            if (!paused) return
+            session?.resume()
+            paused = false
+            pauseStatus = ""
+        }
+
+        /** One save slot per game, in the saves folder. */
+        fun stateFileFor(entry: GameEntry): File =
+            File(File(context.filesDir, "saves"), "${entry.mainFile}.state")
+
+        fun saveState() {
+            val game = playingGame ?: return
+            val s = session ?: return
+            val bytes = s.serializeState()
+            if (bytes == null) {
+                pauseStatus = "Could not save right now."
+                return
+            }
+            try {
+                val file = stateFileFor(game)
+                file.parentFile?.mkdirs()
+                file.writeBytes(bytes)
+                pauseStatus = "Saved."
+            } catch (e: Exception) {
+                pauseStatus = "Could not save: ${e.message}"
+            }
+        }
+
+        fun loadState() {
+            val game = playingGame ?: return
+            val s = session ?: return
+            val file = stateFileFor(game)
+            if (!file.isFile) {
+                pauseStatus = "No save yet for this game."
+                return
+            }
+            val bytes = try {
+                file.readBytes()
+            } catch (e: Exception) {
+                pauseStatus = "Could not read the save: ${e.message}"
+                return
+            }
+            if (s.unserializeState(bytes)) {
+                pauseStatus = "Loaded."
+                resumeGame()
+            } else {
+                pauseStatus = "That save doesn't match this game setup."
+            }
         }
 
         fun startGame(entry: GameEntry) {
@@ -547,7 +609,7 @@ class MainActivity : ComponentActivity() {
             }
 
             Screen.Playing -> {
-                BackHandler { stopGame() }
+                BackHandler { if (paused) resumeGame() else pauseGame() }
                 DisposableEffect(Unit) {
                     activity.requestedOrientation =
                         ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -574,7 +636,7 @@ class MainActivity : ComponentActivity() {
                             color = Color.White,
                             style = MaterialTheme.typography.bodyMedium,
                         )
-                        Button(onClick = { stopGame() }) { Text("Stop") }
+                        Button(onClick = { pauseGame() }) { Text("Pause") }
                     }
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AndroidView(
@@ -645,6 +707,44 @@ class MainActivity : ComponentActivity() {
                                     HoldButton("D", { pressed ->
                                         held = held.copy(d = pressed); pushMask()
                                     })
+                                }
+                            }
+                        }
+                        // Pause overlay: covers the game and the
+                        // controls (drawn last, so it is on top) and
+                        // swallows touches, so no button can be
+                        // pressed while paused.
+                        if (paused) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.7f))
+                                    .clickable(enabled = true, onClick = {}),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        "Paused",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.headlineMedium,
+                                    )
+                                    Spacer(Modifier.height(16.dp))
+                                    Button(onClick = { resumeGame() }) { Text("Resume") }
+                                    Spacer(Modifier.height(8.dp))
+                                    Button(onClick = { saveState() }) { Text("Save state") }
+                                    Spacer(Modifier.height(8.dp))
+                                    Button(onClick = { loadState() }) { Text("Load state") }
+                                    Spacer(Modifier.height(8.dp))
+                                    Button(onClick = {
+                                        settingsFrom = Screen.Playing
+                                        screen = Screen.Settings
+                                    }) { Text("Settings") }
+                                    Spacer(Modifier.height(8.dp))
+                                    Button(onClick = { quitToLibrary() }) { Text("Quit to library") }
+                                    if (pauseStatus.isNotEmpty()) {
+                                        Spacer(Modifier.height(8.dp))
+                                        Text(pauseStatus, color = Color.White)
+                                    }
                                 }
                             }
                         }
