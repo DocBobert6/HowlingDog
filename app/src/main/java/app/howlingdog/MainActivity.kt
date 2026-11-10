@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -1046,10 +1047,15 @@ class MainActivity : ComponentActivity() {
                 // library must never push content out of reach).
                 // Phase 5 — the fighting-game select grid: black
                 // arcade background, chunky type, portrait tiles.
+                // Audit fix (a/f): status-bar inset padding, applied
+                // outside the scroll, so the header starts below the
+                // status bar (targetSdk 36 enforces edge-to-edge) and
+                // scrolled content can never slide under it.
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color(EraUi.Palette.BACKGROUND))
+                        .statusBarsPadding()
                         .verticalScroll(rememberScrollState())
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -1883,9 +1889,13 @@ class MainActivity : ComponentActivity() {
             }
 
             Screen.Settings -> {
+                // Audit fix (a): same status-bar inset padding as the
+                // library, so the "Settings" title is not drawn under
+                // the status bar and scrolled content stays below it.
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .statusBarsPadding()
                         .verticalScroll(rememberScrollState())
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
