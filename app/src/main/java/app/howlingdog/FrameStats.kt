@@ -53,6 +53,11 @@ data class FrameStats(
     // game never writes palette RAM; pal values non-zero with a black
     // screen = the renderer is not reading the palette. PC in
     // 0x000000-0x0FFFFF is game ROM code; 0xC00000+ is BIOS code.
+    // palNonzero counts the non-zero palette entries of the active
+    // bank (0..4096); palBackdrop is palette entry 4095, the colour
+    // every pixel falls back to when the layers produce nothing;
+    // lbNonzero is the non-zero line-buffer pixels the last completed
+    // frame produced (0 = the sprite/fix layers rendered nothing).
     /** Palette-RAM writes since load (32-bit-truncated). */
     val palWrites: Long = 0,
     /** VRAM writes since load (32-bit-truncated). */
@@ -63,6 +68,12 @@ data class FrameStats(
     val palPc: Int = 0,
     /** First 8 palette RAM entries of the active bank (16-bit). */
     val pal: IntArray = IntArray(0),
+    /** Non-zero palette entries in the active bank (0..4096). */
+    val palNonzero: Int = 0,
+    /** Backdrop palette entry (palram[4095]) of the active bank. */
+    val palBackdrop: Int = 0,
+    /** Non-zero line-buffer pixels of the last completed frame. */
+    val lbNonzero: Long = 0,
 )
 
 data class FrameBrightness(
@@ -127,10 +138,19 @@ fun formatDiagText(s: FrameStats): String {
     // > 0 with all-zero values = the game writes zeros; writes > 0
     // with non-zero values but a black screen = the renderer is not
     // reading the palette. PC in game ROM is 0x000000-0x0FFFFF.
+    // palNonzero near 0 = the palette is empty; palNonzero large but
+    // px 0 = the palette has colour but the layers render nothing;
+    // px > 0 with a black screen = pixels are produced yet resolve
+    // to black (the palette entries they use are black, or a bank
+    // mismatch). backdrop is the colour every pixel falls back to
+    // when the layers produce nothing.
     if (s.pal.size == 8) {
         val palText = s.pal.joinToString(",") { "0x%04X".format(it) }
         text.append(
             "\nPAL writes=${s.palWrites} VRAM writes=${s.vramWrites} " +
+                "palNonzero=${s.palNonzero}/4096 " +
+                "backdrop=0x${"%04X".format(s.palBackdrop)} " +
+                "px=${s.lbNonzero} " +
                 "pal[0..7]=$palText bank=${s.palBank} " +
                 "PC=0x${"%06X".format(s.palPc)}",
         )

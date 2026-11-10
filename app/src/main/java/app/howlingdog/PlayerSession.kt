@@ -183,6 +183,9 @@ class PlayerSession(
                     palBank = pal[10],
                     palPc = pal[11],
                     pal = pal.copyOfRange(2, 10),
+                    palNonzero = pal[12],
+                    palBackdrop = pal[13],
+                    lbNonzero = pal[14].toLong() and 0xFFFFFFFFL,
                 )
                 // Same text as the on-screen readout, one line for
                 // logcat (pipes stand in for the newlines).

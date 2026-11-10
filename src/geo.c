@@ -547,24 +547,36 @@ void geo_deinit(void) {
 
 /* TEMPORARY DIAGNOSTIC (no-video bug): one-call snapshot of the
    palette/VRAM write counters, the first 8 palette RAM entries of
-   the active bank, the active palette bank, and the 68k PC.
+   the active bank, the active palette bank, and the 68k PC, plus the
+   count of non-zero palette entries in the active bank, the backdrop
+   entry (palram[4095]) of the active bank, and the non-zero
+   line-buffer pixels the most recent completed frame produced.
    out[0] = palette-RAM writes, out[1] = VRAM writes,
    out[2..9] = palette RAM[0..7], out[10] = palette bank,
-   out[11] = 68k PC. Counts are truncated to 32 bits; a session
-   cannot reach 2^32 writes. Exported from libretro.so via link.T
-   and read by the bridge's nativeGetPalDiag. */
+   out[11] = 68k PC, out[12] = non-zero palette entries (0..4096),
+   out[13] = backdrop palette entry value, out[14] = non-zero
+   line-buffer pixels of the last completed frame. Counts are
+   truncated to 32 bits; a session cannot reach 2^32 writes.
+   Exported from libretro.so via link.T and read by the bridge's
+   nativeGetPalDiag. */
 void geo_diag_pal(uint32_t *out)
 {
     unsigned long pal_writes, vram_writes;
     uint16_t pal[8];
-    unsigned palbank;
-    geo_diag_lspc(&pal_writes, &vram_writes, pal, &palbank);
+    unsigned palbank, pal_nonzero;
+    uint16_t backdrop;
+    unsigned long lb_nonzero;
+    geo_diag_lspc(&pal_writes, &vram_writes, pal, &palbank,
+                  &pal_nonzero, &backdrop, &lb_nonzero);
     out[0] = (uint32_t)pal_writes;
     out[1] = (uint32_t)vram_writes;
     for (int i = 0; i < 8; ++i)
         out[2 + i] = pal[i];
     out[10] = palbank;
     out[11] = geo_m68k_get_pc();
+    out[12] = pal_nonzero;
+    out[13] = backdrop;
+    out[14] = (uint32_t)lb_nonzero;
 }
 
 int geo_state_load_raw(const void *sstate) {

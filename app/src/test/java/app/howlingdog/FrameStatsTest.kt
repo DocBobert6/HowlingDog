@@ -133,6 +133,7 @@ class FrameStatsTest {
                 0x0000, 0x7FFF, 0x1234, 0x0000,
                 0x0000, 0x0000, 0x0000, 0x0000,
             ),
+            palNonzero = 3, palBackdrop = 0x0000, lbNonzero = 12345,
         )
         assertEquals(
             "DIAG frames=239 drawn=239 last=304x224\n" +
@@ -140,7 +141,8 @@ class FrameStatsTest {
                 "bright mean=0 centre=(0,0,0)\n" +
                 "SRC nonzero=68096 first=0xFF000000 100=0xFF000000 " +
                 "1000=0xFF000000 304x224 pitch=1280\n" +
-                "PAL writes=12345 VRAM writes=67890 " +
+                "PAL writes=12345 VRAM writes=67890 palNonzero=3/4096 " +
+                "backdrop=0x0000 px=12345 " +
                 "pal[0..7]=0x0000,0x7FFF,0x1234,0x0000,0x0000,0x0000,0x0000,0x0000 " +
                 "bank=1 PC=0x001234",
             formatDiagText(s),
@@ -164,6 +166,7 @@ class FrameStatsTest {
             palWrites = 0, vramWrites = 0,
             palBank = 0, palPc = 0xC00000,
             pal = IntArray(8),
+            palNonzero = 0, palBackdrop = 0x0000, lbNonzero = 0,
         )
         assertEquals(
             "DIAG frames=60 drawn=60 last=304x224\n" +
@@ -171,9 +174,48 @@ class FrameStatsTest {
                 "bright mean=0 centre=(0,0,0)\n" +
                 "SRC nonzero=68096 first=0xFF000000 100=0xFF000000 " +
                 "1000=0xFF000000 304x224 pitch=1280\n" +
-                "PAL writes=0 VRAM writes=0 " +
+                "PAL writes=0 VRAM writes=0 palNonzero=0/4096 " +
+                "backdrop=0x0000 px=0 " +
                 "pal[0..7]=0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000 " +
                 "bank=0 PC=0xC00000",
+            formatDiagText(s),
+        )
+    }
+
+    @Test
+    fun diagTextShowsPalLineWithColourButNoPixels() {
+        // TEMPORARY DIAGNOSTIC (no-video bug): the palette has colour
+        // (312 non-zero entries) but the last frame produced no
+        // line-buffer pixels — the layers render nothing, so every
+        // pixel falls back to the black backdrop. Mirrors Robert's
+        // 2026-11-09 PAL retest numbers.
+        val s = FrameStats(
+            frames = 298, drawn = 298, lastW = 304, lastH = 224,
+            avW = 304, avH = 224, fps = 59.6,
+            brightMean = 0, centreR = 0, centreG = 0, centreB = 0,
+            srcCalls = 298, srcNonzero = 68096,
+            srcFirst = 0xFF000000.toInt(),
+            srcFirst100 = 0xFF000000.toInt(),
+            srcFirst1000 = 0xFF000000.toInt(),
+            srcW = 304, srcH = 224, srcPitch = 1280,
+            palWrites = 20752, vramWrites = 66085,
+            palBank = 0, palPc = 0xC16DE0,
+            pal = intArrayOf(
+                0x0000, 0x0DDD, 0x0000, 0x0000,
+                0x0000, 0x0000, 0x0000, 0x0000,
+            ),
+            palNonzero = 312, palBackdrop = 0x0000, lbNonzero = 0,
+        )
+        assertEquals(
+            "DIAG frames=298 drawn=298 last=304x224\n" +
+                "AV 304x224 @ 59.6fps\n" +
+                "bright mean=0 centre=(0,0,0)\n" +
+                "SRC nonzero=68096 first=0xFF000000 100=0xFF000000 " +
+                "1000=0xFF000000 304x224 pitch=1280\n" +
+                "PAL writes=20752 VRAM writes=66085 palNonzero=312/4096 " +
+                "backdrop=0x0000 px=0 " +
+                "pal[0..7]=0x0000,0x0DDD,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000 " +
+                "bank=0 PC=0xC16DE0",
             formatDiagText(s),
         )
     }

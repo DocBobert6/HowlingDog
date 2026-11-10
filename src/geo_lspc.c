@@ -55,6 +55,12 @@ static unsigned skip_render; // Skip rendering during CD loading fast-forward
    Counting only; this does not change emulation behaviour. */
 static unsigned long diag_palram_writes = 0;
 static unsigned long diag_vram_writes = 0;
+/* TEMPORARY DIAGNOSTIC (no-video bug): non-zero line-buffer pixels
+   (lb[p] != 0) produced per frame. diag_lb_nonzero_cur accumulates
+   the frame being drawn; it is latched into diag_lb_nonzero_last
+   when the scanline counter wraps at the end of a frame. */
+static unsigned long diag_lb_nonzero_cur = 0;
+static unsigned long diag_lb_nonzero_last = 0;
 
 // Line buffering
 static unsigned linebuf[2][LSPC_WIDTH]; // Line buffers for sprite pixels
@@ -398,6 +404,12 @@ static inline void geo_lspc_bdsprline(void) {
     unsigned *lb = linebuf[lbactive];
 
     for (unsigned p = 0; p < LSPC_WIDTH; ++p) {
+        /* TEMPORARY DIAGNOSTIC (no-video bug): count line-buffer
+           pixels that actually carry a palette index. A zero entry
+           resolves to the backdrop colour, so it says nothing about
+           whether the layers produced anything. */
+        if (lb[p])
+            diag_lb_nonzero_cur++;
         ptr[p] = lb[p] ? palette[lb[p]] : bdcol;
         lb[p] = 0;
     }
@@ -450,16 +462,29 @@ void geo_lspc_palram_bank(unsigned bank) {
 
 /* TEMPORARY DIAGNOSTIC (no-video bug): snapshot the palette-RAM and
    VRAM write counters, the first 8 palette RAM entries of the active
-   bank, and the active palette bank. Combined with the 68k PC by
+   bank, the active palette bank, plus the count of non-zero palette
+   entries in the active bank, the backdrop entry (palram[4095]) of
+   the active bank, and the non-zero line-buffer pixels the most
+   recent completed frame produced. Combined with the 68k PC by
    geo_diag_pal() (geo.c) and read by the bridge's nativeGetPalDiag. */
 void geo_diag_lspc(unsigned long *pal_writes, unsigned long *vram_writes,
-                   uint16_t *pal, unsigned *palbank)
+                   uint16_t *pal, unsigned *palbank,
+                   unsigned *pal_nonzero, uint16_t *backdrop,
+                   unsigned long *lb_nonzero)
 {
     *pal_writes = diag_palram_writes;
     *vram_writes = diag_vram_writes;
     *palbank = lspc.palbank;
     for (int i = 0; i < 8; ++i)
         pal[i] = lspc.palram[i + (lspc.palbank * SIZE_4K)];
+    const uint16_t *bank = &lspc.palram[lspc.palbank * SIZE_4K];
+    unsigned nz = 0;
+    for (int i = 0; i < SIZE_4K; ++i)
+        if (bank[i])
+            nz++;
+    *pal_nonzero = nz;
+    *backdrop = bank[4095];
+    *lb_nonzero = diag_lb_nonzero_last;
 }
 
 // Write the VRAM Address to work with
@@ -541,6 +566,8 @@ void geo_lspc_init(void) {
        so they cover the current run (geo_init on load, geo_reset). */
     diag_palram_writes = 0;
     diag_vram_writes = 0;
+    diag_lb_nonzero_cur = 0;
+    diag_lb_nonzero_last = 0;
     lspc.palbank = 0;
     lspc.vramaddr = 0;
     lspc.vrammod = 0;
@@ -1066,6 +1093,13 @@ void geo_lspc_run(unsigned cycs) {
         }
 
         if ((start <= 712) && (end > 712)) { // This is an educated guess
+            /* TEMPORARY DIAGNOSTIC (no-video bug): a frame ends when
+               the scanline counter wraps; latch the line-buffer pixel
+               count of the frame just drawn. */
+            if (lspc.scanline == LSPC_SCANLINES - 1) {
+                diag_lb_nonzero_last = diag_lb_nonzero_cur;
+                diag_lb_nonzero_cur = 0;
+            }
             lspc.scanline = (lspc.scanline + 1) % LSPC_SCANLINES;
         }
 

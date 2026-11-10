@@ -474,18 +474,20 @@ Java_app_howlingdog_Bridge_nativeGetSrcProbe(JNIEnv *env, jobject /* thiz */) {
 // TEMPORARY DIAGNOSTIC (no-video bug): palette/VRAM write counters,
 // first 8 palette RAM entries, palette bank, 68k PC — one-call
 // snapshot from the core (geo_diag_pal). Returns [palram writes,
-// vram writes, pal0..pal7, bank, pc]. Counts are 32-bit-truncated;
-// pal values are 16-bit; PC is a 24-bit 68k address. Called from
-// the emu thread in the once-a-second DIAG emission, the same thread
-// that runs retro_run, so no locking is needed here.
+// vram writes, pal0..pal7, bank, pc, non-zero palette entries,
+// backdrop palette entry, non-zero line-buffer pixels of the last
+// completed frame]. Counts are 32-bit-truncated; pal values are
+// 16-bit; PC is a 24-bit 68k address. Called from the emu thread
+// in the once-a-second DIAG emission, the same thread that runs
+// retro_run, so no locking is needed here.
 JNIEXPORT jintArray JNICALL
 Java_app_howlingdog_Bridge_nativeGetPalDiag(JNIEnv *env, jobject /* thiz */) {
-    jintArray out = env->NewIntArray(12);
+    jintArray out = env->NewIntArray(15);
     if (!out)
         return nullptr;
-    uint32_t vals[12];
+    uint32_t vals[15];
     geo_diag_pal(vals);
-    env->SetIntArrayRegion(out, 0, 12, (const jint *)vals);
+    env->SetIntArrayRegion(out, 0, 15, (const jint *)vals);
     return out;
 }
 
