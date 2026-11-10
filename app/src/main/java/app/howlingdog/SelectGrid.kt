@@ -44,9 +44,9 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun ArcadeButton(
     text: String,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
     primary: Boolean = false,
+    onClick: () -> Unit,
 ) {
     Button(
         onClick = onClick,
