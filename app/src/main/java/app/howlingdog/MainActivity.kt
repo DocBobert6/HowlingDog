@@ -1336,44 +1336,19 @@ class MainActivity : ComponentActivity() {
                                     .clickable(enabled = true, onClick = {}),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    // Arcade "CONTINUE?" screen: the
-                                    // countdown is decorative — it
-                                    // wraps at 0 and never resumes or
-                                    // quits anything on its own.
-                                    Text(
-                                        "CONTINUE?",
-                                        color = Color(0xFFD21F2B),
-                                        fontSize = 40.sp,
-                                        fontWeight = FontWeight.Black,
-                                        letterSpacing = 2.sp,
-                                    )
-                                    Text(
-                                        "%d".format(pauseTimeLeft),
-                                        color = Color.White,
-                                        fontSize = 28.sp,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                    Spacer(Modifier.height(16.dp))
-                                    ArcadeButton(text = "RESUME", primary = true) { resumeGame() }
-                                    Spacer(Modifier.height(8.dp))
-                                    ArcadeButton(text = "SAVE STATE") { saveState() }
-                                    Spacer(Modifier.height(8.dp))
-                                    ArcadeButton(text = "LOAD STATE") { loadState() }
-                                    Spacer(Modifier.height(8.dp))
-                                    ArcadeButton(text = "SETTINGS") {
+                                PauseMenu(
+                                    timeLeft = pauseTimeLeft,
+                                    status = pauseStatus,
+                                    onResume = { resumeGame() },
+                                    onSaveState = { saveState() },
+                                    onLoadState = { loadState() },
+                                    onSettings = {
                                         settingsFrom = Screen.Playing
                                         screen = Screen.Settings
-                                    }
-                                    Spacer(Modifier.height(8.dp))
-                                    ArcadeButton(text = "ADJUST CONTROLS") { editControls = true }
-                                    Spacer(Modifier.height(8.dp))
-                                    ArcadeButton(text = "QUIT TO LIBRARY") { quitToLibrary() }
-                                    if (pauseStatus.isNotEmpty()) {
-                                        Spacer(Modifier.height(8.dp))
-                                        Text(pauseStatus, color = Color.White)
-                                    }
-                                }
+                                    },
+                                    onAdjustControls = { editControls = true },
+                                    onQuit = { quitToLibrary() },
+                                )
                             }
                         }
                     }
@@ -1800,6 +1775,71 @@ class MainActivity : ComponentActivity() {
                 }
         } catch (e: Exception) {
             null
+        }
+    }
+}
+
+/**
+ * The arcade "CONTINUE?" pause menu: header, decorative countdown,
+ * and the six options. The button list scrolls, so every option is
+ * reachable even on a short landscape screen; the header, countdown
+ * and spacing are tight, so the whole menu fits without scrolling
+ * when the screen is tall enough. The buttons stay full-size and
+ * comfortably tappable — only the chrome around them shrank.
+ *
+ * Extracted from MainActivity so the layout is testable in
+ * isolation (a running game needs native code, which Robolectric
+ * does not have).
+ */
+@Composable
+fun PauseMenu(
+    timeLeft: Int,
+    status: String = "",
+    onResume: () -> Unit,
+    onSaveState: () -> Unit,
+    onLoadState: () -> Unit,
+    onSettings: () -> Unit,
+    onAdjustControls: () -> Unit,
+    onQuit: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        // Arcade "CONTINUE?" screen: the countdown is decorative —
+        // it wraps at 0 and never resumes or quits anything on its own.
+        Text(
+            "CONTINUE?",
+            color = Color(0xFFD21F2B),
+            fontSize = 30.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 2.sp,
+        )
+        Text(
+            "%d".format(timeLeft),
+            color = Color.White,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(8.dp))
+        ArcadeButton(text = "RESUME", primary = true, onClick = onResume)
+        Spacer(Modifier.height(6.dp))
+        ArcadeButton(text = "SAVE STATE", onClick = onSaveState)
+        Spacer(Modifier.height(6.dp))
+        ArcadeButton(text = "LOAD STATE", onClick = onLoadState)
+        Spacer(Modifier.height(6.dp))
+        ArcadeButton(text = "SETTINGS", onClick = onSettings)
+        Spacer(Modifier.height(6.dp))
+        ArcadeButton(text = "ADJUST CONTROLS", onClick = onAdjustControls)
+        Spacer(Modifier.height(6.dp))
+        ArcadeButton(text = "QUIT TO LIBRARY", onClick = onQuit)
+        if (status.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(status, color = Color.White)
         }
     }
 }

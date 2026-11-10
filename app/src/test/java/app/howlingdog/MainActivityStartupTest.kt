@@ -41,9 +41,8 @@ class MainActivityStartupTest {
     @Test
     fun activityLaunchesAndShowsLibrary() {
         // Phase 5: the app opens on the VS-style boot splash.
-        // Tapping PRESS START enters the library (the splash also
-        // auto-advances after a few seconds on device; the timeout
-        // path is device-verified, the tap path is tested here).
+        // Tapping PRESS START enters the library (the splash
+        // waits for a real press — there is no timeout).
         composeRule.onNodeWithText("HOWLINGDOG").assertIsDisplayed()
         composeRule.onNodeWithText("PRESS START").assertIsDisplayed()
         composeRule.onNodeWithText("PRESS START").performClick()
