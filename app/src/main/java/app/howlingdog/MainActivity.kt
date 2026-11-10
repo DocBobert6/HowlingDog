@@ -298,7 +298,7 @@ class MainActivity : ComponentActivity() {
         return super.onGenericMotionEvent(event)
     }
 
-    private enum class Screen { Boot, Library, Playing, Settings }
+    private enum class Screen { Boot, Library, Playing, Settings, Licences }
 
     private data class Held(
         val up: Boolean = false,
@@ -964,7 +964,7 @@ class MainActivity : ComponentActivity() {
         // returns to the library, never to the Android home screen.
         // Settings: back returns to where Settings was opened
         // from (the library, or the game).
-        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings) {
+        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences) {
             when (screen) {
                 Screen.Playing -> when {
                     editControls -> exitEditMode()
@@ -972,6 +972,7 @@ class MainActivity : ComponentActivity() {
                     else -> pauseGame()
                 }
                 Screen.Settings -> screen = settingsFrom
+                Screen.Licences -> screen = Screen.Settings
                 else -> { /* Library/Boot: the handler is disabled there. */ }
             }
         }
@@ -2027,8 +2028,26 @@ class MainActivity : ComponentActivity() {
                         showBoot = show
                     }
                     Spacer(Modifier.height(16.dp))
+                    Text("About", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "HowlingDog — a standalone Neo Geo emulator (AES / MVS / CD / CDZ).",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "HowlingDog is not affiliated with or endorsed by SNK Corporation.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = { screen = Screen.Licences }) { Text("Licences") }
+                    Spacer(Modifier.height(16.dp))
                     Button(onClick = { screen = settingsFrom }) { Text("Back") }
                 }
+            }
+            Screen.Licences -> {
+                // Phase 8: the full licence texts for every library
+                // in the APK, plus the GPL-3.0 frontend note and the
+                // SNK disclaimer. Back returns to Settings.
+                LicencesScreen(onBack = { screen = Screen.Settings })
             }
         }
     }

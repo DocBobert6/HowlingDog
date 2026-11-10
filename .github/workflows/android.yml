@@ -35,6 +35,17 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Verify in-app licences match NOTICE
+        run: |
+          set -euo pipefail
+          # Phase 8: the Licences screen reads res/raw/notice.txt,
+          # which is a verbatim copy of the repo-root NOTICE. If
+          # NOTICE changes, the raw copy must change with it.
+          diff NOTICE app/src/main/res/raw/notice.txt || {
+            echo "NOTICE and app/src/main/res/raw/notice.txt differ — update the raw copy when NOTICE changes."
+            exit 1
+          }
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
