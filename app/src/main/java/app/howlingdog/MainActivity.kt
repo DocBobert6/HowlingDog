@@ -62,6 +62,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
@@ -246,7 +249,19 @@ class MainActivity : ComponentActivity() {
     private fun HowlingDogUi() {
         val context = LocalContext.current
         val activity = context as Activity
-        var screen by remember { mutableStateOf(Screen.Boot) }
+        // App-level settings (boot splash toggle): read before the
+        // initial screen is chosen, so a disabled splash goes
+        // straight to the library on launch.
+        val appSettings = remember {
+            AppSettings(
+                SharedPrefsStore(
+                    context.getSharedPreferences(
+                        "howlingdog-settings", Context.MODE_PRIVATE,
+                    ),
+                ),
+            )
+        }
+        var screen by remember { mutableStateOf(if (appSettings.showBoot()) Screen.Boot else Screen.Library) }
         var games by remember { mutableStateOf<List<GameEntry>>(emptyList()) }
         var bios by remember { mutableStateOf<BiosStatus?>(null) }
         var status by remember { mutableStateOf("") }
@@ -304,6 +319,7 @@ class MainActivity : ComponentActivity() {
         var hapticsLevel by remember { mutableStateOf(controlSettings.haptics()) }
         var overlayOpacity by remember { mutableStateOf(controlSettings.opacity()) }
         var controlSize by remember { mutableStateOf(controlSettings.size()) }
+        var showBoot by remember { mutableStateOf(appSettings.showBoot()) }
         var stickPos by remember { mutableStateOf(controlSettings.stickPosition()) }
         var buttonsPos by remember { mutableStateOf(controlSettings.buttonsPosition()) }
         // Adjust-layout edit mode: entered from the pause screen
@@ -335,13 +351,9 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Boot splash: a tap or a short timeout moves on — never
-        // traps the user on the splash.
-        LaunchedEffect(screen) {
-            if (screen != Screen.Boot) return@LaunchedEffect
-            delay(3000)
-            screen = Screen.Library
-        }
+        // Boot splash: there is NO timeout — the splash waits until
+        // the user taps or presses Start, unless the splash is
+        // turned off in Settings (then the app opens on the library).
         // PRESS START blink (a delay loop: in tests the delay never
         // fires, so the text simply stays visible).
         LaunchedEffect(screen) {
@@ -666,12 +678,24 @@ class MainActivity : ComponentActivity() {
         when (screen) {
             Screen.Boot -> {
                 // VS-style splash: the mascot, HOWLINGDOG, PRESS
-                // START. Tap anywhere to enter the library; the
-                // timeout in the LaunchedEffect above moves on too.
+                // START. Tap anywhere (or press Start) to enter the
+                // library. There is no timeout — the splash waits
+                // until the user moves on.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.Black)
+                        .onKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyUp &&
+                                (event.key == Key.ButtonStart || event.key == Key.ButtonA ||
+                                    event.key == Key.Enter || event.key == Key.DirectionCenter)
+                            ) {
+                                screen = Screen.Library
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         .clickable { screen = Screen.Library },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1285,6 +1309,17 @@ class MainActivity : ComponentActivity() {
                         "To move the controls, start a game, pause, and tap Adjust controls.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Spacer(Modifier.height(16.dp))
+                    Text("Startup", style = MaterialTheme.typography.titleSmall)
+                    ControlDropdownRow(
+                        "Show boot screen",
+                        listOf("on" to "On", "off" to "Off"),
+                        if (showBoot) "on" else "off",
+                    ) { value ->
+                        val show = value == "on"
+                        appSettings.setShowBoot(show)
+                        showBoot = show
+                    }
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { screen = settingsFrom }) { Text("Back") }
                 }
