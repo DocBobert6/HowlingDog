@@ -24,7 +24,13 @@ object Bridge {
             loaded = true
             true
         } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "failed to load native libraries", e)
+            // Log.e is a stub that throws RuntimeException on the
+            // plain JVM unit tests, so guard it: the false return
+            // already reports the failure to the caller.
+            try {
+                Log.e(TAG, "failed to load native libraries", e)
+            } catch (_: RuntimeException) {
+            }
             false
         }
     }
