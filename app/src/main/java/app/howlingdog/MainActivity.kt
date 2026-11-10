@@ -154,7 +154,7 @@ class MainActivity : ComponentActivity() {
         (getSystemService(INPUT_SERVICE) as InputManager)
             .registerInputDeviceListener(deviceListener, null)
         setContent {
-            MaterialTheme {
+            HowlingDogTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     HowlingDogUi()
                 }
@@ -735,7 +735,7 @@ class MainActivity : ComponentActivity() {
                         Spacer(Modifier.height(24.dp))
                         Text(
                             "HOWLINGDOG",
-                            color = Color.White,
+                            color = Color(EraUi.Palette.GOLD),
                             fontSize = 44.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = 4.sp,
@@ -743,7 +743,7 @@ class MainActivity : ComponentActivity() {
                         Spacer(Modifier.height(16.dp))
                         Text(
                             "PRESS START",
-                            color = Color(0xFFF2C200),
+                            color = Color(EraUi.Palette.GOLD),
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 2.sp,
@@ -761,7 +761,7 @@ class MainActivity : ComponentActivity() {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black)
+                        .background(Color(EraUi.Palette.BACKGROUND))
                         .verticalScroll(rememberScrollState())
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -776,14 +776,14 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text(
                             "SELECT YOUR GAME",
-                            color = Color.White,
+                            color = Color(EraUi.Palette.GOLD),
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = 2.sp,
                         )
                         Text(
                             "TIME %02d".format(timeLeft),
-                            color = if (timeLeft <= 3) Color(0xFFD21F2B) else Color.White,
+                            color = if (timeLeft <= 3) Color(EraUi.Palette.WARNING) else Color(EraUi.Palette.TEXT),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                         )
@@ -793,19 +793,19 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(
-                                Color(0xFF1A1A1A),
+                                Color(EraUi.Palette.SURFACE_RAISED),
                                 RoundedCornerShape(8.dp),
                             )
                             .padding(12.dp),
                     ) {
-                        Text("System files", color = Color.White, style = MaterialTheme.typography.titleSmall)
+                        Text("System files", color = Color(EraUi.Palette.TEXT), style = MaterialTheme.typography.titleSmall)
                         val b = bios
                         if (b == null) {
-                            Text("Checking…", color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                            Text("Checking…", color = Color(EraUi.Palette.TEXT), style = MaterialTheme.typography.bodyMedium)
                         } else {
                             Text(
                                 "System files: ${b.readyCount} of ${b.totalCount} ready",
-                                color = Color.White,
+                                color = Color(EraUi.Palette.TEXT),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             BiosRow("Home console", b.home)
@@ -838,7 +838,7 @@ class MainActivity : ComponentActivity() {
                         Spacer(Modifier.height(16.dp))
                         Text(
                             "No games yet. Add a game to start.",
-                            color = Color.White,
+                            color = Color(EraUi.Palette.TEXT),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     } else {
@@ -881,7 +881,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     Spacer(Modifier.height(16.dp))
-                    Text(status, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                    Text(status, color = Color(EraUi.Palette.TEXT), style = MaterialTheme.typography.bodyMedium)
                 }
                 val toRemove = confirmRemove
                 if (toRemove != null) {
@@ -994,7 +994,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text(
                             playingGame?.displayName ?: "Game",
-                            color = Color.White,
+                            color = Color(EraUi.Palette.TEXT),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         if (editControls) {
@@ -1268,7 +1268,7 @@ class MainActivity : ComponentActivity() {
                                         if (editControls) {
                                             Modifier.border(
                                                 1.dp,
-                                                Color.White.copy(alpha = 0.5f),
+                                                Color(EraUi.Palette.GOLD).copy(alpha = 0.5f),
                                                 RoundedCornerShape(8.dp),
                                             )
                                         } else {
@@ -1334,7 +1334,7 @@ class MainActivity : ComponentActivity() {
                         if (editControls) {
                             Text(
                                 "Drag a control to move it, drag its ↘ corner to resize it",
-                                color = Color.White,
+                                color = Color(EraUi.Palette.TEXT),
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
@@ -1548,10 +1548,10 @@ class MainActivity : ComponentActivity() {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(label, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+            Text(label, color = Color(EraUi.Palette.TEXT), style = MaterialTheme.typography.bodyMedium)
             Text(
                 if (ready) "✓" else "✗",
-                color = Color.White,
+                color = if (ready) Color(EraUi.Palette.GOLD) else Color(EraUi.Palette.WARNING),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -1614,13 +1614,16 @@ class MainActivity : ComponentActivity() {
             modifier = modifier
                 .size(size)
                 .background(
-                    if (held) Color(0xFF880000) else Color(0xFF333333),
+                    if (held) Color(EraUi.Palette.GOLD) else Color(EraUi.Palette.SURFACE_RAISED),
                     CircleShape,
                 )
                 .then(inputModifier),
             contentAlignment = Alignment.Center,
         ) {
-            Text(label, color = Color.White)
+            Text(
+                label,
+                color = if (held) Color(EraUi.Palette.ON_GOLD) else Color(EraUi.Palette.TEXT),
+            )
         }
     }
 
@@ -1645,12 +1648,12 @@ class MainActivity : ComponentActivity() {
             Box(
                 modifier = Modifier
                     .size(20.dp)
-                    .background(Color.White, RoundedCornerShape(4.dp)),
+                    .background(Color(EraUi.Palette.GOLD), RoundedCornerShape(4.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     "↘",
-                    color = Color.Black,
+                    color = Color(EraUi.Palette.ON_GOLD),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -1766,19 +1769,19 @@ class MainActivity : ComponentActivity() {
                 val centre = Offset(this.size.width / 2f, this.size.height / 2f)
                 // Base ring + centre dot.
                 drawCircle(
-                    color = Color.White,
+                    color = Color(EraUi.Palette.GOLD),
                     radius = baseR,
                     center = centre,
                     style = Stroke(width = 2.5.dp.toPx()),
                 )
                 drawCircle(
-                    color = Color.White,
+                    color = Color(EraUi.Palette.GOLD),
                     radius = 2.dp.toPx(),
                     center = centre,
                 )
                 // Knob ring, following the thumb.
                 drawCircle(
-                    color = Color.White,
+                    color = Color(EraUi.Palette.GOLD),
                     radius = knobR,
                     center = centre + knob,
                     style = Stroke(width = 3.5.dp.toPx()),
@@ -1835,14 +1838,14 @@ fun PauseMenu(
         // it wraps at 0 and never resumes or quits anything on its own.
         Text(
             "CONTINUE?",
-            color = Color(0xFFD21F2B),
+            color = Color(EraUi.Palette.GOLD),
             fontSize = 26.sp,
             fontWeight = FontWeight.Black,
             letterSpacing = 2.sp,
         )
         Text(
             "%d".format(timeLeft),
-            color = Color.White,
+            color = Color(EraUi.Palette.TEXT),
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
         )
@@ -1860,7 +1863,7 @@ fun PauseMenu(
         ArcadeButton(text = "QUIT TO LIBRARY", compact = true, onClick = onQuit)
         if (status.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            Text(status, color = Color.White)
+            Text(status, color = Color(EraUi.Palette.TEXT))
         }
     }
 }

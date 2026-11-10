@@ -13,16 +13,40 @@ package app.howlingdog
  * - monogram: the big letter a tile shows for a game with no art.
  */
 object EraUi {
-    /** Era palette: bold arcade colours for the portrait tiles. */
+    /**
+     * The HowlingDog palette, sampled from Robert's icon (the
+     * howling dog on a maroon circuit board with gold traces):
+     * deep maroon/burgundy, gold, dark charcoal. The bright gold is
+     * the highlight gold from the icon's arcs and chip (#EDD192
+     * samples); the muted gold is the average of the circuit
+     * traces. No bright red, no navy — the old palette is gone.
+     * Stored as ARGB ints so the palette is testable on the plain
+     * JVM; Theme.kt turns them into the Material3 colour scheme.
+     */
+    object Palette {
+        val BACKGROUND: Int = 0xFF12171A.toInt() // dark charcoal
+        val SURFACE: Int = 0xFF241014.toInt() // near-black maroon
+        val SURFACE_RAISED: Int = 0xFF311218.toInt() // deep maroon
+        val MAROON: Int = 0xFF552732.toInt() // maroon
+        val MAROON_LIGHT: Int = 0xFF6E3B45.toInt() // rose maroon
+        val GOLD: Int = 0xFFE8C88F.toInt() // bright gold (highlights)
+        val GOLD_MUTED: Int = 0xFFAB8D5A.toInt() // muted gold (traces)
+        val TEXT: Int = 0xFFF3E7CE.toInt() // warm off-white
+        val TEXT_MUTED: Int = 0xFFC9B18A.toInt() // muted gold-tan
+        val WARNING: Int = 0xFFC25B4A.toInt() // muted terracotta (no bright red)
+        val ON_GOLD: Int = 0xFF311218.toInt() // dark text on gold
+    }
+
+    /** Era palette: maroon, bronze and charcoal shades from the icon, so the tiles stay distinguishable per game. */
     val TILE_COLORS: List<Int> = listOf(
-        0xFFD21F2B.toInt(), // red
-        0xFF1F5FD2.toInt(), // blue
-        0xFFF2C200.toInt(), // yellow
-        0xFF1E9E4A.toInt(), // green
-        0xFFF27A00.toInt(), // orange
-        0xFF7A3FD1.toInt(), // purple
-        0xFF00998A.toInt(), // teal
-        0xFFD1007A.toInt(), // magenta
+        0xFF311218.toInt(), // deep maroon
+        0xFF552732.toInt(), // maroon
+        0xFF6E3B45.toInt(), // rose maroon
+        0xFF241014.toInt(), // near-black maroon
+        0xFF775F47.toInt(), // warm brown (dog's fur)
+        0xFF12171A.toInt(), // dark charcoal
+        0xFF6B4E33.toInt(), // dark brass
+        0xFF3D1F26.toInt(), // mid-dark maroon
     )
 
     /** A stable tile colour (ARGB) for a game name: same name, same colour. */

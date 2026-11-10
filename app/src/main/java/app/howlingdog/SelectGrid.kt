@@ -1,5 +1,6 @@
 package app.howlingdog
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -42,7 +43,7 @@ import androidx.compose.ui.unit.sp
  * media type and the grid never sorts by media.
  */
 
-/** A chunky square-cornered arcade button. Primary is red, the rest are dark. */
+/** A chunky square-cornered arcade button. Primary is gold on maroon, the rest are dark maroon with a gold border. */
 @Composable
 fun ArcadeButton(
     text: String,
@@ -56,9 +57,10 @@ fun ArcadeButton(
         modifier = modifier,
         shape = RoundedCornerShape(2.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (primary) Color(0xFFD21F2B) else Color(0xFF333333),
-            contentColor = Color.White,
+            containerColor = if (primary) Color(EraUi.Palette.GOLD) else Color(EraUi.Palette.SURFACE_RAISED),
+            contentColor = if (primary) Color(EraUi.Palette.ON_GOLD) else Color(EraUi.Palette.TEXT),
         ),
+        border = if (primary) null else BorderStroke(1.dp, Color(EraUi.Palette.GOLD_MUTED)),
         // Compact buttons (the pause menu) use less vertical
         // padding. The Material3 40dp minimum height still applies,
         // so they stay comfortably tappable — this only removes
@@ -88,20 +90,20 @@ fun GameTile(
             .background(bg)
             .border(
                 width = if (selected) 4.dp else 2.dp,
-                color = if (selected) Color(0xFFF2C200) else Color.White,
+                color = if (selected) Color(EraUi.Palette.GOLD) else Color(EraUi.Palette.GOLD_MUTED),
             )
             .clickable { onSelect() },
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = EraUi.monogram(entry.displayName),
-            color = Color.White.copy(alpha = 0.25f),
+            color = Color(EraUi.Palette.TEXT).copy(alpha = 0.3f),
             fontSize = 56.sp,
             fontWeight = FontWeight.Black,
         )
         Text(
             text = entry.displayName,
-            color = Color.White,
+            color = Color(EraUi.Palette.TEXT),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 2,
@@ -136,12 +138,12 @@ fun SelectedPortrait(
             .fillMaxWidth()
             .height(200.dp)
             .background(bg)
-            .border(4.dp, Color(0xFFF2C200))
+            .border(4.dp, Color(EraUi.Palette.GOLD))
             .clickable { onPlay() },
     ) {
         Text(
             text = EraUi.monogram(entry.displayName),
-            color = Color.White.copy(alpha = 0.25f),
+            color = Color(EraUi.Palette.TEXT).copy(alpha = 0.3f),
             fontSize = 110.sp,
             fontWeight = FontWeight.Black,
             modifier = Modifier.align(Alignment.Center),
@@ -153,7 +155,7 @@ fun SelectedPortrait(
         ) {
             Text(
                 text = entry.displayName,
-                color = Color.White,
+                color = Color(EraUi.Palette.TEXT),
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Black,
                 maxLines = 2,
@@ -168,7 +170,7 @@ fun SelectedPortrait(
             )
             Text(
                 text = modeLabel(entry.effectiveMode),
-                color = Color.White,
+                color = Color(EraUi.Palette.TEXT),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 style = TextStyle(
