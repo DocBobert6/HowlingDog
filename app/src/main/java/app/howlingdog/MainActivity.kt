@@ -945,7 +945,8 @@ class MainActivity : ComponentActivity() {
         }
 
         // Back navigation, one handler for the whole UI (audit fix
-        // for "closing out of a game closes the whole app"): a
+        // for "closing out of a game closes the whole app" and
+        // "swiping back out of Settings closes the app"): a
         // single BackHandler, always composed and always
         // registered, routes by the current screen — instead of a
         // handler inside each `when` branch, which registers and
@@ -957,11 +958,17 @@ class MainActivity : ComponentActivity() {
         // Playing: back pauses the game; a second back, from the
         // pause menu, quits to the library — closing out of a game
         // returns to the library, never to the Android home screen.
-        BackHandler(enabled = screen == Screen.Playing) {
-            when {
-                editControls -> exitEditMode()
-                paused -> quitToLibrary()
-                else -> pauseGame()
+        // Settings: back returns to where Settings was opened
+        // from (the library, or the game).
+        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings) {
+            when (screen) {
+                Screen.Playing -> when {
+                    editControls -> exitEditMode()
+                    paused -> quitToLibrary()
+                    else -> pauseGame()
+                }
+                Screen.Settings -> screen = settingsFrom
+                else -> { /* Library/Boot: the handler is disabled there. */ }
             }
         }
 
@@ -1876,7 +1883,6 @@ class MainActivity : ComponentActivity() {
             }
 
             Screen.Settings -> {
-                BackHandler { screen = settingsFrom }
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
