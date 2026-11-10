@@ -3,9 +3,13 @@ package app.howlingdog
 import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.hardware.input.InputManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.view.InputDevice
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -92,8 +96,37 @@ class MainActivity : ComponentActivity() {
 
     private var session: PlayerSession? = null
 
+    // --- Gamepad state (Phase 4). The touch UI keeps its own Held
+    // state in the composable; the pad keeps its held buttons and
+    // axis directions here, and the two masks are ORed in pushMask.
+    /** Gamepad buttons currently held (KeyEvent keycodes). */
+    private val padButtonsHeld = mutableSetOf<Int>()
+    /** Direction bits from the gamepad axes (stick/hat). */
+    private var padAxesMask = 0
+    /** True only while a game is running and not paused: pad input is tracked only then, so the D-pad stays free for the pause menu and the library. */
+    private var inputActive = false
+    /** Set by the UI while the game screen is active; called with the current gamepad mask. */
+    private var onPadMask: ((Int) -> Unit)? = null
+    /** Set by the UI; called by the START+SELECT pause hotkey. */
+    private var onPauseHotkey: (() -> Unit)? = null
+
+    /** A pad that disappears must never leave a stuck button. */
+    private val deviceListener = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) {}
+        override fun onInputDeviceChanged(deviceId: Int) {}
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            if (padButtonsHeld.isNotEmpty() || padAxesMask != 0) {
+                padButtonsHeld.clear()
+                padAxesMask = 0
+                pushPadMask()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        (getSystemService(INPUT_SERVICE) as InputManager)
+            .registerInputDeviceListener(deviceListener, null)
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -104,9 +137,72 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        (getSystemService(INPUT_SERVICE) as InputManager)
+            .unregisterInputDeviceListener(deviceListener)
         session?.stop()
         session = null
         super.onDestroy()
+    }
+
+    /** Recompute the gamepad mask from the held buttons and axes, and hand it to the UI. */
+    private fun pushPadMask() {
+        var mask = padAxesMask
+        for (code in padButtonsHeld) mask = mask or GamepadInput.maskForButton(code)
+        onPadMask?.invoke(mask)
+    }
+
+    /** Drop all gamepad-held input (quit, disconnect). */
+    private fun clearPadState() {
+        padButtonsHeld.clear()
+        padAxesMask = 0
+        pushPadMask()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (!inputActive || event.repeatCount != 0) return super.onKeyDown(keyCode, event)
+        if (!GamepadInput.isGamepadButton(keyCode)) return super.onKeyDown(keyCode, event)
+        // START+SELECT together pauses (the emulator-menu hotkey).
+        // Start on its own stays the in-game Start button, and the
+        // touch Pause button stays the primary pause control.
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_START &&
+            KeyEvent.KEYCODE_BUTTON_SELECT in padButtonsHeld
+        ) {
+            onPauseHotkey?.invoke()
+            return true
+        }
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_SELECT &&
+            KeyEvent.KEYCODE_BUTTON_START in padButtonsHeld
+        ) {
+            onPauseHotkey?.invoke()
+            return true
+        }
+        padButtonsHeld.add(keyCode)
+        pushPadMask()
+        return true
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (!inputActive) return super.onKeyUp(keyCode, event)
+        if (padButtonsHeld.remove(keyCode)) {
+            pushPadMask()
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (inputActive &&
+            event.source and InputDevice.SOURCE_JOYSTICK != 0 &&
+            event.action == MotionEvent.ACTION_MOVE
+        ) {
+            val mask = GamepadInput.maskForAxes(event)
+            if (mask != padAxesMask) {
+                padAxesMask = mask
+                pushPadMask()
+            }
+            return true
+        }
+        return super.onGenericMotionEvent(event)
     }
 
     private enum class Screen { Library, Playing, Settings }
@@ -138,6 +234,7 @@ class MainActivity : ComponentActivity() {
         var settingsFrom by remember { mutableStateOf(Screen.Library) }
         var paused by remember { mutableStateOf(false) }
         var pauseStatus by remember { mutableStateOf("") }
+        var padMask by remember { mutableStateOf(0) }
         var held by remember { mutableStateOf(Held()) }
         var gameView by remember { mutableStateOf<GameView?>(null) }
 
@@ -180,11 +277,13 @@ class MainActivity : ComponentActivity() {
                     up = held.up, down = held.down, left = held.left, right = held.right,
                     a = held.a, b = held.b, c = held.c, d = held.d,
                     start = held.start, coin = held.coin,
-                ),
+                ) or padMask,
             )
         }
 
         fun quitToLibrary() {
+            inputActive = false
+            clearPadState()
             session?.stop()
             session = null
             held = Held()
@@ -196,6 +295,7 @@ class MainActivity : ComponentActivity() {
 
         fun pauseGame() {
             if (session == null || paused) return
+            inputActive = false
             session?.pause()
             paused = true
             pauseStatus = ""
@@ -206,6 +306,7 @@ class MainActivity : ComponentActivity() {
             session?.resume()
             paused = false
             pauseStatus = ""
+            inputActive = true
         }
 
         /** One save slot per game, in the saves folder. */
@@ -271,6 +372,7 @@ class MainActivity : ComponentActivity() {
                 gamePath = entry.mainPath(gamesDir).absolutePath,
                 onFrame = { bitmap -> gameView?.setBitmap(bitmap) },
                 onError = { message ->
+                    inputActive = false
                     status = message
                     session = null
                     playingGame = null
@@ -280,6 +382,20 @@ class MainActivity : ComponentActivity() {
             playingGame = entry
             screen = Screen.Playing
             session?.start()
+            inputActive = true
+        }
+
+        // Wire the gamepad callbacks: the activity's key/motion
+        // handlers call these, and they read the composable state
+        // through the remembered State objects, so the captured
+        // lambdas stay correct across recompositions.
+        DisposableEffect(Unit) {
+            onPadMask = { mask -> padMask = mask; pushMask() }
+            onPauseHotkey = { pauseGame() }
+            onDispose {
+                onPadMask = null
+                onPauseHotkey = null
+            }
         }
 
         val gamePicker = rememberLauncherForActivityResult(
