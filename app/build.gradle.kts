@@ -13,15 +13,35 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0-dev"
+        versionName = "0.1.0"
     }
 
-    // Phase 1: no signing. The release keystore is minted at the
-    // first signed release (fresh keystore, never the Mariner or
-    // MainMenu signer) — not now.
+    // Phase 8: release signing. The release keystore is minted at
+    // the first signed release (fresh keystore, never the Mariner
+    // or MainMenu signer). CI supplies it via environment
+    // variables (KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS,
+    // KEY_PASSWORD); without them the release build is unsigned,
+    // so the debug CI stays green. The keystore file itself lives
+    // in GitHub Secrets (ANDROID_KEYSTORE_BASE64) and is never
+    // committed to the repo.
+    val releaseKeystoreFile = System.getenv("KEYSTORE_FILE")
+        ?.let { file(it) }?.takeIf { it.exists() }
+    if (releaseKeystoreFile != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = releaseKeystoreFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (releaseKeystoreFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
