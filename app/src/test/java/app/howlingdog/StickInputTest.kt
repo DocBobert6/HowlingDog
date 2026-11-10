@@ -54,22 +54,22 @@ class StickInputTest {
 
     @Test
     fun diagonalsAcrossAWideBand() {
-        // Square-gate rule: a diagonal holds from 30 to 60 degrees
-        // off horizontal, not just at exactly 45. Each diagonal is
-        // tested at all three angles.
-        for (deg in listOf(30.0, 45.0, 60.0)) {
+        // Square-gate rule, Phase 6 ratio 0.35: a diagonal holds
+        // from about 19 to 71 degrees off horizontal, not just at
+        // exactly 45. Each diagonal is tested at five angles.
+        for (deg in listOf(20.0, 30.0, 45.0, 60.0, 70.0)) {
             val (x, y) = at(deg)
             assertEquals("down-right at $deg", right or down, StickInput.direction(x, y))
         }
-        for (deg in listOf(120.0, 135.0, 150.0)) {
+        for (deg in listOf(110.0, 120.0, 135.0, 150.0, 160.0)) {
             val (x, y) = at(deg)
             assertEquals("down-left at $deg", left or down, StickInput.direction(x, y))
         }
-        for (deg in listOf(210.0, 225.0, 240.0)) {
+        for (deg in listOf(200.0, 210.0, 225.0, 240.0, 250.0)) {
             val (x, y) = at(deg)
             assertEquals("up-left at $deg", left or up, StickInput.direction(x, y))
         }
-        for (deg in listOf(300.0, 315.0, 330.0)) {
+        for (deg in listOf(290.0, 300.0, 315.0, 330.0, 340.0)) {
             val (x, y) = at(deg)
             assertEquals("up-right at $deg", right or up, StickInput.direction(x, y))
         }
@@ -77,34 +77,51 @@ class StickInputTest {
 
     @Test
     fun mostlyCardinalIsCardinalAlone() {
-        // 10 degrees off a cardinal is still that cardinal alone —
-        // the wide diagonal band must not swallow near-cardinal pushes.
-        val (rx, ry) = at(10.0)
-        assertEquals(right, StickInput.direction(rx, ry))
-        val (dx, dy) = at(100.0)
-        assertEquals(down, StickInput.direction(dx, dy))
-        val (lx, ly) = at(170.0)
-        assertEquals(left, StickInput.direction(lx, ly))
-        val (ux, uy) = at(280.0)
-        assertEquals(up, StickInput.direction(ux, uy))
+        // 10 and 15 degrees off a cardinal is still that cardinal
+        // alone — the wide diagonal band must not swallow
+        // near-cardinal pushes. The diagonal boundary is at
+        // about 19.3 degrees (arctan 0.35).
+        for ((deg, want) in listOf(
+            10.0 to right, 15.0 to right,
+            75.0 to down, 80.0 to down, 100.0 to down, 105.0 to down,
+            165.0 to left, 170.0 to left,
+            195.0 to left, 255.0 to up, 260.0 to up,
+            280.0 to up, 285.0 to up, 345.0 to right, 350.0 to right,
+        )) {
+            val (x, y) = at(deg)
+            assertEquals("cardinal at $deg", want, StickInput.direction(x, y))
+        }
     }
 
     @Test
     fun justPastADiagonalBoundaryIsDiagonal() {
-        // 30 degrees (down-right sector, which starts at 22.5).
+        // 20 degrees: just past the diagonal boundary (~19.3).
         val a = 0.9f
-        val dx = (a * 0.866f) // cos 30
-        val dy = (a * 0.5f) // sin 30
+        val dx = (a * 0.940f) // cos 20
+        val dy = (a * 0.342f) // sin 20
         assertEquals(right or down, StickInput.direction(dx, dy))
     }
 
     @Test
     fun justBeforeADiagonalBoundaryIsCardinal() {
-        // 15 degrees (right sector, which ends at 22.5).
+        // 15 degrees: just before the diagonal boundary (~19.3).
         val a = 0.9f
         val dx = (a * 0.966f) // cos 15
         val dy = (a * 0.259f) // sin 15
         assertEquals(right, StickInput.direction(dx, dy))
+    }
+
+    @Test
+    fun labelNamesTheHeldDirections() {
+        assertEquals("—", StickInput.label(false, false, false, false))
+        assertEquals("UP", StickInput.label(true, false, false, false))
+        assertEquals("DOWN", StickInput.label(false, true, false, false))
+        assertEquals("LEFT", StickInput.label(false, false, true, false))
+        assertEquals("RIGHT", StickInput.label(false, false, false, true))
+        assertEquals("UP+RIGHT", StickInput.label(true, false, false, true))
+        assertEquals("UP+LEFT", StickInput.label(true, false, true, false))
+        assertEquals("DOWN+RIGHT", StickInput.label(false, true, false, true))
+        assertEquals("DOWN+LEFT", StickInput.label(false, true, true, false))
     }
 
     @Test

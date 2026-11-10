@@ -1330,6 +1330,28 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
+                        // TEMPORARY Phase 6 diagnostic (stick
+                        // diagonals): a small readout of exactly what
+                        // direction the stick is reporting — the same
+                        // bits pushMask() sends to the core. It
+                        // separates a stick problem from a core/game
+                        // problem: if it shows UP+RIGHT while the
+                        // game will not aim diagonally, the fault is
+                        // downstream; if it shows only UP, the stick
+                        // is not producing the diagonal. Remove once
+                        // Robert confirms diagonals work — it is not
+                        // part of the shipped UI.
+                        if (!editControls) {
+                            Text(
+                                StickInput.label(held.up, held.down, held.left, held.right),
+                                color = Color(EraUi.Palette.GOLD),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .padding(4.dp),
+                            )
+                        }
                         // Edit-mode hint, over the game area.
                         if (editControls) {
                             Text(
