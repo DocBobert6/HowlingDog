@@ -19,7 +19,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -42,6 +44,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,6 +54,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -286,6 +290,17 @@ class MainActivity : ComponentActivity() {
         var controlSize by remember { mutableStateOf(controlSettings.size()) }
         var stickPos by remember { mutableStateOf(controlSettings.stickPosition()) }
         var buttonsPos by remember { mutableStateOf(controlSettings.buttonsPosition()) }
+        // Adjust-layout edit mode: entered from the pause screen
+        // (the game has to be running to see where the controls
+        // sit). While editing, the game stays paused, the pause
+        // overlay hides, and the two control units drag.
+        var editControls by remember { mutableStateOf(false) }
+
+        fun exitEditMode() {
+            controlSettings.setStickPosition(stickPos)
+            controlSettings.setButtonsPosition(buttonsPos)
+            editControls = false
+        }
         val haptics = remember(context) {
             Haptics(context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
         }
@@ -771,7 +786,13 @@ class MainActivity : ComponentActivity() {
             }
 
             Screen.Playing -> {
-                BackHandler { if (paused) resumeGame() else pauseGame() }
+                BackHandler {
+                    when {
+                        editControls -> exitEditMode()
+                        paused -> resumeGame()
+                        else -> pauseGame()
+                    }
+                }
                 DisposableEffect(Unit) {
                     activity.requestedOrientation =
                         ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -798,7 +819,19 @@ class MainActivity : ComponentActivity() {
                             color = Color.White,
                             style = MaterialTheme.typography.bodyMedium,
                         )
-                        Button(onClick = { pauseGame() }) { Text("Pause") }
+                        if (editControls) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Button(onClick = {
+                                    controlSettings.resetLayout()
+                                    stickPos = ControlSettings.DEFAULT_STICK_POS
+                                    buttonsPos = ControlSettings.DEFAULT_BUTTONS_POS
+                                }) { Text("Reset layout") }
+                                Spacer(Modifier.width(8.dp))
+                                Button(onClick = { exitEditMode() }) { Text("Done") }
+                            }
+                        } else {
+                            Button(onClick = { pauseGame() }) { Text("Pause") }
+                        }
                     }
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AndroidView(
@@ -851,6 +884,66 @@ class MainActivity : ComponentActivity() {
                                 (buttonsPos.x * boxW - buttonsWPx / 2).roundToInt(),
                                 (buttonsPos.y * boxH - buttonsHPx / 2).roundToInt(),
                             )
+                            // Adjust-layout drag: in edit mode each
+                            // unit drags to a new centre fraction.
+                            // rememberUpdatedState keeps the drag
+                            // lambda reading the current position
+                            // without restarting the gesture on
+                            // every move. Positions persist on drag
+                            // end (and on Done). The units are
+                            // clamped so they stay fully inside the
+                            // game area — and they live inside this
+                            // Box, below the title row, so a dragged
+                            // control can never cover the Pause
+                            // button.
+                            val stickPosState = rememberUpdatedState(stickPos)
+                            val buttonsPosState = rememberUpdatedState(buttonsPos)
+                            val stickDrag = if (editControls) {
+                                Modifier.pointerInput(boxW, boxH, stickTouchPx) {
+                                    detectDragGestures(
+                                        onDragEnd = {
+                                            controlSettings.setStickPosition(stickPosState.value)
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            val cur = stickPosState.value
+                                            val halfW = stickTouchPx / 2 / boxW
+                                            val halfH = stickTouchPx / 2 / boxH
+                                            stickPos = ControlPosition(
+                                                (cur.x + dragAmount.x / boxW)
+                                                    .coerceIn(halfW, 1f - halfW),
+                                                (cur.y + dragAmount.y / boxH)
+                                                    .coerceIn(halfH, 1f - halfH),
+                                            )
+                                        },
+                                    )
+                                }
+                            } else {
+                                Modifier
+                            }
+                            val buttonsDrag = if (editControls) {
+                                Modifier.pointerInput(boxW, boxH, buttonsWPx, buttonsHPx) {
+                                    detectDragGestures(
+                                        onDragEnd = {
+                                            controlSettings.setButtonsPosition(buttonsPosState.value)
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            val cur = buttonsPosState.value
+                                            val halfW = buttonsWPx / 2 / boxW
+                                            val halfH = buttonsHPx / 2 / boxH
+                                            buttonsPos = ControlPosition(
+                                                (cur.x + dragAmount.x / boxW)
+                                                    .coerceIn(halfW, 1f - halfW),
+                                                (cur.y + dragAmount.y / boxH)
+                                                    .coerceIn(halfH, 1f - halfH),
+                                            )
+                                        },
+                                    )
+                                }
+                            } else {
+                                Modifier
+                            }
                             OutlineStick(
                                 size = (140f * scale).dp,
                                 grabMargin = (16f * scale).dp,
@@ -866,52 +959,84 @@ class MainActivity : ComponentActivity() {
                                 onDirectionChange = { mask ->
                                     if (mask != 0) playHaptic()
                                 },
+                                enabled = !editControls,
                                 modifier = Modifier
                                     .offset { stickOffset }
-                                    .size(stickTouchDp.dp),
+                                    .size(stickTouchDp.dp)
+                                    .then(stickDrag),
                             )
                             // Neo Geo buttons (A B / C D) with
                             // Start / Coin in a row beneath them.
+                            // In edit mode the cluster shows a thin
+                            // outline so it reads as draggable, and
+                            // its buttons stop taking input.
                             Column(
-                                modifier = Modifier.offset { buttonsOffset },
+                                modifier = Modifier
+                                    .offset { buttonsOffset }
+                                    .then(buttonsDrag)
+                                    .then(
+                                        if (editControls) {
+                                            Modifier.border(
+                                                1.dp,
+                                                Color.White.copy(alpha = 0.5f),
+                                                RoundedCornerShape(8.dp),
+                                            )
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Row {
                                     HoldButton("A", { pressed ->
                                         held = held.copy(a = pressed); pushMask()
-                                    }, scale = scale, onHaptic = ::playHaptic)
+                                    }, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
                                     Spacer(Modifier.width(gapDp.dp))
                                     HoldButton("B", { pressed ->
                                         held = held.copy(b = pressed); pushMask()
-                                    }, scale = scale, onHaptic = ::playHaptic)
+                                    }, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
                                 }
                                 Spacer(Modifier.height(gapDp.dp))
                                 Row {
                                     HoldButton("C", { pressed ->
                                         held = held.copy(c = pressed); pushMask()
-                                    }, scale = scale, onHaptic = ::playHaptic)
+                                    }, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
                                     Spacer(Modifier.width(gapDp.dp))
                                     HoldButton("D", { pressed ->
                                         held = held.copy(d = pressed); pushMask()
-                                    }, scale = scale, onHaptic = ::playHaptic)
+                                    }, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
                                 }
                                 Spacer(Modifier.height(rowGapDp.dp))
                                 Row {
                                     HoldButton("Coin", { pressed ->
                                         held = held.copy(coin = pressed); pushMask()
-                                    }, small = true, scale = scale, onHaptic = ::playHaptic)
+                                    }, small = true, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
                                     Spacer(Modifier.width(gapDp.dp))
                                     HoldButton("Start", { pressed ->
                                         held = held.copy(start = pressed); pushMask()
-                                    }, small = true, scale = scale, onHaptic = ::playHaptic)
+                                    }, small = true, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
                                 }
                             }
+                        }
+                        // Edit-mode hint, over the game area.
+                        if (editControls) {
+                            Text(
+                                "Drag the stick and buttons to move them",
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .padding(4.dp),
+                            )
                         }
                         // Pause overlay: covers the game and the
                         // controls (drawn last, so it is on top) and
                         // swallows touches, so no button can be
-                        // pressed while paused.
-                        if (paused) {
+                        // pressed while paused. Hidden while the
+                        // controls are being adjusted (the game
+                        // stays paused underneath).
+                        if (paused && !editControls) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -936,6 +1061,8 @@ class MainActivity : ComponentActivity() {
                                         settingsFrom = Screen.Playing
                                         screen = Screen.Settings
                                     }) { Text("Settings") }
+                                    Spacer(Modifier.height(8.dp))
+                                    Button(onClick = { editControls = true }) { Text("Adjust controls") }
                                     Spacer(Modifier.height(8.dp))
                                     Button(onClick = { quitToLibrary() }) { Text("Quit to library") }
                                     if (pauseStatus.isNotEmpty()) {
@@ -974,6 +1101,59 @@ class MainActivity : ComponentActivity() {
                         OptionRow(opt, settings)
                     }
                     Spacer(Modifier.height(16.dp))
+                    Text("On-screen controls", style = MaterialTheme.typography.titleSmall)
+                    ControlDropdownRow(
+                        "Haptics",
+                        listOf(
+                            "off" to "Off",
+                            "light" to "Light",
+                            "medium" to "Medium",
+                            "heavy" to "Heavy",
+                        ),
+                        hapticsLevel.name.lowercase(),
+                    ) { value ->
+                        val level = HapticLevel.valueOf(value.uppercase())
+                        controlSettings.setHaptics(level)
+                        hapticsLevel = level
+                    }
+                    ControlDropdownRow(
+                        "Controls size",
+                        listOf(
+                            "small" to "Small",
+                            "medium" to "Medium",
+                            "large" to "Large",
+                        ),
+                        controlSize.name.lowercase(),
+                    ) { value ->
+                        val size = ControlSize.valueOf(value.uppercase())
+                        controlSettings.setSize(size)
+                        controlSize = size
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Opacity", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "${(overlayOpacity * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Slider(
+                        value = overlayOpacity,
+                        onValueChange = { overlayOpacity = it },
+                        valueRange = 0.2f..1.0f,
+                        steps = 7,
+                        onValueChangeFinished = {
+                            controlSettings.setOpacity((overlayOpacity * 100).roundToInt())
+                        },
+                    )
+                    Text(
+                        "To move the controls, start a game, pause, and tap Adjust controls.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(16.dp))
                     Button(onClick = { screen = settingsFrom }) { Text("Back") }
                 }
             }
@@ -1005,6 +1185,44 @@ class MainActivity : ComponentActivity() {
                             onClick = {
                                 settings.set(opt.key, v)
                                 value = v
+                                expanded = false
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /** A dropdown settings row for a plain (value, label) option list (the on-screen controls). */
+    @Composable
+    private fun ControlDropdownRow(
+        label: String,
+        options: List<Pair<String, String>>,
+        current: String,
+        onSelect: (String) -> Unit,
+    ) {
+        var expanded by remember { mutableStateOf(false) }
+        val currentLabel = options.firstOrNull { it.first == current }?.second ?: current
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Box {
+                TextButton(onClick = { expanded = true }) {
+                    Text(currentLabel)
+                }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                ) {
+                    for ((v, l) in options) {
+                        DropdownMenuItem(
+                            text = { Text(l + if (v == current) " ✓" else "") },
+                            onClick = {
+                                onSelect(v)
                                 expanded = false
                             },
                         )
