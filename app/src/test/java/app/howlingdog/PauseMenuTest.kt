@@ -51,7 +51,7 @@ class PauseMenuTest {
     @Test
     fun allButtonsFitALandscapeGameArea() {
         // A Pixel 10a landscape game area is ~355dp tall; the
-        // tightened menu is ~340dp, so it fits without scrolling.
+        // tightened menu fits without scrolling.
         setMenu(width = 800, height = 360)
         composeRule.onNodeWithText("CONTINUE?").assertIsDisplayed()
         composeRule.onNodeWithText("RESUME").assertIsDisplayed()

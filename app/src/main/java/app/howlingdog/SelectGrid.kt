@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -47,6 +48,7 @@ fun ArcadeButton(
     text: String,
     modifier: Modifier = Modifier,
     primary: Boolean = false,
+    compact: Boolean = false,
     onClick: () -> Unit,
 ) {
     Button(
@@ -57,6 +59,15 @@ fun ArcadeButton(
             containerColor = if (primary) Color(0xFFD21F2B) else Color(0xFF333333),
             contentColor = Color.White,
         ),
+        // Compact buttons (the pause menu) use less vertical
+        // padding. The Material3 40dp minimum height still applies,
+        // so they stay comfortably tappable — this only removes
+        // height above that floor.
+        contentPadding = if (compact) {
+            PaddingValues(horizontal = 24.dp, vertical = 4.dp)
+        } else {
+            ButtonDefaults.ContentPadding
+        },
     ) {
         Text(text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
     }

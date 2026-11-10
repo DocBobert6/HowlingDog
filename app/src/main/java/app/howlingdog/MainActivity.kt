@@ -1782,10 +1782,11 @@ class MainActivity : ComponentActivity() {
 /**
  * The arcade "CONTINUE?" pause menu: header, decorative countdown,
  * and the six options. The button list scrolls, so every option is
- * reachable even on a short landscape screen; the header, countdown
- * and spacing are tight, so the whole menu fits without scrolling
- * when the screen is tall enough. The buttons stay full-size and
- * comfortably tappable — only the chrome around them shrank.
+ * reachable even on a short landscape screen; the header, countdown,
+ * spacing and button padding are tight, so the whole menu fits
+ * without scrolling when the screen is tall enough. The buttons
+ * stay full-size and comfortably tappable — the compact padding
+ * only removes height above the Material3 40dp floor.
  *
  * Extracted from MainActivity so the layout is testable in
  * isolation (a running game needs native code, which Robolectric
@@ -1815,28 +1816,28 @@ fun PauseMenu(
         Text(
             "CONTINUE?",
             color = Color(0xFFD21F2B),
-            fontSize = 30.sp,
+            fontSize = 26.sp,
             fontWeight = FontWeight.Black,
             letterSpacing = 2.sp,
         )
         Text(
             "%d".format(timeLeft),
             color = Color.White,
-            fontSize = 22.sp,
+            fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
         )
-        Spacer(Modifier.height(8.dp))
-        ArcadeButton(text = "RESUME", primary = true, onClick = onResume)
-        Spacer(Modifier.height(6.dp))
-        ArcadeButton(text = "SAVE STATE", onClick = onSaveState)
-        Spacer(Modifier.height(6.dp))
-        ArcadeButton(text = "LOAD STATE", onClick = onLoadState)
-        Spacer(Modifier.height(6.dp))
-        ArcadeButton(text = "SETTINGS", onClick = onSettings)
-        Spacer(Modifier.height(6.dp))
-        ArcadeButton(text = "ADJUST CONTROLS", onClick = onAdjustControls)
-        Spacer(Modifier.height(6.dp))
-        ArcadeButton(text = "QUIT TO LIBRARY", onClick = onQuit)
+        Spacer(Modifier.height(4.dp))
+        ArcadeButton(text = "RESUME", primary = true, compact = true, onClick = onResume)
+        Spacer(Modifier.height(4.dp))
+        ArcadeButton(text = "SAVE STATE", compact = true, onClick = onSaveState)
+        Spacer(Modifier.height(4.dp))
+        ArcadeButton(text = "LOAD STATE", compact = true, onClick = onLoadState)
+        Spacer(Modifier.height(4.dp))
+        ArcadeButton(text = "SETTINGS", compact = true, onClick = onSettings)
+        Spacer(Modifier.height(4.dp))
+        ArcadeButton(text = "ADJUST CONTROLS", compact = true, onClick = onAdjustControls)
+        Spacer(Modifier.height(4.dp))
+        ArcadeButton(text = "QUIT TO LIBRARY", compact = true, onClick = onQuit)
         if (status.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(status, color = Color.White)
