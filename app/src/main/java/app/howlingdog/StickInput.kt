@@ -68,33 +68,6 @@ object StickInput {
     }
 
     /**
-     * Human-readable label for the four direction bits, for the
-     * temporary Phase 6 stick-direction readout on the game
-     * screen: "UP+RIGHT", "UP", or "—" when no direction is held.
-     * The readout shows exactly what the stick is reporting (the
-     * same bits pushMask() sends to the core), so it separates a
-     * stick problem from a core/game problem.
-     */
-    fun label(up: Boolean, down: Boolean, left: Boolean, right: Boolean): String {
-        val vertical = when {
-            up -> "UP"
-            down -> "DOWN"
-            else -> ""
-        }
-        val horizontal = when {
-            left -> "LEFT"
-            right -> "RIGHT"
-            else -> ""
-        }
-        return when {
-            vertical.isNotEmpty() && horizontal.isNotEmpty() -> "$vertical+$horizontal"
-            vertical.isNotEmpty() -> vertical
-            horizontal.isNotEmpty() -> horizontal
-            else -> "—"
-        }
-    }
-
-    /**
      * Clamp a knob offset to the stick's maximum travel, so the knob
      * never leaves the base ring. Returns the clamped (dx, dy), still
      * in units of full travel.

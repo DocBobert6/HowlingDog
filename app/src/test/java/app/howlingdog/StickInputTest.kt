@@ -112,19 +112,6 @@ class StickInputTest {
     }
 
     @Test
-    fun labelNamesTheHeldDirections() {
-        assertEquals("—", StickInput.label(false, false, false, false))
-        assertEquals("UP", StickInput.label(true, false, false, false))
-        assertEquals("DOWN", StickInput.label(false, true, false, false))
-        assertEquals("LEFT", StickInput.label(false, false, true, false))
-        assertEquals("RIGHT", StickInput.label(false, false, false, true))
-        assertEquals("UP+RIGHT", StickInput.label(true, false, false, true))
-        assertEquals("UP+LEFT", StickInput.label(true, false, true, false))
-        assertEquals("DOWN+RIGHT", StickInput.label(false, true, false, true))
-        assertEquals("DOWN+LEFT", StickInput.label(false, true, true, false))
-    }
-
-    @Test
     fun clampKeepsTheKnobInsideTheBase() {
         val (x, y) = StickInput.clamp(2f, 0f)
         assertEquals(1f, x, 0.001f)
