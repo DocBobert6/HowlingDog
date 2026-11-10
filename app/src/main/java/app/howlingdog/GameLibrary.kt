@@ -25,8 +25,8 @@ import java.io.File
  * never the raw zip names for the two 1990s systems):
  * - aes.zip     -> "Home console"  (the default system for carts)
  * - neogeo.zip  -> "Arcade"
- * - neocd.zip   -> "1994 system"   (the 1994 disc system)
- * - neocdz.zip  -> "1995 system"   (the 1995 disc system)
+ * - neocd.zip   -> "Neo Geo CD"    (the Neo Geo CD system)
+ * - neocdz.zip  -> "Neo Geo CDZ"   (the Neo Geo CDZ system)
  */
 data class GameEntry(
     /** Stored main file name, e.g. "neobombe.neo" or "game.cue". */
@@ -169,7 +169,7 @@ class GameLibrary(
     /**
      * Whether a game can boot under the core's current defaults:
      * carts boot on the home console (aes.zip); cue/chd games boot
-     * on the 1995 system (neocdz.zip, the core's default). If this
+     * on the Neo Geo CDZ (neocdz.zip, the core's default). If this
      * is false the UI says so instead of starting a game that cannot
      * load; the core's own load error still surfaces if it fails.
      */

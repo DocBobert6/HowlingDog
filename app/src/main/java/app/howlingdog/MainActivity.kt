@@ -384,8 +384,8 @@ class MainActivity : ComponentActivity() {
                             )
                             BiosRow("Home console", b.home)
                             BiosRow("Arcade", b.arcade)
-                            BiosRow("1994 system", b.system1994)
-                            BiosRow("1995 system", b.system1995)
+                            BiosRow("Neo Geo CD", b.system1994)
+                            BiosRow("Neo Geo CDZ", b.system1995)
                         }
                         Spacer(Modifier.height(8.dp))
                         Button(onClick = { biosPicker.launch(null) }) {
