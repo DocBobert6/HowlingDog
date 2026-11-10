@@ -142,9 +142,12 @@ object NeoHeader {
      * is the specific identifier; the title prefix keeps a bootleg
      * from matching its parent game's art), then a title prefix,
      * then a reverse prefix (the display name starts with the art
-     * title). Among several prefix matches the shortest wins, and a
-     * "bootleg" file only wins when the title itself says bootleg
-     * (so "Metal Slug 5" never lands on "Metal Slug 5 Plus").
+     * title), then a contiguous phrase (an art title, or one of
+     * its " _ " alternate titles, appears anywhere inside the
+     * display name). Among several prefix matches the shortest
+     * wins, and a "bootleg" file only wins when the title itself
+     * says bootleg (so "Metal Slug 5" never lands on "Metal Slug
+     * 5 Plus").
      *
      * Both sides are normalised for the match ([normalizeForMatch]):
      * a CD game's identity comes from its cue/disc display name,
@@ -212,7 +215,75 @@ object NeoHeader {
             reverse.filter { (_, norm) -> "bootleg" !in norm }
                 .maxByOrNull { it.second.length }?.let { return it.first }
         }
+        // 6. Contiguous phrase: an art title — or one of its
+        // " _ " alternate titles, parenthetical qualifiers
+        // stripped — appears as a contiguous word-boundary-
+        // delimited phrase anywhere inside the display name.
+        // This is for disc names whose words are not in the art
+        // filename's order: a Japanese-title prefix ("Ryuuko no
+        // Ken 2 Art of Fighting 2", "Sonic Wings 2 Aero Fighters
+        // 2"), a duplicated title ("King of Fighters 99 The The
+        // King of Fighters 99 - Millennium Battle"), or the two
+        // titles in the opposite order ("Big Tournament Golf Neo
+        // Turf Masters" vs "Neo Turf Masters _ Big Tournament
+        // Golf"). Longest candidate wins, so a more specific
+        // title beats a shorter one; among equal-length
+        // candidates the standard numbered release wins (NGH
+        // before NGM, then the shortest filename), so "The King
+        // of Fighters '99 - Millennium Battle (NGH-2510)" beats
+        // the "(Korean release)" / "(earlier)" / "(prototype)"
+        // variants. The bootleg guard applies here too. Last
+        // resort only: steps 1–5 already failed, so this only
+        // ever fires for a game that would otherwise get no art
+        // at all.
+        val contained = byNorm.flatMap { (file, norm) ->
+            step6Candidates(file).map { candidate -> Triple(file, norm, candidate) }
+        }.filter { (_, _, candidate) -> containsPhrase(want, candidate) }
+        if (contained.isNotEmpty()) {
+            val ranked = contained.sortedWith(
+                compareByDescending<Triple<String, String, String>> { it.third.length }
+                    .thenBy { (_, norm, _) -> if ("ngh " in norm) 0 else if ("ngm " in norm) 1 else 2 }
+                    .thenBy { (file, _, _) -> file.length },
+            )
+            if ("bootleg" in want) return ranked.first().first
+            ranked.firstOrNull { (_, norm, _) -> "bootleg" !in norm }?.let { return it.first }
+        }
         return null
+    }
+
+    /**
+     * Step 6 candidate titles for one art filename: the full
+     * normalized name, plus each " _ "-separated alternate title
+     * with trailing parenthetical qualifiers stripped ("(NGH-2510)",
+     * "(Korean release)", "(earlier)"). The " _ " is the libretro
+     * convention for two titles of one game (English _ Japanese);
+     * a disc's display name can carry both titles in the opposite
+     * order, so each half is a candidate on its own. The full
+     * name is kept too, so a whole title in the middle of a long
+     * display name still matches.
+     */
+    private fun step6Candidates(fileName: String): List<String> {
+        val base = fileName.removeSuffix(".png")
+        val out = mutableListOf<String>()
+        normalizeForMatch(base).takeIf { it.isNotEmpty() }?.let { out.add(it) }
+        for (segment in base.split(" _ ")) {
+            var s = segment.trim()
+            while (s.endsWith(")")) {
+                val open = s.lastIndexOf('(')
+                if (open < 0) break
+                s = s.substring(0, open).trim()
+            }
+            normalizeForMatch(s).takeIf { it.isNotEmpty() }?.let { out.add(it) }
+        }
+        return out.distinct()
+    }
+
+    /** True when [phrase] is a contiguous word-boundary-delimited sequence inside [haystack]. */
+    private fun containsPhrase(haystack: String, phrase: String): Boolean {
+        return haystack == phrase ||
+            haystack.startsWith("$phrase ") ||
+            haystack.endsWith(" $phrase") ||
+            haystack.contains(" $phrase ")
     }
 
     /** The filenames in a GitHub API contents listing ({"name": "..."} objects). */

@@ -83,6 +83,11 @@ class NeoHeaderTest {
         "Cyber-Lip (NGM-010).png",
         "Metal Slug 5 Plus (bootleg).png",
         "The King of Fighters '98 - The Slugfest _ King of Fighters '98 - dream match never ends (NGH-2420).png",
+        "Neo Turf Masters _ Big Tournament Golf.png",
+        "The King of Fighters '99 - Millennium Battle (NGH-2510).png",
+        "Art of Fighting 2 _ Ryuuko no Ken 2 (NGH-056).png",
+        "Aero Fighters 2 _ Sonic Wings 2.png",
+        "Twinkle Star Sprites.png",
     )
 
     @Test fun matchesExactTitle() {
@@ -190,6 +195,94 @@ class NeoHeaderTest {
         assertEquals(
             "Galaxy Fight - Universal Warriors.png",
             NeoHeader.matchArtFile("Galaxy Fight Universal Warriors Rev 1", null, two),
+        )
+    }
+
+    // --- CD titles: the .chd display name carries both titles,
+    // in the opposite order from the art filename ---
+
+    @Test fun matchesCdNeoTurfMastersReversedTitles() {
+        // The .chd name is "Big Tournament Golf Neo Turf Masters
+        // Japan EnJa" (Japanese title first); the art file is
+        // "Neo Turf Masters _ Big Tournament Golf.png" (English
+        // title first). Neither is a prefix of the other, but
+        // each half of the art title appears contiguously in the
+        // display name, so the contiguous-phrase step matches.
+        assertEquals(
+            "Neo Turf Masters _ Big Tournament Golf.png",
+            NeoHeader.matchArtFile("Big Tournament Golf Neo Turf Masters Japan EnJa", null, index),
+        )
+    }
+
+    @Test fun matchesCdKof99DuplicatedTitle() {
+        // The .chd name duplicates the title ("King of Fighters
+        // 99 The The King of Fighters 99 - Millennium Battle")
+        // and carries an 8-letter language tag ("EnJaEsPt") the
+        // strip does not remove; the art file is "The King of
+        // Fighters '99 - Millennium Battle (NGH-2510).png". The
+        // art title (parenthetical stripped) appears contiguously
+        // inside the display name, so the contiguous-phrase step
+        // matches.
+        assertEquals(
+            "The King of Fighters '99 - Millennium Battle (NGH-2510).png",
+            NeoHeader.matchArtFile(
+                "King of Fighters 99 The The King of Fighters 99 - Millennium Battle World EnJaEsPt",
+                null, index,
+            ),
+        )
+    }
+
+    @Test fun matchesCdArtOfFighting2JapanesePrefix() {
+        // The .chd name prepends the Japanese title ("Ryuuko no
+        // Ken 2 Art of Fighting 2"); the art file is "Art of
+        // Fighting 2 _ Ryuuko no Ken 2 (NGH-056).png". The English
+        // half appears contiguously in the display name, so the
+        // contiguous-phrase step matches.
+        assertEquals(
+            "Art of Fighting 2 _ Ryuuko no Ken 2 (NGH-056).png",
+            NeoHeader.matchArtFile("Ryuuko no Ken 2 Art of Fighting 2 World EnJaEs", null, index),
+        )
+    }
+
+    @Test fun matchesCdAeroFighters2JapanesePrefix() {
+        // The .chd name prepends the Japanese title ("Sonic
+        // Wings 2 Aero Fighters 2"); the art file is "Aero
+        // Fighters 2 _ Sonic Wings 2.png". The English half
+        // appears contiguously in the display name, so the
+        // contiguous-phrase step matches.
+        assertEquals(
+            "Aero Fighters 2 _ Sonic Wings 2.png",
+            NeoHeader.matchArtFile("Sonic Wings 2 Aero Fighters 2 World EnJa", null, index),
+        )
+    }
+
+    @Test fun matchesCdTwinkleStarSprites() {
+        // The one CD game whose art already loaded (exact title
+        // after stripping "Japan EnJa") — regression guard.
+        assertEquals(
+            "Twinkle Star Sprites.png",
+            NeoHeader.matchArtFile("Twinkle Star Sprites Japan EnJa", null, index),
+        )
+    }
+
+    @Test fun contiguousPhrasePrefersNumberedRelease() {
+        // All five KOF '99 art files share the same candidate
+        // title; the standard NGH release wins over the
+        // "(Korean release)" / "(earlier)" / "(prototype)"
+        // variants (and over NGM).
+        val kof99 = listOf(
+            "The King of Fighters '99 - Millennium Battle (Korean release).png",
+            "The King of Fighters '99 - Millennium Battle (NGH-2510).png",
+            "The King of Fighters '99 - Millennium Battle (NGM-2510).png",
+            "The King of Fighters '99 - Millennium Battle (earlier).png",
+            "The King of Fighters '99 - Millennium Battle (prototype).png",
+        )
+        assertEquals(
+            "The King of Fighters '99 - Millennium Battle (NGH-2510).png",
+            NeoHeader.matchArtFile(
+                "King of Fighters 99 The The King of Fighters 99 - Millennium Battle World EnJaEsPt",
+                null, kof99,
+            ),
         )
     }
 
