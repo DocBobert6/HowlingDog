@@ -46,6 +46,49 @@ class StickInputTest {
         assertEquals(right or up, StickInput.direction(0.8f, -0.8f))
     }
 
+    /** Knob offset at `degrees` from horizontal (0 = right, 90 = down, y down), magnitude 0.9. */
+    private fun at(degrees: Double): Pair<Float, Float> {
+        val r = Math.toRadians(degrees)
+        return (0.9f * kotlin.math.cos(r)).toFloat() to (0.9f * kotlin.math.sin(r)).toFloat()
+    }
+
+    @Test
+    fun diagonalsAcrossAWideBand() {
+        // Square-gate rule: a diagonal holds from 30 to 60 degrees
+        // off horizontal, not just at exactly 45. Each diagonal is
+        // tested at all three angles.
+        for (deg in listOf(30.0, 45.0, 60.0)) {
+            val (x, y) = at(deg)
+            assertEquals("down-right at $deg", right or down, StickInput.direction(x, y))
+        }
+        for (deg in listOf(120.0, 135.0, 150.0)) {
+            val (x, y) = at(deg)
+            assertEquals("down-left at $deg", left or down, StickInput.direction(x, y))
+        }
+        for (deg in listOf(210.0, 225.0, 240.0)) {
+            val (x, y) = at(deg)
+            assertEquals("up-left at $deg", left or up, StickInput.direction(x, y))
+        }
+        for (deg in listOf(300.0, 315.0, 330.0)) {
+            val (x, y) = at(deg)
+            assertEquals("up-right at $deg", right or up, StickInput.direction(x, y))
+        }
+    }
+
+    @Test
+    fun mostlyCardinalIsCardinalAlone() {
+        // 10 degrees off a cardinal is still that cardinal alone —
+        // the wide diagonal band must not swallow near-cardinal pushes.
+        val (rx, ry) = at(10.0)
+        assertEquals(right, StickInput.direction(rx, ry))
+        val (dx, dy) = at(100.0)
+        assertEquals(down, StickInput.direction(dx, dy))
+        val (lx, ly) = at(170.0)
+        assertEquals(left, StickInput.direction(lx, ly))
+        val (ux, uy) = at(280.0)
+        assertEquals(up, StickInput.direction(ux, uy))
+    }
+
     @Test
     fun justPastADiagonalBoundaryIsDiagonal() {
         // 30 degrees (down-right sector, which starts at 22.5).

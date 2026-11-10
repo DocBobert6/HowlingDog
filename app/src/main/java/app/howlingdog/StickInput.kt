@@ -1,7 +1,6 @@
 package app.howlingdog
 
-import kotlin.math.PI
-import kotlin.math.atan2
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
@@ -9,11 +8,16 @@ import kotlin.math.sqrt
  * Android dependencies, unit-tested on the JVM).
  *
  * The stick is fixed in place: the thumb drags a knob inside a base
- * ring, and the direction comes from the drag angle, in 8 sectors
- * of 45 degrees each (up, down, left, right, and the four
- * diagonals). That is the whole point versus the old 4-button
- * D-pad: rolling the thumb around the edge changes direction
- * smoothly, and diagonals just work.
+ * ring, and the direction comes from the drag. Square-gate rule,
+ * like the real arcade stick: a diagonal is the corner, where both
+ * switches close. Once past the dead zone, if the smaller axis is
+ * at least half the larger, both directions are on; otherwise only
+ * the dominant axis is. That makes the diagonal band wide (30 to
+ * 60 degrees off horizontal) instead of an exact 45-degree angle,
+ * so a thumb pushing "up and to the right" lands on up-right even
+ * a few degrees off centre — the old 45-degree sector boundaries
+ * were too unforgiving, and a slightly-off push read as straight
+ * up, which is why diagonal shooting felt broken in Metal Slug.
  *
  * Coordinates: dx/dy are the knob offset from the base centre, in
  * units of the stick's maximum travel (1.0 = the knob at the edge
@@ -30,25 +34,24 @@ object StickInput {
 
     /** Direction bits from the knob offset (dx, dy), each in units of full travel. */
     fun direction(dx: Float, dy: Float): Int {
+        val ax = abs(dx)
+        val ay = abs(dy)
         val mag = sqrt(dx * dx + dy * dy)
         if (mag < DEAD_ZONE) return 0
-        // Angle in degrees, 0 = right, increasing clockwise (y down).
-        var angle = atan2(dy, dx) * 180.0 / PI
-        if (angle < 0) angle += 360.0
-        // Sectors of 45 degrees, centred on the 8 directions:
-        // 0 right, 1 down-right, 2 down, 3 down-left, 4 left,
-        // 5 up-left, 6 up, 7 up-right.
-        val sector = ((angle + 22.5) / 45.0).toInt() % 8
-        return when (sector) {
-            0 -> 1 shl InputMask.JOY_RIGHT
-            1 -> (1 shl InputMask.JOY_RIGHT) or (1 shl InputMask.JOY_DOWN)
-            2 -> 1 shl InputMask.JOY_DOWN
-            3 -> (1 shl InputMask.JOY_DOWN) or (1 shl InputMask.JOY_LEFT)
-            4 -> 1 shl InputMask.JOY_LEFT
-            5 -> (1 shl InputMask.JOY_LEFT) or (1 shl InputMask.JOY_UP)
-            6 -> 1 shl InputMask.JOY_UP
-            7 -> (1 shl InputMask.JOY_UP) or (1 shl InputMask.JOY_RIGHT)
-            else -> 0
+        // Diagonal when both axes are substantially engaged: the
+        // smaller at least half the larger (30-60 degrees off
+        // horizontal). Otherwise the dominant axis alone.
+        return if (minOf(ax, ay) >= 0.5f * maxOf(ax, ay)) {
+            var mask = 0
+            if (dy < 0) mask = mask or (1 shl InputMask.JOY_UP)
+            else mask = mask or (1 shl InputMask.JOY_DOWN)
+            if (dx < 0) mask = mask or (1 shl InputMask.JOY_LEFT)
+            else mask = mask or (1 shl InputMask.JOY_RIGHT)
+            mask
+        } else if (ax >= ay) {
+            if (dx < 0) 1 shl InputMask.JOY_LEFT else 1 shl InputMask.JOY_RIGHT
+        } else {
+            if (dy < 0) 1 shl InputMask.JOY_UP else 1 shl InputMask.JOY_DOWN
         }
     }
 
