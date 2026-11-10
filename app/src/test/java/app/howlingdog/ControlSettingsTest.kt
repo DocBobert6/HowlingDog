@@ -74,6 +74,37 @@ class ControlSettingsTest {
     }
 
     @Test
+    fun scalesDefaultToOne() {
+        val s = ControlSettings(MapStore())
+        assertEquals(1.0f, s.stickScale(), 0.001f)
+        assertEquals(1.0f, s.buttonsScale(), 0.001f)
+    }
+
+    @Test
+    fun scalesRoundTripAndClamp() {
+        val s = ControlSettings(MapStore())
+        s.setStickScale(1.3f)
+        s.setButtonsScale(0.8f)
+        assertEquals(1.3f, s.stickScale(), 0.001f)
+        assertEquals(0.8f, s.buttonsScale(), 0.001f)
+        // The handle's range is 0.7x to 1.5x of the default.
+        s.setStickScale(0.2f)
+        assertEquals(0.7f, s.stickScale(), 0.001f)
+        s.setButtonsScale(9.0f)
+        assertEquals(1.5f, s.buttonsScale(), 0.001f)
+    }
+
+    @Test
+    fun scalesResetWithTheLayout() {
+        val s = ControlSettings(MapStore())
+        s.setStickScale(1.4f)
+        s.setButtonsScale(0.75f)
+        s.resetLayout()
+        assertEquals(1.0f, s.stickScale(), 0.001f)
+        assertEquals(1.0f, s.buttonsScale(), 0.001f)
+    }
+
+    @Test
     fun invalidValuesFallBackToDefaults() {
         val store = MapStore()
         store.put(ControlSettings.KEY_HAPTICS, "banana")
@@ -81,12 +112,16 @@ class ControlSettingsTest {
         store.put(ControlSettings.KEY_SIZE, "huge")
         store.put(ControlSettings.KEY_STICK_POS, "0.5")
         store.put(ControlSettings.KEY_BUTTONS_POS, "9.9,9.9")
+        store.put(ControlSettings.KEY_STICK_SCALE, "not-a-number")
+        store.put(ControlSettings.KEY_BUTTONS_SCALE, "3.0")
         val s = ControlSettings(store)
         assertEquals(HapticLevel.LIGHT, s.haptics())
         assertEquals(0.6f, s.opacity(), 0.001f)
         assertEquals(ControlSize.MEDIUM, s.size())
         assertEquals(ControlSettings.DEFAULT_STICK_POS, s.stickPosition())
         assertEquals(ControlSettings.DEFAULT_BUTTONS_POS, s.buttonsPosition())
+        assertEquals(1.0f, s.stickScale(), 0.001f)
+        assertEquals(1.0f, s.buttonsScale(), 0.001f)
     }
 
     @Test

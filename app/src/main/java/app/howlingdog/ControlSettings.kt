@@ -11,6 +11,12 @@ package app.howlingdog
  * area (0..1 in each axis), so a layout survives rotation and
  * different screen sizes. The game area is always landscape while
  * playing, so one pair of fractions per control is enough.
+ *
+ * Each control group also has its own scale multiplier, set by
+ * dragging its resize handle in adjust mode. The effective size
+ * is the Settings preset (Small/Medium/Large) times the group's
+ * own scale, so changing the preset rescales both groups
+ * proportionally and never clobbers a per-group adjustment.
  */
 data class ControlPosition(val x: Float, val y: Float)
 
@@ -29,15 +35,20 @@ class ControlSettings(private val store: OptionStore) {
         const val KEY_SIZE = "controls.size"
         const val KEY_STICK_POS = "controls.stickPos" // "x,y" fractions
         const val KEY_BUTTONS_POS = "controls.buttonsPos"
+        const val KEY_STICK_SCALE = "controls.stickScale" // float, 0.7..1.5
+        const val KEY_BUTTONS_SCALE = "controls.buttonsScale"
 
         val DEFAULT_HAPTICS = HapticLevel.LIGHT
         const val DEFAULT_OPACITY = 60 // percent — matches the old fixed 0.6 alpha
         val DEFAULT_SIZE = ControlSize.MEDIUM
         val DEFAULT_STICK_POS = ControlPosition(0.14f, 0.72f)
         val DEFAULT_BUTTONS_POS = ControlPosition(0.86f, 0.72f)
+        const val DEFAULT_GROUP_SCALE = 1.0f
 
         const val MIN_OPACITY = 20
         const val MAX_OPACITY = 100
+        const val MIN_GROUP_SCALE = 0.7f
+        const val MAX_GROUP_SCALE = 1.5f
     }
 
     fun haptics(): HapticLevel {
@@ -89,10 +100,30 @@ class ControlSettings(private val store: OptionStore) {
         store.put(KEY_BUTTONS_POS, writePosition(pos))
     }
 
-    /** Restore both control positions to their defaults. */
+    /** Per-group resize multiplier (1.0 = the preset size). */
+    fun stickScale(): Float = readScale(KEY_STICK_SCALE)
+
+    fun buttonsScale(): Float = readScale(KEY_BUTTONS_SCALE)
+
+    fun setStickScale(scale: Float) {
+        store.put(KEY_STICK_SCALE, scale.coerceIn(MIN_GROUP_SCALE, MAX_GROUP_SCALE).toString())
+    }
+
+    fun setButtonsScale(scale: Float) {
+        store.put(KEY_BUTTONS_SCALE, scale.coerceIn(MIN_GROUP_SCALE, MAX_GROUP_SCALE).toString())
+    }
+
+    /** Restore both control positions and both group scales to their defaults. */
     fun resetLayout() {
         setStickPosition(DEFAULT_STICK_POS)
         setButtonsPosition(DEFAULT_BUTTONS_POS)
+        setStickScale(DEFAULT_GROUP_SCALE)
+        setButtonsScale(DEFAULT_GROUP_SCALE)
+    }
+
+    private fun readScale(key: String): Float {
+        val raw = store.get(key)?.toFloatOrNull() ?: return DEFAULT_GROUP_SCALE
+        return if (raw in MIN_GROUP_SCALE..MAX_GROUP_SCALE) raw else DEFAULT_GROUP_SCALE
     }
 
     private fun readPosition(key: String, default: ControlPosition): ControlPosition {

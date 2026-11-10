@@ -320,6 +320,10 @@ class MainActivity : ComponentActivity() {
         var showBoot by remember { mutableStateOf(appSettings.showBoot()) }
         var stickPos by remember { mutableStateOf(controlSettings.stickPosition()) }
         var buttonsPos by remember { mutableStateOf(controlSettings.buttonsPosition()) }
+        // Per-group resize multipliers, set by the resize handle in
+        // adjust mode (1.0 = the Settings preset size).
+        var stickScale by remember { mutableStateOf(controlSettings.stickScale()) }
+        var buttonsScale by remember { mutableStateOf(controlSettings.buttonsScale()) }
         // Adjust-layout edit mode: entered from the pause screen
         // (the game has to be running to see where the controls
         // sit). While editing, the game stays paused, the pause
@@ -329,6 +333,8 @@ class MainActivity : ComponentActivity() {
         fun exitEditMode() {
             controlSettings.setStickPosition(stickPos)
             controlSettings.setButtonsPosition(buttonsPos)
+            controlSettings.setStickScale(stickScale)
+            controlSettings.setButtonsScale(buttonsScale)
             editControls = false
         }
         val haptics = remember(context) {
@@ -346,6 +352,8 @@ class MainActivity : ComponentActivity() {
                 controlSize = controlSettings.size()
                 stickPos = controlSettings.stickPosition()
                 buttonsPos = controlSettings.buttonsPosition()
+                stickScale = controlSettings.stickScale()
+                buttonsScale = controlSettings.buttonsScale()
             }
         }
 
@@ -975,6 +983,8 @@ class MainActivity : ComponentActivity() {
                                     controlSettings.resetLayout()
                                     stickPos = ControlSettings.DEFAULT_STICK_POS
                                     buttonsPos = ControlSettings.DEFAULT_BUTTONS_POS
+                                    stickScale = ControlSettings.DEFAULT_GROUP_SCALE
+                                    buttonsScale = ControlSettings.DEFAULT_GROUP_SCALE
                                 }) { Text("Reset layout") }
                                 Spacer(Modifier.width(8.dp))
                                 Button(onClick = { exitEditMode() }) { Text("Done") }
@@ -1010,10 +1020,15 @@ class MainActivity : ComponentActivity() {
                             val density = LocalDensity.current
                             val boxW = with(density) { maxWidth.toPx() }
                             val boxH = with(density) { maxHeight.toPx() }
-                            val scale = controlSize.scale
+                            // Effective size = the Settings preset
+                            // times the group's own resize scale
+                            // (set by its corner handle in adjust
+                            // mode; 1.0 = the preset size).
+                            val stickScaleEff = controlSize.scale * stickScale
+                            val buttonsScaleEff = controlSize.scale * buttonsScale
                             // Stick geometry (dp, scaled): base 140,
                             // grab margin 16, touch area 172.
-                            val stickTouchDp = 172f * scale
+                            val stickTouchDp = 172f * stickScaleEff
                             val stickTouchPx = with(density) { stickTouchDp.dp.toPx() }
                             val stickOffset = IntOffset(
                                 (stickPos.x * boxW - stickTouchPx / 2).roundToInt(),
@@ -1022,10 +1037,10 @@ class MainActivity : ComponentActivity() {
                             // Button cluster geometry (dp, scaled):
                             // 2x2 of 56dp buttons, 8dp gaps, then a
                             // 12dp gap and the 48dp Coin/Start row.
-                            val buttonDp = 56f * scale
-                            val smallDp = 48f * scale
-                            val gapDp = 8f * scale
-                            val rowGapDp = 12f * scale
+                            val buttonDp = 56f * buttonsScaleEff
+                            val smallDp = 48f * buttonsScaleEff
+                            val gapDp = 8f * buttonsScaleEff
+                            val rowGapDp = 12f * buttonsScaleEff
                             val buttonsWdp = 2 * buttonDp + gapDp
                             val buttonsHdp = 2 * buttonDp + gapDp + rowGapDp + smallDp
                             val buttonsWPx = with(density) { buttonsWdp.dp.toPx() }
@@ -1035,36 +1050,98 @@ class MainActivity : ComponentActivity() {
                                 (buttonsPos.y * boxH - buttonsHPx / 2).roundToInt(),
                             )
                             // Adjust-layout drag: in edit mode each
-                            // unit drags to a new centre fraction.
-                            // rememberUpdatedState keeps the drag
-                            // lambda reading the current position
-                            // without restarting the gesture on
-                            // every move. Positions persist on drag
-                            // end (and on Done). The units are
-                            // clamped so they stay fully inside the
-                            // game area — and they live inside this
-                            // Box, below the title row, so a dragged
+                            // unit drags to a new centre fraction,
+                            // and its bottom-end corner (the visible
+                            // resize grip, 28dp) drags to resize it.
+                            // One gesture detector per unit decides
+                            // move vs resize from where the press
+                            // landed, so the two gestures never
+                            // fight. rememberUpdatedState keeps the
+                            // drag lambda reading the current
+                            // position and size without restarting
+                            // the gesture on every move (the size
+                            // changes while resizing, so it must not
+                            // be a pointerInput key). Positions and
+                            // scales persist on drag end (and on
+                            // Done). The units are clamped so they
+                            // stay fully inside the game area — and
+                            // they live inside this Box, below the
+                            // title row, so a dragged or resized
                             // control can never cover the Pause
                             // button.
+                            //
+                            // Resize: a horizontal drag of the grip
+                            // resizes proportionally — dragging the
+                            // grip right by the unit's full width
+                            // doubles it — clamped to 0.7x..1.5x of
+                            // the preset size. (Mariner's pattern:
+                            // horizontal drag, 28dp touch area, 20dp
+                            // visible grip with a "↘".)
                             val stickPosState = rememberUpdatedState(stickPos)
                             val buttonsPosState = rememberUpdatedState(buttonsPos)
+                            val stickScaleState = rememberUpdatedState(stickScale)
+                            val buttonsScaleState = rememberUpdatedState(buttonsScale)
+                            val stickTouchPxState = rememberUpdatedState(stickTouchPx)
+                            val buttonsWPxState = rememberUpdatedState(buttonsWPx)
+                            val buttonsHPxState = rememberUpdatedState(buttonsHPx)
+                            val presetScaleState = rememberUpdatedState(controlSize.scale)
+                            val handlePx = with(density) { 28.dp.toPx() }
+                            val handlePxState = rememberUpdatedState(handlePx)
                             val stickDrag = if (editControls) {
-                                Modifier.pointerInput(boxW, boxH, stickTouchPx) {
+                                Modifier.pointerInput(boxW, boxH) {
+                                    var resizing = false
                                     detectDragGestures(
+                                        onDragStart = { start ->
+                                            val sizePx = stickTouchPxState.value
+                                            val grip = handlePxState.value
+                                            resizing = start.x > sizePx - grip &&
+                                                start.y > sizePx - grip
+                                        },
                                         onDragEnd = {
-                                            controlSettings.setStickPosition(stickPosState.value)
+                                            if (resizing) {
+                                                controlSettings.setStickScale(stickScaleState.value)
+                                            } else {
+                                                controlSettings.setStickPosition(stickPosState.value)
+                                            }
                                         },
                                         onDrag = { change, dragAmount ->
                                             change.consume()
-                                            val cur = stickPosState.value
-                                            val halfW = stickTouchPx / 2 / boxW
-                                            val halfH = stickTouchPx / 2 / boxH
-                                            stickPos = ControlPosition(
-                                                (cur.x + dragAmount.x / boxW)
-                                                    .coerceIn(halfW, 1f - halfW),
-                                                (cur.y + dragAmount.y / boxH)
-                                                    .coerceIn(halfH, 1f - halfH),
-                                            )
+                                            if (resizing) {
+                                                val sizePx = stickTouchPxState.value
+                                                if (sizePx > 0) {
+                                                    val newScale = (stickScaleState.value *
+                                                        (1f + dragAmount.x / sizePx))
+                                                        .coerceIn(
+                                                            ControlSettings.MIN_GROUP_SCALE,
+                                                            ControlSettings.MAX_GROUP_SCALE,
+                                                        )
+                                                    stickScale = newScale
+                                                    // The grown unit must still fit:
+                                                    // re-clamp its centre to the new size.
+                                                    val newSizePx = with(density) {
+                                                        (172f * presetScaleState.value * newScale)
+                                                            .dp.toPx()
+                                                    }
+                                                    val halfW = newSizePx / 2 / boxW
+                                                    val halfH = newSizePx / 2 / boxH
+                                                    stickPos = ControlPosition(
+                                                        stickPosState.value.x
+                                                            .coerceIn(halfW, 1f - halfW),
+                                                        stickPosState.value.y
+                                                            .coerceIn(halfH, 1f - halfH),
+                                                    )
+                                                }
+                                            } else {
+                                                val cur = stickPosState.value
+                                                val halfW = stickTouchPxState.value / 2 / boxW
+                                                val halfH = stickTouchPxState.value / 2 / boxH
+                                                stickPos = ControlPosition(
+                                                    (cur.x + dragAmount.x / boxW)
+                                                        .coerceIn(halfW, 1f - halfW),
+                                                    (cur.y + dragAmount.y / boxH)
+                                                        .coerceIn(halfH, 1f - halfH),
+                                                )
+                                            }
                                         },
                                     )
                                 }
@@ -1072,22 +1149,65 @@ class MainActivity : ComponentActivity() {
                                 Modifier
                             }
                             val buttonsDrag = if (editControls) {
-                                Modifier.pointerInput(boxW, boxH, buttonsWPx, buttonsHPx) {
+                                Modifier.pointerInput(boxW, boxH) {
+                                    var resizing = false
                                     detectDragGestures(
+                                        onDragStart = { start ->
+                                            val wPx = buttonsWPxState.value
+                                            val hPx = buttonsHPxState.value
+                                            val grip = handlePxState.value
+                                            resizing = start.x > wPx - grip &&
+                                                start.y > hPx - grip
+                                        },
                                         onDragEnd = {
-                                            controlSettings.setButtonsPosition(buttonsPosState.value)
+                                            if (resizing) {
+                                                controlSettings.setButtonsScale(buttonsScaleState.value)
+                                            } else {
+                                                controlSettings.setButtonsPosition(buttonsPosState.value)
+                                            }
                                         },
                                         onDrag = { change, dragAmount ->
                                             change.consume()
-                                            val cur = buttonsPosState.value
-                                            val halfW = buttonsWPx / 2 / boxW
-                                            val halfH = buttonsHPx / 2 / boxH
-                                            buttonsPos = ControlPosition(
-                                                (cur.x + dragAmount.x / boxW)
-                                                    .coerceIn(halfW, 1f - halfW),
-                                                (cur.y + dragAmount.y / boxH)
-                                                    .coerceIn(halfH, 1f - halfH),
-                                            )
+                                            if (resizing) {
+                                                val wPx = buttonsWPxState.value
+                                                if (wPx > 0) {
+                                                    val newScale = (buttonsScaleState.value *
+                                                        (1f + dragAmount.x / wPx))
+                                                        .coerceIn(
+                                                            ControlSettings.MIN_GROUP_SCALE,
+                                                            ControlSettings.MAX_GROUP_SCALE,
+                                                        )
+                                                    buttonsScale = newScale
+                                                    // Cluster width 120dp, height 180dp
+                                                    // at scale 1 (2x56 + 8 wide;
+                                                    // 2x56 + 8 + 12 + 48 tall).
+                                                    val eff = presetScaleState.value * newScale
+                                                    val newWPx = with(density) {
+                                                        (120f * eff).dp.toPx()
+                                                    }
+                                                    val newHPx = with(density) {
+                                                        (180f * eff).dp.toPx()
+                                                    }
+                                                    val halfW = newWPx / 2 / boxW
+                                                    val halfH = newHPx / 2 / boxH
+                                                    buttonsPos = ControlPosition(
+                                                        buttonsPosState.value.x
+                                                            .coerceIn(halfW, 1f - halfW),
+                                                        buttonsPosState.value.y
+                                                            .coerceIn(halfH, 1f - halfH),
+                                                    )
+                                                }
+                                            } else {
+                                                val cur = buttonsPosState.value
+                                                val halfW = buttonsWPxState.value / 2 / boxW
+                                                val halfH = buttonsHPxState.value / 2 / boxH
+                                                buttonsPos = ControlPosition(
+                                                    (cur.x + dragAmount.x / boxW)
+                                                        .coerceIn(halfW, 1f - halfW),
+                                                    (cur.y + dragAmount.y / boxH)
+                                                        .coerceIn(halfH, 1f - halfH),
+                                                )
+                                            }
                                         },
                                     )
                                 }
@@ -1095,8 +1215,8 @@ class MainActivity : ComponentActivity() {
                                 Modifier
                             }
                             OutlineStick(
-                                size = (140f * scale).dp,
-                                grabMargin = (16f * scale).dp,
+                                size = (140f * stickScaleEff).dp,
+                                grabMargin = (16f * stickScaleEff).dp,
                                 onDirection = { mask ->
                                     held = held.copy(
                                         up = mask and (1 shl InputMask.JOY_UP) != 0,
@@ -1140,38 +1260,68 @@ class MainActivity : ComponentActivity() {
                                 Row {
                                     HoldButton("A", { pressed ->
                                         held = held.copy(a = pressed); pushMask()
-                                    }, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
+                                    }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
                                     Spacer(Modifier.width(gapDp.dp))
                                     HoldButton("B", { pressed ->
                                         held = held.copy(b = pressed); pushMask()
-                                    }, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
+                                    }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
                                 }
                                 Spacer(Modifier.height(gapDp.dp))
                                 Row {
                                     HoldButton("C", { pressed ->
                                         held = held.copy(c = pressed); pushMask()
-                                    }, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
+                                    }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
                                     Spacer(Modifier.width(gapDp.dp))
                                     HoldButton("D", { pressed ->
                                         held = held.copy(d = pressed); pushMask()
-                                    }, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
+                                    }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
                                 }
                                 Spacer(Modifier.height(rowGapDp.dp))
                                 Row {
                                     HoldButton("Coin", { pressed ->
                                         held = held.copy(coin = pressed); pushMask()
-                                    }, small = true, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
+                                    }, small = true, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
                                     Spacer(Modifier.width(gapDp.dp))
                                     HoldButton("Start", { pressed ->
                                         held = held.copy(start = pressed); pushMask()
-                                    }, small = true, scale = scale, onHaptic = ::playHaptic, enabled = !editControls)
+                                    }, small = true, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
                                 }
+                            }
+                            // Resize grips (edit mode only): a visible
+                            // "↘" grip at each unit's bottom-end
+                            // corner. Purely visual — the unit's own
+                            // drag detector decides move vs resize by
+                            // where the press landed, so the grip
+                            // takes no input itself and the two
+                            // gestures never fight. 28dp touch area
+                            // (the drag zone), 20dp visible grip.
+                            if (editControls) {
+                                ResizeGrip(
+                                    offset = IntOffset(
+                                        (stickPos.x * boxW + stickTouchPx / 2 - handlePx / 2).roundToInt(),
+                                        (stickPos.y * boxH + stickTouchPx / 2 - handlePx / 2).roundToInt(),
+                                    ),
+                                )
+                                ResizeGrip(
+                                    offset = IntOffset(
+                                        (buttonsPos.x * boxW + buttonsWPx / 2 - handlePx / 2).roundToInt(),
+                                        (buttonsPos.y * boxH + buttonsHPx / 2 - handlePx / 2).roundToInt(),
+                                    ),
+                                )
                             }
                         }
                         // Edit-mode hint, over the game area.
                         if (editControls) {
                             Text(
-                                "Drag the stick and buttons to move them",
+                                "Drag a control to move it, drag its ↘ corner to resize it",
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .padding(4.dp),
+                            )
+                        }
                                 color = Color.White,
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier
@@ -1312,7 +1462,7 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                     Text(
-                        "To move the controls, start a game, pause, and tap Adjust controls.",
+                        "To move and resize the controls, start a game, pause, and tap Adjust controls — drag a control to move it, drag its ↘ corner to resize it.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(16.dp))
@@ -1484,6 +1634,40 @@ class MainActivity : ComponentActivity() {
             contentAlignment = Alignment.Center,
         ) {
             Text(label, color = Color.White)
+        }
+    }
+
+    /**
+     * The visible resize grip for adjust mode: a 28dp touch area
+     * (matching the drag zone) with a 20dp white square and a "↘"
+     * inside, placed at a control group's bottom-end corner.
+     * Purely visual — it takes no input; the group's own drag
+     * detector decides move vs resize by where the press landed.
+     * (Mariner's pattern: 28dp touch area, 20dp visible grip —
+     * a bigger touch area would cover most of a small control's
+     * corner, so grabbing to drag would resize it instead.)
+     */
+    @Composable
+    private fun ResizeGrip(offset: IntOffset) {
+        Box(
+            modifier = Modifier
+                .offset { offset }
+                .size(28.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .background(Color.White, RoundedCornerShape(4.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "↘",
+                    color = Color.Black,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 
