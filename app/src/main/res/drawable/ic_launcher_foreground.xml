@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Adaptive-icon foreground: the icon image, inset 20% on every
-     side so the rounded square (which spans ~93% of the image)
-     lands inside the launcher's 66dp safe zone and is never clipped
-     by a circular or squircle mask. -->
+     side. The drawable is the rounded square (squircle) itself,
+     with its own dark border, cropped tight — so the inset lands
+     it inside the launcher's 66dp safe zone and no mask (circle,
+     squircle, or any other shape) can clip the artwork: the icon
+     always reads as a rounded square, never a circle. -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
     android:drawable="@drawable/howlingdog_icon"
     android:insetLeft="20%"
