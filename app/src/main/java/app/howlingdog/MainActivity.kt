@@ -76,6 +76,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -1082,10 +1083,27 @@ class MainActivity : ComponentActivity() {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // The title takes the space LEFT OVER after
+                        // the buttons: it is weighted, so the Row
+                        // measures the (unweighted) button row first
+                        // at its intrinsic width and only then gives
+                        // the title the remainder. Without the
+                        // weight, a long game name (KOF '98's full
+                        // display name) took the whole row and the
+                        // edit-mode buttons — Together, Reset, Done
+                        // — were measured at zero width and invisible
+                        // (Robert: "No button to toggle adjust
+                        // controller together or seperate"). The
+                        // title truncates with an ellipsis instead
+                        // of pushing the buttons off-screen, in any
+                        // orientation.
                         Text(
                             playingGame?.displayName ?: "Game",
                             color = Color(EraUi.Palette.TEXT),
                             style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
                         if (editControls) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
