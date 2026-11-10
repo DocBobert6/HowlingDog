@@ -6,6 +6,7 @@ import android.content.pm.ActivityInfo
 import android.hardware.input.InputManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Vibrator
 import android.provider.OpenableColumns
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -16,16 +17,19 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -50,12 +54,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlin.math.roundToInt
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.documentfile.provider.DocumentFile
@@ -256,6 +268,40 @@ class MainActivity : ComponentActivity() {
                 storeFile = File(context.filesDir, "library.txt"),
                 legacyGamesDir = File(context.cacheDir, "games"),
             )
+        }
+
+        // On-screen controls (stick, haptics, opacity, size, layout):
+        // same SharedPreferences file as the core options, own keys.
+        val controlSettings = remember {
+            ControlSettings(
+                SharedPrefsStore(
+                    context.getSharedPreferences(
+                        "howlingdog-settings", Context.MODE_PRIVATE,
+                    ),
+                ),
+            )
+        }
+        var hapticsLevel by remember { mutableStateOf(controlSettings.haptics()) }
+        var overlayOpacity by remember { mutableStateOf(controlSettings.opacity()) }
+        var controlSize by remember { mutableStateOf(controlSettings.size()) }
+        var stickPos by remember { mutableStateOf(controlSettings.stickPosition()) }
+        var buttonsPos by remember { mutableStateOf(controlSettings.buttonsPosition()) }
+        val haptics = remember(context) {
+            Haptics(context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+        }
+        fun playHaptic() = haptics.perform(hapticsLevel)
+
+        // Re-read the control settings whenever the game screen is
+        // entered, so a change made in Settings (or in the adjust
+        // layout mode) is live the next time a game starts.
+        LaunchedEffect(screen) {
+            if (screen == Screen.Playing) {
+                hapticsLevel = controlSettings.haptics()
+                overlayOpacity = controlSettings.opacity()
+                controlSize = controlSettings.size()
+                stickPos = controlSettings.stickPosition()
+                buttonsPos = controlSettings.buttonsPosition()
+            }
         }
 
         fun refreshLibrary() {
@@ -763,66 +809,101 @@ class MainActivity : ComponentActivity() {
                         )
                         // Touch controls float over the game view
                         // (standard mobile-emulator layout): the game
-                        // fills the whole Box and the buttons overlay
+                        // fills the whole Box and the controls overlay
                         // its lower part instead of taking their own
                         // row. In landscape the old row ate ~240dp
                         // and left the game ~125dp tall.
-                        Row(
+                        //
+                        // The controls are two units, each placed by
+                        // its stored centre (a fraction of this Box):
+                        // the flat-outline stick (bottom-left) and
+                        // the button cluster (bottom-right). The
+                        // whole overlay takes the stored opacity.
+                        BoxWithConstraints(
                             modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
+                                .fillMaxSize()
+                                .alpha(overlayOpacity),
                         ) {
-                            // D-pad
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                HoldButton("▲", { pressed ->
-                                    held = held.copy(up = pressed); pushMask()
-                                })
-                                Row {
-                                    HoldButton("◀", { pressed ->
-                                        held = held.copy(left = pressed); pushMask()
-                                    })
-                                    Spacer(Modifier.width(56.dp))
-                                    HoldButton("▶", { pressed ->
-                                        held = held.copy(right = pressed); pushMask()
-                                    })
-                                }
-                                HoldButton("▼", { pressed ->
-                                    held = held.copy(down = pressed); pushMask()
-                                })
-                            }
-                            // Start / Coin
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                HoldButton("Coin", { pressed ->
-                                    held = held.copy(coin = pressed); pushMask()
-                                }, small = true)
-                                Spacer(Modifier.height(8.dp))
-                                HoldButton("Start", { pressed ->
-                                    held = held.copy(start = pressed); pushMask()
-                                }, small = true)
-                            }
-                            // Neo Geo buttons: A B / C D
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            val density = LocalDensity.current
+                            val boxW = with(density) { maxWidth.toPx() }
+                            val boxH = with(density) { maxHeight.toPx() }
+                            val scale = controlSize.scale
+                            // Stick geometry (dp, scaled): base 140,
+                            // grab margin 16, touch area 172.
+                            val stickTouchDp = 172f * scale
+                            val stickTouchPx = with(density) { stickTouchDp.dp.toPx() }
+                            val stickOffset = IntOffset(
+                                (stickPos.x * boxW - stickTouchPx / 2).roundToInt(),
+                                (stickPos.y * boxH - stickTouchPx / 2).roundToInt(),
+                            )
+                            // Button cluster geometry (dp, scaled):
+                            // 2x2 of 56dp buttons, 8dp gaps, then a
+                            // 12dp gap and the 48dp Coin/Start row.
+                            val buttonDp = 56f * scale
+                            val smallDp = 48f * scale
+                            val gapDp = 8f * scale
+                            val rowGapDp = 12f * scale
+                            val buttonsWdp = 2 * buttonDp + gapDp
+                            val buttonsHdp = 2 * buttonDp + gapDp + rowGapDp + smallDp
+                            val buttonsWPx = with(density) { buttonsWdp.dp.toPx() }
+                            val buttonsHPx = with(density) { buttonsHdp.dp.toPx() }
+                            val buttonsOffset = IntOffset(
+                                (buttonsPos.x * boxW - buttonsWPx / 2).roundToInt(),
+                                (buttonsPos.y * boxH - buttonsHPx / 2).roundToInt(),
+                            )
+                            OutlineStick(
+                                size = (140f * scale).dp,
+                                grabMargin = (16f * scale).dp,
+                                onDirection = { mask ->
+                                    held = held.copy(
+                                        up = mask and (1 shl InputMask.JOY_UP) != 0,
+                                        down = mask and (1 shl InputMask.JOY_DOWN) != 0,
+                                        left = mask and (1 shl InputMask.JOY_LEFT) != 0,
+                                        right = mask and (1 shl InputMask.JOY_RIGHT) != 0,
+                                    )
+                                    pushMask()
+                                },
+                                onDirectionChange = { mask ->
+                                    if (mask != 0) playHaptic()
+                                },
+                                modifier = Modifier
+                                    .offset { stickOffset }
+                                    .size(stickTouchDp.dp),
+                            )
+                            // Neo Geo buttons (A B / C D) with
+                            // Start / Coin in a row beneath them.
+                            Column(
+                                modifier = Modifier.offset { buttonsOffset },
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
                                 Row {
                                     HoldButton("A", { pressed ->
                                         held = held.copy(a = pressed); pushMask()
-                                    })
-                                    Spacer(Modifier.width(8.dp))
+                                    }, scale = scale, onHaptic = ::playHaptic)
+                                    Spacer(Modifier.width(gapDp.dp))
                                     HoldButton("B", { pressed ->
                                         held = held.copy(b = pressed); pushMask()
-                                    })
+                                    }, scale = scale, onHaptic = ::playHaptic)
                                 }
-                                Spacer(Modifier.height(8.dp))
+                                Spacer(Modifier.height(gapDp.dp))
                                 Row {
                                     HoldButton("C", { pressed ->
                                         held = held.copy(c = pressed); pushMask()
-                                    })
-                                    Spacer(Modifier.width(8.dp))
+                                    }, scale = scale, onHaptic = ::playHaptic)
+                                    Spacer(Modifier.width(gapDp.dp))
                                     HoldButton("D", { pressed ->
                                         held = held.copy(d = pressed); pushMask()
-                                    })
+                                    }, scale = scale, onHaptic = ::playHaptic)
+                                }
+                                Spacer(Modifier.height(rowGapDp.dp))
+                                Row {
+                                    HoldButton("Coin", { pressed ->
+                                        held = held.copy(coin = pressed); pushMask()
+                                    }, small = true, scale = scale, onHaptic = ::playHaptic)
+                                    Spacer(Modifier.width(gapDp.dp))
+                                    HoldButton("Start", { pressed ->
+                                        held = held.copy(start = pressed); pushMask()
+                                    }, small = true, scale = scale, onHaptic = ::playHaptic)
                                 }
                             }
                         }
@@ -953,52 +1034,189 @@ class MainActivity : ComponentActivity() {
         onHoldChange: (Boolean) -> Unit,
         modifier: Modifier = Modifier,
         small: Boolean = false,
+        scale: Float = 1f,
+        onHaptic: (() -> Unit)? = null,
+        enabled: Boolean = true,
     ) {
         var held by remember { mutableStateOf(false) }
-        val size = if (small) 48.dp else 56.dp
+        val size = (if (small) 48.dp else 56.dp) * scale
+        // The overlay's opacity comes from the container's alpha, so
+        // the button is drawn at full alpha here (the old fixed 0.6
+        // is gone — the default opacity setting is 0.6, so the look
+        // is unchanged until the slider moves).
+        val inputModifier = if (enabled) {
+            Modifier.pointerInput(Unit) {
+                awaitPointerEventScope {
+                    // Compose has no PointerEventType.Cancel: a cancelled gesture
+                    // cancels this coroutine instead, so release the hold in
+                    // finally — otherwise a stuck button keeps firing input.
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            when (event.type) {
+                                PointerEventType.Press -> {
+                                    if (!held) {
+                                        held = true
+                                        onHaptic?.invoke()
+                                        onHoldChange(true)
+                                    }
+                                }
+                                PointerEventType.Release,
+                                PointerEventType.Exit -> {
+                                    if (held) {
+                                        held = false
+                                        onHoldChange(false)
+                                    }
+                                }
+                            }
+                        }
+                    } finally {
+                        if (held) {
+                            held = false
+                            onHoldChange(false)
+                        }
+                    }
+                }
+            }
+        } else {
+            Modifier
+        }
         Box(
             modifier = modifier
                 .size(size)
                 .background(
-                    if (held) Color(0xFF880000).copy(alpha = 0.6f)
-                    else Color(0xFF333333).copy(alpha = 0.6f),
+                    if (held) Color(0xFF880000) else Color(0xFF333333),
                     CircleShape,
                 )
-                .pointerInput(Unit) {
+                .then(inputModifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(label, color = Color.White)
+        }
+    }
+
+    /**
+     * The flat-outline arcade stick (replaces the 4-way D-pad).
+     *
+     * Look: thin white outlines only — a ring for the base, a ring
+     * for the knob that follows the thumb, and a small centre dot.
+     * No fill, no gradient, no shading, so the game shows through;
+     * the overlay's opacity comes from the container's alpha.
+     *
+     * Behaviour: fixed in place (it never follows the thumb around
+     * the screen). Touch down inside the base (plus the grab margin)
+     * and drag; the knob follows, clamped to the base, and the
+     * direction comes from StickInput's 8 sectors. Release snaps
+     * the knob back to centre and clears the direction. A cancelled
+     * gesture clears it too, in the finally block — a stuck
+     * direction is never left behind. Only one pointer is tracked,
+     * so a second thumb on the buttons cannot steal the stick.
+     */
+    @Composable
+    private fun OutlineStick(
+        size: Dp, // base diameter
+        grabMargin: Dp,
+        onDirection: (Int) -> Unit,
+        onDirectionChange: (Int) -> Unit,
+        modifier: Modifier = Modifier,
+        enabled: Boolean = true,
+    ) {
+        val density = LocalDensity.current
+        val touchPx = with(density) { (size + grabMargin * 2).toPx() }
+        val grabPx = with(density) { grabMargin.toPx() }
+        val baseR = touchPx / 2f - grabPx
+        val knobR = baseR * 0.38f
+        val maxTravel = baseR - knobR
+        var knob by remember { mutableStateOf(Offset.Zero) }
+        Box(
+            modifier = modifier
+                .pointerInput(enabled, maxTravel) {
+                    if (!enabled) return@pointerInput
                     awaitPointerEventScope {
-                        // Compose has no PointerEventType.Cancel: a cancelled gesture
-                        // cancels this coroutine instead, so release the hold in
-                        // finally — otherwise a stuck button keeps firing input.
+                        var activeId: PointerId? = null
+                        var lastMask = 0
+                        fun setDirection(mask: Int) {
+                            if (mask != lastMask) {
+                                lastMask = mask
+                                onDirection(mask)
+                                if (mask != 0) onDirectionChange(mask)
+                            }
+                        }
+                        fun updateKnob(position: Offset) {
+                            val centre = Offset(
+                                size.width / 2f,
+                                size.height / 2f,
+                            )
+                            val raw = position - centre
+                            val (cx, cy) = StickInput.clamp(
+                                raw.x / maxTravel,
+                                raw.y / maxTravel,
+                            )
+                            knob = Offset(cx * maxTravel, cy * maxTravel)
+                            setDirection(StickInput.direction(cx, cy))
+                        }
                         try {
                             while (true) {
                                 val event = awaitPointerEvent()
                                 when (event.type) {
                                     PointerEventType.Press -> {
-                                        if (!held) {
-                                            held = true
-                                            onHoldChange(true)
+                                        if (activeId == null) {
+                                            val change = event.changes.firstOrNull { it.pressed }
+                                            if (change != null) {
+                                                activeId = change.id
+                                                updateKnob(change.position)
+                                            }
+                                        }
+                                    }
+                                    PointerEventType.Move -> {
+                                        val id = activeId ?: continue
+                                        val change = event.changes.firstOrNull { it.id == id }
+                                        if (change != null && change.pressed) {
+                                            updateKnob(change.position)
                                         }
                                     }
                                     PointerEventType.Release,
                                     PointerEventType.Exit -> {
-                                        if (held) {
-                                            held = false
-                                            onHoldChange(false)
+                                        val id = activeId
+                                        if (id != null && event.changes.any { it.id == id }) {
+                                            activeId = null
+                                            knob = Offset.Zero
+                                            setDirection(0)
                                         }
                                     }
                                 }
                             }
                         } finally {
-                            if (held) {
-                                held = false
-                                onHoldChange(false)
-                            }
+                            activeId = null
+                            if (knob != Offset.Zero) knob = Offset.Zero
+                            setDirection(0)
                         }
                     }
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Text(label, color = Color.White)
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val centre = Offset(this.size.width / 2f, this.size.height / 2f)
+                // Base ring + centre dot.
+                drawCircle(
+                    color = Color.White,
+                    radius = baseR,
+                    center = centre,
+                    style = Stroke(width = 2.5.dp.toPx()),
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = 2.dp.toPx(),
+                    center = centre,
+                )
+                // Knob ring, following the thumb.
+                drawCircle(
+                    color = Color.White,
+                    radius = knobR,
+                    center = centre + knob,
+                    style = Stroke(width = 3.5.dp.toPx()),
+                )
+            }
         }
     }
 
