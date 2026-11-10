@@ -25,8 +25,11 @@
 //   - Input is port 0 only (player 1), touch only. Gamepad input
 //     arrives in Phase 4.
 //   - No save states, no pause, no core options UI. The environment
-//     callback answers GET_VARIABLE with "not found" so the core runs
-//     on its defaults (AES system, default crops).
+//     callback answers GET_VARIABLE with the core's documented
+//     defaults (AES system, default crops, resnet palette). That
+//     last part is load-bearing, not cosmetic: the core only builds
+//     its palette LUTs when GET_VARIABLE returns a value, so
+//     answering "not found" left every colour opaque black.
 
 #include <jni.h>
 
@@ -159,6 +162,41 @@ static void bridge_log(enum retro_log_level level, const char *fmt, ...) {
 // libretro callbacks supplied by the frontend
 // ---------------------------------------------------------------------------
 
+// Core options (no settings UI yet): answer GET_VARIABLE with the
+// core's documented defaults (libretro/libretro_core_options.h).
+// The core only builds its palette LUTs inside check_variables(),
+// which only runs the palette branch when GET_VARIABLE returns a
+// value — answering "not found" left lut_normal/lut_shadow all
+// zero, so every colour came out opaque black (the Phase 2 no-video
+// bug). The value strings are static storage: the core may keep the
+// pointer, so they must outlive the call.
+static const struct {
+    const char *key;
+    const char *value;
+} kCoreOptionDefaults[] = {
+    {"geolith_system_type", "aes"},
+    {"geolith_unibios_hw", "mvs"},
+    {"geolith_cd_system_type", "cdz"},
+    {"geolith_region", "us"},
+    {"geolith_memcard", "on"},
+    {"geolith_memcard_wp", "off"},
+    {"geolith_settingmode", "off"},
+    {"geolith_4player", "off"},
+    {"geolith_freeplay", "off"},
+    {"geolith_overscan_t", "8"},
+    {"geolith_overscan_b", "8"},
+    {"geolith_overscan_l", "8"},
+    {"geolith_overscan_r", "8"},
+    {"geolith_palette", "resnet"},
+    {"geolith_aspect", "1:1"},
+    {"geolith_sprlimit", "96"},
+    {"geolith_oc", "off"},
+    {"geolith_disable_adpcm_wrap", "off"},
+    {"geolith_cd_speed_hack", "disabled"},
+    {"geolith_cd_dma_len_limit", "disabled"},
+    {"geolith_cd_skip_loading", "disabled"},
+};
+
 static bool bridge_environ(unsigned cmd, void *data) {
     switch (cmd) {
         case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
@@ -190,10 +228,26 @@ static bool bridge_environ(unsigned cmd, void *data) {
         case RETRO_ENVIRONMENT_GET_INPUT_BITMASKS:
             // We answer the mask query (see bridge_input_state).
             return true;
-        case RETRO_ENVIRONMENT_GET_VARIABLE:
-            // Phase 2 spike: no core-options UI, the core runs on
-            // its defaults (AES system, default crops, etc.).
+        case RETRO_ENVIRONMENT_GET_VARIABLE: {
+            // No core-options UI yet: answer with the documented
+            // defaults (see kCoreOptionDefaults). Unknown keys still
+            // return false.
+            if (!data)
+                return false;
+            struct retro_variable *var = (struct retro_variable *)data;
+            if (!var->key)
+                return false;
+            for (size_t i = 0;
+                 i < sizeof(kCoreOptionDefaults) /
+                         sizeof(kCoreOptionDefaults[0]);
+                 ++i) {
+                if (strcmp(var->key, kCoreOptionDefaults[i].key) == 0) {
+                    var->value = kCoreOptionDefaults[i].value;
+                    return true;
+                }
+            }
             return false;
+        }
         case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: {
             if (!data)
                 return false;
