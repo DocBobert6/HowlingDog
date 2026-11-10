@@ -260,3 +260,17 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+LZMA (deps/lzma)
+--------------------
+Licence: Public domain
+
+The LZMA SDK files used by the core (LzmaDec.c, the LZMA decoder,
+and LzmaEnc.c, the LZMA encoder) are in the public domain, as
+stated in their source headers:
+
+LzmaDec.c -- LZMA Decoder
+2023-04-07 : Igor Pavlov : Public domain
+
+LzmaEnc.c -- LZMA Encoder
+2024-01-24: Igor Pavlov : Public domain
