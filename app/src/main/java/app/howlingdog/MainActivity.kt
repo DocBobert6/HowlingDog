@@ -1133,6 +1133,12 @@ class MainActivity : ComponentActivity() {
                 .pointerInput(enabled, maxTravel) {
                     if (!enabled) return@pointerInput
                     awaitPointerEventScope {
+                        // The pointer-input area size (IntSize, px).
+                        // Captured here because the local helpers
+                        // below do not see the scope's receiver:
+                        // an unqualified `size` inside them would
+                        // resolve to the stick's Dp parameter.
+                        val areaSize = size
                         var activeId: PointerId? = null
                         var lastMask = 0
                         fun setDirection(mask: Int) {
@@ -1144,8 +1150,8 @@ class MainActivity : ComponentActivity() {
                         }
                         fun updateKnob(position: Offset) {
                             val centre = Offset(
-                                size.width / 2f,
-                                size.height / 2f,
+                                areaSize.width / 2f,
+                                areaSize.height / 2f,
                             )
                             val raw = position - centre
                             val (cx, cy) = StickInput.clamp(
