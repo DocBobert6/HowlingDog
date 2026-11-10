@@ -325,16 +325,15 @@ class MainActivity : ComponentActivity() {
                         // frames 0 = no delivery; frames climbing +
                         // bright 0 = core renders black; frames
                         // climbing + bright > 0 = GameView not showing
-                        // the bitmap. Updated once a second.
+                        // the bitmap. The SRC line probes the source
+                        // BEFORE the copy: nonzero 0 = the core
+                        // delivers black; nonzero > 0 with bright 0 =
+                        // the copy loses the picture. Updated once a
+                        // second.
                         val s = stats
                         if (s != null) {
                             Text(
-                                text = "DIAG frames=${s.frames} drawn=${s.drawn} " +
-                                    "last=${s.lastW}x${s.lastH}\n" +
-                                    "AV ${s.avW}x${s.avH} @ " +
-                                    "${"%.1f".format(s.fps)}fps\n" +
-                                    "bright mean=${s.brightMean} " +
-                                    "centre=(${s.centreR},${s.centreG},${s.centreB})",
+                                text = formatDiagText(s),
                                 color = Color.White,
                                 fontSize = 12.sp,
                                 modifier = Modifier

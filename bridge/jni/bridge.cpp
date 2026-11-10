@@ -57,6 +57,20 @@ static int g_frame_h = 0;
 static volatile bool g_frame_ready = false;
 static pthread_mutex_t g_frame_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+// Source probe (no-video bug): what the core actually delivered,
+// sampled in bridge_video BEFORE the copy into g_frame. The on-screen
+// DIAG samples the copied frame, so it cannot tell "the core
+// delivers black" apart from "the copy loses the picture" — this
+// can. Written under g_frame_mutex, read the same way.
+static volatile long g_src_calls = 0; // bridge_video invocations
+static long g_src_nonzero = 0; // non-zero uint32s in the last delivered frame
+static uint32_t g_src_first = 0; // data[0] of the last delivered frame
+static uint32_t g_src_first100 = 0; // data[100]
+static uint32_t g_src_first1000 = 0; // data[1000]
+static int g_src_w = 0;
+static int g_src_h = 0;
+static int g_src_pitch = 0;
+
 #define FRAME_MAX_W 320
 #define FRAME_MAX_H 256
 
@@ -192,6 +206,7 @@ static bool bridge_environ(unsigned cmd, void *data) {
 
 static void bridge_video(const void *data, unsigned width, unsigned height,
                          size_t pitch) {
+    g_src_calls++;
     if (!data || width == 0 || height == 0)
         return;
     if (width > (unsigned)FRAME_MAX_W || height > (unsigned)FRAME_MAX_H) {
@@ -202,6 +217,26 @@ static void bridge_video(const void *data, unsigned width, unsigned height,
     pthread_mutex_lock(&g_frame_mutex);
     const uint32_t *src = (const uint32_t *)data;
     size_t src_stride = pitch / sizeof(uint32_t);
+    // Probe the delivered source BEFORE the copy: count non-zero
+    // words over the width x height window and record the first few
+    // raw words. If this is all zero while the game runs, the core
+    // itself delivers black; if this is non-zero while the copied
+    // frame is black, the copy is at fault. ~68k reads per frame.
+    long nonzero = 0;
+    for (unsigned y = 0; y < height; ++y) {
+        const uint32_t *srow = src + (size_t)y * src_stride;
+        for (unsigned x = 0; x < width; ++x)
+            if (srow[x] != 0)
+                ++nonzero;
+    }
+    size_t src_words = src_stride * (size_t)height;
+    g_src_nonzero = nonzero;
+    g_src_first = src[0];
+    g_src_first100 = src_words > 100 ? src[100] : 0;
+    g_src_first1000 = src_words > 1000 ? src[1000] : 0;
+    g_src_w = (int)width;
+    g_src_h = (int)height;
+    g_src_pitch = (int)pitch;
     for (unsigned y = 0; y < height; ++y) {
         const uint32_t *srow = src + (size_t)y * src_stride;
         uint32_t *drow = g_frame + (size_t)y * width;
@@ -398,6 +433,33 @@ Java_app_howlingdog_Bridge_nativeGetFrame(JNIEnv *env, jobject /* thiz */,
     return JNI_TRUE;
 }
 
+// Source probe (no-video bug): what the core delivered, sampled in
+// bridge_video before the copy. Returns [video calls, non-zero
+// uint32s in the last delivered frame, data[0], data[100],
+// data[1000], width, height, pitch bytes]. The raw words are
+// returned as bit patterns (a jint holding 0xFF000000 reads
+// negative); the Kotlin side formats them as hex.
+JNIEXPORT jintArray JNICALL
+Java_app_howlingdog_Bridge_nativeGetSrcProbe(JNIEnv *env, jobject /* thiz */) {
+    jintArray out = env->NewIntArray(8);
+    if (!out)
+        return nullptr;
+    pthread_mutex_lock(&g_frame_mutex);
+    jint vals[8] = {
+        (jint)g_src_calls,
+        (jint)g_src_nonzero,
+        (jint)g_src_first,
+        (jint)g_src_first100,
+        (jint)g_src_first1000,
+        (jint)g_src_w,
+        (jint)g_src_h,
+        (jint)g_src_pitch,
+    };
+    pthread_mutex_unlock(&g_frame_mutex);
+    env->SetIntArrayRegion(out, 0, 8, vals);
+    return out;
+}
+
 JNIEXPORT jint JNICALL
 Java_app_howlingdog_Bridge_nativeReadAudio(JNIEnv *env, jobject /* thiz */,
                                            jshortArray samples,
@@ -439,6 +501,16 @@ Java_app_howlingdog_Bridge_nativeUnloadGame(JNIEnv * /* env */,
     pthread_mutex_lock(&g_audio_mutex);
     g_audio_head = g_audio_tail = g_audio_count = 0;
     pthread_mutex_unlock(&g_audio_mutex);
+    pthread_mutex_lock(&g_frame_mutex);
+    g_src_calls = 0;
+    g_src_nonzero = 0;
+    g_src_first = 0;
+    g_src_first100 = 0;
+    g_src_first1000 = 0;
+    g_src_w = 0;
+    g_src_h = 0;
+    g_src_pitch = 0;
+    pthread_mutex_unlock(&g_frame_mutex);
     g_frame_ready = false;
 }
 

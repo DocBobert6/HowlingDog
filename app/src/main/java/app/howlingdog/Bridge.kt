@@ -39,6 +39,15 @@ object Bridge {
     /** Copies the latest frame into [pixels]; [dims] gets [width, height]. */
     external fun nativeGetFrame(pixels: IntArray, dims: IntArray): Boolean
 
+    /**
+     * Source probe (no-video bug): what the core delivered, sampled in
+     * bridge_video before the copy. Returns [video calls, non-zero
+     * uint32s in the last delivered frame, data[0], data[100],
+     * data[1000], width, height, pitch bytes]. The raw words are bit
+     * patterns; format them as hex on the Kotlin side.
+     */
+    external fun nativeGetSrcProbe(): IntArray
+
     /** Drains up to [maxFrames] stereo frames into [samples]; returns frames read. */
     external fun nativeReadAudio(samples: ShortArray, maxFrames: Int): Int
     external fun nativeSetInput(mask: Int)

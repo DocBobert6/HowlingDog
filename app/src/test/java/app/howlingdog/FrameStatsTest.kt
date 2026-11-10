@@ -68,4 +68,49 @@ class FrameStatsTest {
         val b2 = sampleFrameBrightness(IntArray(16), 0, 0)
         assertEquals(0, b2.mean)
     }
+
+    @Test
+    fun diagTextRendersSrcProbeLine() {
+        val s = FrameStats(
+            frames = 179, drawn = 179, lastW = 304, lastH = 224,
+            avW = 304, avH = 224, fps = 59.6,
+            brightMean = 0, centreR = 0, centreG = 0, centreB = 0,
+            srcCalls = 179, srcNonzero = 0,
+            srcFirst = 0, srcFirst100 = 0, srcFirst1000 = 0,
+            srcW = 304, srcH = 224, srcPitch = 1280,
+        )
+        assertEquals(
+            "DIAG frames=179 drawn=179 last=304x224\n" +
+                "AV 304x224 @ 59.6fps\n" +
+                "bright mean=0 centre=(0,0,0)\n" +
+                "SRC nonzero=0 first=0x00000000 100=0x00000000 " +
+                "1000=0x00000000 304x224 pitch=1280",
+            formatDiagText(s),
+        )
+    }
+
+    @Test
+    fun diagTextShowsNonZeroSourceAndError() {
+        // A raw XRGB word with the top bit set is a negative Int;
+        // the SRC line must still show its 8 hex digits.
+        val s = FrameStats(
+            frames = 890, drawn = 890, lastW = 304, lastH = 224,
+            avW = 304, avH = 224, fps = 59.6,
+            brightMean = 0, centreR = 0, centreG = 0, centreB = 0,
+            srcCalls = 890, srcNonzero = 68096,
+            srcFirst = 0xFF123456.toInt(), srcFirst100 = 0,
+            srcFirst1000 = 0x00ABCDEF,
+            srcW = 304, srcH = 224, srcPitch = 1280,
+            lastError = "Failed to load bios",
+        )
+        assertEquals(
+            "DIAG frames=890 drawn=890 last=304x224\n" +
+                "AV 304x224 @ 59.6fps\n" +
+                "bright mean=0 centre=(0,0,0)\n" +
+                "SRC nonzero=68096 first=0xFF123456 100=0x00000000 " +
+                "1000=0x00ABCDEF 304x224 pitch=1280\n" +
+                "ERR Failed to load bios",
+            formatDiagText(s),
+        )
+    }
 }

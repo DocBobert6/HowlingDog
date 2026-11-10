@@ -160,19 +160,24 @@ class PlayerSession(
             val now = SystemClock.uptimeMillis()
             if (now - lastStatsAtMs >= 1000) {
                 lastStatsAtMs = now
+                val probe = Bridge.nativeGetSrcProbe()
                 val s = FrameStats(
                     framesReceived, framesDrawn, lastW, lastH,
                     avW, avH, avFps, bright.mean,
                     bright.centreR, bright.centreG, bright.centreB,
+                    srcCalls = probe[0].toLong(),
+                    srcNonzero = probe[1],
+                    srcFirst = probe[2],
+                    srcFirst100 = probe[3],
+                    srcFirst1000 = probe[4],
+                    srcW = probe[5],
+                    srcH = probe[6],
+                    srcPitch = probe[7],
+                    lastError = Bridge.nativeLastError(),
                 )
-                Log.i(
-                    TAG,
-                    "DIAG frames=${s.frames} drawn=${s.drawn} " +
-                        "last=${s.lastW}x${s.lastH} " +
-                        "av=${s.avW}x${s.avH}@${"%.1f".format(s.fps)}fps " +
-                        "bright=${s.brightMean} " +
-                        "centre=(${s.centreR},${s.centreG},${s.centreB})",
-                )
+                // Same text as the on-screen readout, one line for
+                // logcat (pipes stand in for the newlines).
+                Log.i(TAG, formatDiagText(s).replace("\n", " | "))
                 mainHandler.post { onStats(s) }
             }
             val elapsed = System.nanoTime() - t0
