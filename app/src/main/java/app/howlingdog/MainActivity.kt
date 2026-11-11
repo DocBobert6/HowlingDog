@@ -165,6 +165,15 @@ class MainActivity : ComponentActivity() {
     private var playtimeTracker: PlaytimeTracker? = null
 
     /**
+     * 2.0, feature 4 — the on-screen input display's history:
+     * the recent inputs as they happen, like a fightstick
+     * display. Recorded at the shared pushMask() point (touch +
+     * gamepad, before the turbo pulse). Cleared on every game
+     * start and quit, so a new game starts with an empty strip.
+     */
+    private val inputHistory = InputHistory()
+
+    /**
      * 2.0, feature 1 — serializes the playtime persists: pause
      * and quit both persist, and without this a pause-persist
      * launched just before a quit-persist could land after it
@@ -717,6 +726,11 @@ class MainActivity : ComponentActivity() {
     private val coversState by lazy { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
     private val artTriedState by lazy { mutableStateOf<Set<String>>(emptySet()) }
     private val hapticsLevelState by lazy { mutableStateOf(controlSettings.haptics()) }
+    // 2.0, feature 4 — the input display: the recent-input events
+    // the strip shows (updated from pushMask), and whether the
+    // strip is on (a Settings toggle, off by default).
+    private val inputHistoryState by lazy { mutableStateOf<List<InputHistory.InputEvent>>(emptyList()) }
+    private val inputDisplayOnState by lazy { mutableStateOf(controlSettings.inputDisplay()) }
     private val stickOpacityState by lazy { mutableStateOf(controlSettings.stickOpacity()) }
     private val buttonsOpacityState by lazy { mutableStateOf(controlSettings.buttonsOpacity()) }
     private val controlSizeState by lazy { mutableStateOf(controlSettings.size()) }
@@ -845,6 +859,10 @@ class MainActivity : ComponentActivity() {
         // On-screen controls (stick, haptics, opacity, size, layout):
         // same SharedPreferences file as the core options, own keys.
         var hapticsLevel by hapticsLevelState
+        // 2.0, feature 4 — the input display: the recent-input
+        // events the strip shows, and whether it is on.
+        var inputHistoryEvents by inputHistoryState
+        var inputDisplayOn by inputDisplayOnState
         // Per-group opacity (Part 2): the stick/D-pad and the
         // buttons each have their own, 20–100%, default 60.
         var stickOpacity by stickOpacityState
@@ -975,6 +993,10 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(screen) {
             if (screen == Screen.Playing) {
                 hapticsLevel = controlSettings.haptics()
+                // 2.0, feature 4 — re-read the input display
+                // toggle, so a change made in Settings is live the
+                // next time a game starts.
+                inputDisplayOn = controlSettings.inputDisplay()
                 stickOpacity = controlSettings.stickOpacity()
                 buttonsOpacity = controlSettings.buttonsOpacity()
                 controlSize = controlSettings.size()
@@ -1233,6 +1255,15 @@ class MainActivity : ComponentActivity() {
                     0
                 }
             session?.setInput(turboState.apply(raw, turboMask, SystemClock.uptimeMillis()))
+            // 2.0, feature 4 — the input display records the raw
+            // mask here, at the shared input point (what the player
+            // is holding, before the turbo pulse — the strip shows
+            // the hold, not the autofire flicker). Only a change
+            // adds an event, so the state below only updates on a
+            // real input change, and the strip only recomposes then.
+            if (inputHistory.record(raw, SystemClock.uptimeMillis())) {
+                inputHistoryEvents = inputHistory.snapshot()
+            }
         }
 
         /**
@@ -1605,6 +1636,10 @@ class MainActivity : ComponentActivity() {
             session?.stop()
             session = null
             held = Held()
+            // 2.0, feature 4 — the input display clears with the
+            // game, so a new game starts with an empty strip.
+            inputHistory.clear()
+            inputHistoryEvents = emptyList()
             playingGame = null
             paused = false
             pauseStatus = ""
@@ -1792,6 +1827,10 @@ class MainActivity : ComponentActivity() {
             playtimeTracker = PlaytimeTracker(entry.totalPlayMillis).also {
                 it.start(System.currentTimeMillis())
             }
+            // 2.0, feature 4 — a new game starts with an empty
+            // input strip.
+            inputHistory.clear()
+            inputHistoryEvents = emptyList()
             // v1.5, feature 4 — cheats: this game's enabled codes
             // go to the session now, so they are written after
             // every displayed frame from the first one. A game
@@ -3473,6 +3512,8 @@ class MainActivity : ComponentActivity() {
         var crtShaderOn by crtShaderOnState
         var curvatureOn by curvatureOnState
         var hapticsLevel by hapticsLevelState
+        // 2.0, feature 4 — the input display toggle (off by default).
+        var inputDisplayOn by inputDisplayOnState
         var controlSize by controlSizeState
         var leftControl by leftControlState
         var turboMask by turboMaskState
@@ -3559,6 +3600,22 @@ class MainActivity : ComponentActivity() {
                 controlSettings.setHaptics(level)
                 hapticsLevel = level
             }
+            // 2.0, feature 4 — the input display: a small strip
+            // over the game showing the recent inputs as they
+            // happen, like a fightstick display. Off by default.
+            ControlDropdownRow(
+                "Input display",
+                listOf("off" to "Off", "on" to "On"),
+                if (inputDisplayOn) "on" else "off",
+            ) { value ->
+                val on = value == "on"
+                controlSettings.setInputDisplay(on)
+                inputDisplayOn = on
+            }
+            Text(
+                "Shows the recent inputs (arrows + buttons) in a strip over the game, for fighting games and for diagnosing the controls. Off by default.",
+                style = MaterialTheme.typography.bodySmall,
+            )
             ControlDropdownRow(
                 "Controls size",
                 listOf(
@@ -4005,6 +4062,10 @@ class MainActivity : ComponentActivity() {
         var pauseStatus by pauseStatusState
         var controlSize by controlSizeState
         var leftControl by leftControlState
+        // 2.0, feature 4 — the input display: the recent-input
+        // events the strip shows, and whether it is on.
+        var inputHistoryEvents by inputHistoryState
+        var inputDisplayOn by inputDisplayOnState
         var stickOpacity by stickOpacityState
         var buttonsOpacity by buttonsOpacityState
         var ffSpeed by ffSpeedState
@@ -4964,6 +5025,21 @@ class MainActivity : ComponentActivity() {
                                 },
                             )
                         }
+                    }
+                }
+                // 2.0, feature 4 — the input display strip: the
+                // recent inputs as they happen, top-left of the
+                // game area (the FF/SLOW buttons take top-right),
+                // floating over the game like the controls. Only
+                // when the Settings toggle is on, and hidden while
+                // paused or adjusting controls, like the notes above.
+                if (inputDisplayOn && !paused && !editControls) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(top = 8.dp, start = 8.dp),
+                    ) {
+                        InputDisplayStrip(inputHistoryEvents)
                     }
                 }
                 // Pause overlay: covers the game and the

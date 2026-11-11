@@ -37,6 +37,7 @@ class ControlSettings(private val store: OptionStore) {
 
     companion object {
         const val KEY_HAPTICS = "controls.haptics"
+        const val KEY_INPUT_DISPLAY = "controls.inputDisplay" // "on"/"off", default off
         const val KEY_OPACITY = "controls.opacity" // int percent, 20..100 (legacy: one opacity for the whole overlay)
         /** Per-group opacity (int percent, 20..100): the stick/D-pad
             and the buttons each have their own. Absent means the
@@ -102,6 +103,18 @@ class ControlSettings(private val store: OptionStore) {
 
     fun setHaptics(level: HapticLevel) {
         store.put(KEY_HAPTICS, level.name.lowercase())
+    }
+
+    /**
+     * 2.0, feature 4 — the on-screen input display (the recent
+     * inputs strip, like a fightstick display). Off by default
+     * (the v1.5 standing rule: new on-screen controls are off
+     * unless toggled on in Settings).
+     */
+    fun inputDisplay(): Boolean = store.get(KEY_INPUT_DISPLAY) == "on"
+
+    fun setInputDisplay(on: Boolean) {
+        store.put(KEY_INPUT_DISPLAY, if (on) "on" else "off")
     }
 
     /** Opacity as 0.0..1.0 (the slider stores an int percent). */

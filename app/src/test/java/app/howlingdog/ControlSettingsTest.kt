@@ -203,6 +203,16 @@ class ControlSettingsTest {
     }
 
     @Test
+    fun inputDisplayDefaultsToOffAndRoundTrips() {
+        val s = ControlSettings(MapStore())
+        assertEquals(false, s.inputDisplay())
+        s.setInputDisplay(true)
+        assertEquals(true, s.inputDisplay())
+        s.setInputDisplay(false)
+        assertEquals(false, s.inputDisplay())
+    }
+
+    @Test
     fun turboRoundTripsPerButton() {
         val s = ControlSettings(MapStore())
         s.setTurboEnabled("A", true)
