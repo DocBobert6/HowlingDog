@@ -62,7 +62,10 @@ class MainActivityStartupTest {
         composeRule.onNodeWithText("HOWLINGDOG — SYSTEM SETUP").assertIsDisplayed()
         composeRule.onNodeWithText("SKIP").performClick()
         composeRule.onNodeWithText("SELECT YOUR GAME").assertIsDisplayed()
-        composeRule.onNodeWithText("Add game").assertIsDisplayed()
+        // Probe (merge diagnosis): scroll "Add game" into view
+        // first — it sits below the fold in the small test window
+        // when the System files card is fully loaded.
+        composeRule.onNodeWithText("Add game").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Add folder").assertIsDisplayed()
         composeRule.onNodeWithText("Settings").assertIsDisplayed()
         composeRule.onNodeWithText("Pick BIOS folder").assertIsDisplayed()

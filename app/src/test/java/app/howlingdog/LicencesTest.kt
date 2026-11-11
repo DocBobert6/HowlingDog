@@ -1,5 +1,6 @@
 package app.howlingdog
 
+import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -78,7 +79,11 @@ class LicencesTest {
         }
         composeRule.onNodeWithText("SKIP").performClick()
         composeRule.onNodeWithText("Settings").performClick()
-        composeRule.onNodeWithText("Licences").performScrollTo().performClick()
+        // Probe (merge diagnosis): split the Licences chain so the
+        // failing step is named by its line — lookup, scroll, click.
+        composeRule.onNodeWithText("Licences").assertExists()
+        composeRule.onNodeWithText("Licences").performScrollTo()
+        composeRule.onNodeWithText("Licences").performClick()
         composeRule.onNodeWithText("Back").performScrollTo().performClick()
         composeRule.onNodeWithText("Settings").assertIsDisplayed()
     }
