@@ -124,7 +124,7 @@ jobs:
           RC_SRC="deps/rcheevos/src"
           gcc -I bridge/jni -I deps/rcheevos/include -I "$RC_SRC" \
             -DRC_CLIENT_SUPPORTS_HASH -D_GNU_SOURCE -std=c99 -Wall -Wextra \
-            -o /tmp/ra_client_test tests/ra_client_test.c bridge/jni/ra_client.c \
+            -o /tmp/ra_client_test tests/ra_client_test.c bridge/jni/ra_client.c bridge/jni/ra_cdreader.c \
             "$RC_SRC/rc_client.c" "$RC_SRC/rc_compat.c" "$RC_SRC/rc_util.c" "$RC_SRC/rc_version.c" \
             "$RC_SRC/rcheevos/alloc.c" "$RC_SRC/rcheevos/condition.c" "$RC_SRC/rcheevos/condset.c" \
             "$RC_SRC/rcheevos/consoleinfo.c" "$RC_SRC/rcheevos/format.c" "$RC_SRC/rcheevos/lboard.c" \

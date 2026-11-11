@@ -28,6 +28,8 @@
 #include <stdint.h>
 
 #include "ra_client.h"
+#include "ra_cdreader.h"
+#include "rc_consoles.h"
 #include "rc_hash.h"
 
 static int g_checks;
@@ -281,6 +283,245 @@ static void test_neo_hash(void) {
     remove(kNeoPath);
 }
 
+/* ------------------------------------------------------------------ */
+/* The CD reader (bridge/jni/ra_cdreader.c)                            */
+/* ------------------------------------------------------------------ */
+
+/* A fake Neo Geo CD disc, built in /tmp: a .cue + a .bin with a
+ * minimal ISO9660 filesystem (a PVD at sector 16, a root
+ * directory at 17, IPL.TXT at 18 naming GAME.PRG, the PRG at
+ * 19). The PRG is 16 bytes (0x00..0x0F), so the hash rcheevos
+ * computes must be the MD5 of those 16 bytes:
+ * 1ac1ef01e96caf1be0d329331a4fc2a8. */
+#define CD_TEST_DIR "/tmp/hd-ra-cd-test"
+#define CD_TEST_CUE CD_TEST_DIR "/fake.cue"
+#define CD_TEST_BIN CD_TEST_DIR "/fake.bin"
+
+static uint8_t cd_bcd(int n) {
+    return (uint8_t)(((n / 10) << 4) | (n % 10));
+}
+
+/* The MSF (BCD) for a sector's header: LBA -> MSF (frames = LBA + 150). */
+static void cd_msf_bytes(int lba, uint8_t out[3]) {
+    int total = lba + 150;
+    int ff = total % 75;
+    total /= 75;
+    int ss = total % 60;
+    int mm = total / 60;
+    out[0] = cd_bcd(mm);
+    out[1] = cd_bcd(ss);
+    out[2] = cd_bcd(ff);
+}
+
+/* One 2352-byte MODE1 raw sector: sync + MSF header + 2048 user
+ * bytes + 288 zero bytes (EDC/ECC, unused by the hash). */
+static void cd_raw_sector(int lba, const uint8_t user[2048], uint8_t out[2352]) {
+    static const uint8_t sync[12] = {
+        0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00
+    };
+    memcpy(out, sync, 12);
+    cd_msf_bytes(lba, out + 12);
+    out[15] = 1; /* MODE1 */
+    memcpy(out + 16, user, 2048);
+    memset(out + 2064, 0, 288);
+}
+
+/* One ISO9660 directory record (33 + name, padded to even).
+ * The name length is explicit: "." and ".." are single bytes
+ * (0x00 / 0x01) that strlen would report as empty. Returns the
+ * record length. */
+static size_t cd_dir_record(uint32_t extent, uint32_t size, uint8_t flags,
+                            const uint8_t* name, size_t name_len, uint8_t* out) {
+    size_t len = 33 + name_len;
+    if (len % 2)
+        ++len;
+    memset(out, 0, len);
+    out[0] = (uint8_t)len;
+    out[2] = (uint8_t)(extent & 0xFF);
+    out[3] = (uint8_t)((extent >> 8) & 0xFF);
+    out[4] = (uint8_t)((extent >> 16) & 0xFF);
+    out[5] = (uint8_t)((extent >> 24) & 0xFF);
+    out[6] = (uint8_t)((extent >> 24) & 0xFF);
+    out[7] = (uint8_t)((extent >> 16) & 0xFF);
+    out[8] = (uint8_t)((extent >> 8) & 0xFF);
+    out[9] = (uint8_t)(extent & 0xFF);
+    out[10] = (uint8_t)(size & 0xFF);
+    out[11] = (uint8_t)((size >> 8) & 0xFF);
+    out[12] = (uint8_t)((size >> 16) & 0xFF);
+    out[13] = (uint8_t)((size >> 24) & 0xFF);
+    out[14] = (uint8_t)((size >> 24) & 0xFF);
+    out[15] = (uint8_t)((size >> 16) & 0xFF);
+    out[16] = (uint8_t)((size >> 8) & 0xFF);
+    out[17] = (uint8_t)(size & 0xFF);
+    out[25] = flags;
+    out[28] = 1;
+    out[29] = 0;
+    out[30] = 0;
+    out[31] = 1;
+    out[32] = (uint8_t)name_len;
+    memcpy(out + 33, name, name_len);
+    return len;
+}
+
+static void build_fake_disc(void) {
+    /* mkdir -p (ignoring EEXIST). */
+    char mkdir_cmd[256];
+    snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p %s", CD_TEST_DIR);
+    (void)system(mkdir_cmd);
+
+    static const char prg[16] = {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F
+    };
+    static const char ipl[] = "GAME.PRG\n";
+
+    /* Sector 16: the PVD. */
+    uint8_t pvd[2048];
+    memset(pvd, 0, sizeof(pvd));
+    pvd[0] = 1;
+    memcpy(pvd + 1, "CD001", 5);
+    pvd[6] = 1;
+    pvd[128] = 0x00;
+    pvd[129] = 0x08; /* logical block size 2048 */
+    {
+        uint8_t root_rec[34];
+        /* The root record is 34 bytes (name = one 0 byte); build
+         * it by hand so the length is exactly 34. */
+        memset(root_rec, 0, sizeof(root_rec));
+        root_rec[0] = 34;
+        root_rec[2] = 17; /* extent: sector 17 */
+        root_rec[10] = 0x00;
+        root_rec[11] = 0x08; /* length 2048 */
+        root_rec[25] = 2;    /* directory */
+        root_rec[28] = 1;
+        root_rec[31] = 1;
+        root_rec[32] = 1;
+        root_rec[33] = 0;
+        memcpy(pvd + 156, root_rec, 34);
+    }
+
+    /* Sector 17: the root directory. */
+    uint8_t root[2048];
+    memset(root, 0, sizeof(root));
+    {
+        size_t off = 0;
+        uint8_t rec[64];
+        size_t len;
+        static const uint8_t dot[1] = { 0x00 };
+        static const uint8_t dotdot[1] = { 0x01 };
+        len = cd_dir_record(17, 2048, 2, dot, 1, rec);
+        memcpy(root + off, rec, len);
+        off += len;
+        len = cd_dir_record(17, 2048, 2, dotdot, 1, rec);
+        memcpy(root + off, rec, len);
+        off += len;
+        len = cd_dir_record(18, (uint32_t)sizeof(ipl) - 1, 0,
+                            (const uint8_t*)"IPL.TXT;1", 9, rec);
+        memcpy(root + off, rec, len);
+        off += len;
+        len = cd_dir_record(19, 16, 0,
+                            (const uint8_t*)"GAME.PRG;1", 10, rec);
+        memcpy(root + off, rec, len);
+        off += len;
+        (void)off;
+    }
+
+    uint8_t ipl_data[2048];
+    memset(ipl_data, 0, sizeof(ipl_data));
+    memcpy(ipl_data, ipl, sizeof(ipl) - 1);
+    uint8_t prg_data[2048];
+    memset(prg_data, 0, sizeof(prg_data));
+    memcpy(prg_data, prg, 16);
+
+    FILE* f = fopen(CD_TEST_BIN, "wb");
+    CHECK(f != NULL);
+    if (!f)
+        return;
+    uint8_t sector[2352];
+    uint8_t zeros[2048];
+    memset(zeros, 0, sizeof(zeros));
+    int i;
+    for (i = 0; i < 16; ++i) {
+        cd_raw_sector(i, zeros, sector);
+        fwrite(sector, 1, sizeof(sector), f);
+    }
+    cd_raw_sector(16, pvd, sector);
+    fwrite(sector, 1, sizeof(sector), f);
+    cd_raw_sector(17, root, sector);
+    fwrite(sector, 1, sizeof(sector), f);
+    cd_raw_sector(18, ipl_data, sector);
+    fwrite(sector, 1, sizeof(sector), f);
+    cd_raw_sector(19, prg_data, sector);
+    fwrite(sector, 1, sizeof(sector), f);
+    fclose(f);
+
+    f = fopen(CD_TEST_CUE, "w");
+    CHECK(f != NULL);
+    if (!f)
+        return;
+    fputs("FILE \"fake.bin\" BINARY\n", f);
+    fputs("  TRACK 1 MODE1/2352\n", f);
+    fputs("    INDEX 01 00:00:00\n", f);
+    fclose(f);
+}
+
+/* A minimal stdio filereader for the hash iterator (the disc
+ * hash itself goes through the cdreader, but rc_hash_generate
+ * may still touch the filereader). */
+static void* cd_stdio_open(const char* path) { return fopen(path, "rb"); }
+static void cd_stdio_seek(void* h, int64_t off, int origin) { fseek((FILE*)h, (long)off, origin); }
+static int64_t cd_stdio_tell(void* h) { return ftell((FILE*)h); }
+static size_t cd_stdio_read(void* h, void* buf, size_t n) { return fread(buf, 1, n, (FILE*)h); }
+static void cd_stdio_close(void* h) { fclose((FILE*)h); }
+
+static void test_cdreader(void) {
+    rc_hash_cdreader_t cdreader;
+    ra_cdreader_get(&cdreader);
+    build_fake_disc();
+
+    /* open_track: track 1 only, .cue only. */
+    void* track = cdreader.open_track(CD_TEST_CUE, 1);
+    CHECK(track != NULL);
+    CHECK(cdreader.open_track(CD_TEST_CUE, 2) == NULL);
+    CHECK(cdreader.open_track(CD_TEST_BIN, 1) == NULL);
+    CHECK(cdreader.open_track(CD_TEST_CUE, 0) == NULL);
+    if (!track)
+        return;
+
+    CHECK(cdreader.first_track_sector(track) == 0);
+
+    uint8_t buf[2048];
+    size_t n = cdreader.read_sector(track, 16, buf, sizeof(buf));
+    CHECK(n == 2048 && memcmp(&buf[1], "CD001", 5) == 0);
+    n = cdreader.read_sector(track, 18, buf, sizeof(buf));
+    CHECK(n == 2048 && memcmp(buf, "GAME.PRG\n", 9) == 0);
+    n = cdreader.read_sector(track, 19, buf, sizeof(buf));
+    CHECK(n == 2048 && buf[0] == 0x00 && buf[15] == 0x0F);
+    CHECK(cdreader.read_sector(track, 0, buf, sizeof(buf)) == 2048);
+    cdreader.close_track(track);
+
+    /* The full hash, through rcheevos: it must be the MD5 of
+     * the 16 PRG bytes, and stable across runs. */
+    rc_hash_iterator_t iterator;
+    memset(&iterator, 0, sizeof(iterator));
+    iterator.path = CD_TEST_CUE;
+    iterator.callbacks.cdreader = cdreader;
+    iterator.callbacks.filereader.open = cd_stdio_open;
+    iterator.callbacks.filereader.seek = cd_stdio_seek;
+    iterator.callbacks.filereader.tell = cd_stdio_tell;
+    iterator.callbacks.filereader.read = cd_stdio_read;
+    iterator.callbacks.filereader.close = cd_stdio_close;
+    char hash[33] = "";
+    CHECK(rc_hash_generate(hash, RC_CONSOLE_NEO_GEO_CD, &iterator) == 1);
+    CHECK_STR_EQ(hash, "1ac1ef01e96caf1be0d329331a4fc2a8");
+    char hash2[33] = "";
+    CHECK(rc_hash_generate(hash2, RC_CONSOLE_NEO_GEO_CD, &iterator) == 1);
+    CHECK_STR_EQ(hash, hash2);
+
+    remove(CD_TEST_CUE);
+    remove(CD_TEST_BIN);
+}
+
 /* The full flow through the wrapper with the mock server and
  * mock RAM: login -> load game -> frame (unlock) -> serialize
  * -> reset -> deserialize -> achievements list. */
@@ -385,6 +626,7 @@ int main(void) {
     test_console_id_for_path();
     test_read_memory_mapped();
     test_neo_hash();
+    test_cdreader();
     test_full_flow();
     printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

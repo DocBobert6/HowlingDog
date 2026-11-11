@@ -21,6 +21,7 @@
  */
 
 #include "ra_client.h"
+#include "ra_cdreader.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -249,6 +250,15 @@ int ra_init(ra_memory_provider_fn memory_provider, void* memory_ctx,
     /* Softcore: HowlingDog is built around save states, which
      * hardcore forbids. */
     rc_client_set_hardcore_enabled(g_client, 0);
+    /* The CD reader, so disc games can be hashed (Neo Geo CD):
+     * without it the identify step fails for discs and RA stays
+     * inactive for them. */
+    {
+        rc_hash_callbacks_t hash_callbacks;
+        memset(&hash_callbacks, 0, sizeof(hash_callbacks));
+        ra_cdreader_get(&hash_callbacks.cdreader);
+        rc_client_set_hash_callbacks(g_client, &hash_callbacks);
+    }
     return 0;
 }
 

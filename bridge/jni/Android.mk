@@ -22,7 +22,7 @@ include $(PREBUILT_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := howlingdog-bridge
-LOCAL_SRC_FILES := bridge.cpp runahead.c ra_client.c
+LOCAL_SRC_FILES := bridge.cpp runahead.c ra_client.c ra_cdreader.c
 LOCAL_SHARED_LIBRARIES := retro-prebuilt
 LOCAL_STATIC_LIBRARIES := rcheevos
 LOCAL_C_INCLUDES := $(ROOT_DIR)/libretro $(ROOT_DIR)/deps/rcheevos/include
