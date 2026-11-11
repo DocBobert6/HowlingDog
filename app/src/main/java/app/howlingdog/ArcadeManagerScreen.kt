@@ -87,7 +87,7 @@ fun ArcadeManagerScreen(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            "Total playtime ${Playtime.formatPlaytime(totalPlaytimeMillis)} · " +
+            "Total playtime ${formatPlaytime(totalPlaytimeMillis)} · " +
                 "$totalCoins coins · ${ArcadeStats.formatMoney(totalRevenueCents)}",
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Bold,
@@ -127,7 +127,7 @@ fun ArcadeManagerScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            Playtime.formatPlaytime(entry.playtimeMillis),
+                            formatPlaytime(entry.playtimeMillis),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }

@@ -3638,6 +3638,11 @@ class MainActivity : ComponentActivity() {
         var screen by screenState
         var crtShaderOn by crtShaderOnState
         var curvatureOn by curvatureOnState
+        // 2.0, feature 6 fix — the Arcade Manager's Back target
+        // was used by the Settings button but never declared in
+        // this screen, so the build failed (unresolved
+        // reference). Declared here, as in the library screen.
+        var arcadeManagerFrom by arcadeManagerFromState
         var hapticsLevel by hapticsLevelState
         // 2.0, feature 4 — the input display toggle (off by default).
         var inputDisplayOn by inputDisplayOnState
