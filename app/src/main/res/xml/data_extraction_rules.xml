@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Post-release audit fix F1 (targeted way): Auto Backup must not
+     upload the user's games or BIOS files to their Google account.
+     The games (a .chd is 300 MB+) and the BIOS zips are excluded
+     from cloud backup and device transfer; saves/ and the
+     SharedPreferences settings stay included, so a restore keeps
+     progress and options but not the ROMs. Referenced from the
+     manifest via android:dataExtractionRules (API 31+). -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="games" />
+        <exclude domain="file" path="bios" />
+        <exclude domain="file" path="art" />
+        <exclude domain="file" path="art-index.txt" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="games" />
+        <exclude domain="file" path="bios" />
+        <exclude domain="file" path="art" />
+        <exclude domain="file" path="art-index.txt" />
+    </device-transfer>
+</data-extraction-rules>

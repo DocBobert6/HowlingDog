@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Post-release audit fix F1 (targeted way), legacy form for API
+     24-30 (minSdk 24): the same exclusions as
+     data_extraction_rules.xml — games and BIOS files are never
+     backed up, saves/ and the settings are. Referenced from the
+     manifest via android:fullBackupContent. -->
+<full-backup-content>
+    <exclude domain="file" path="games" />
+    <exclude domain="file" path="bios" />
+    <exclude domain="file" path="art" />
+    <exclude domain="file" path="art-index.txt" />
+</full-backup-content>
