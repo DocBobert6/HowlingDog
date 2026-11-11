@@ -530,6 +530,248 @@ static void test_cdreader(void) {
     remove(CD_TEST_BIN);
 }
 
+#define CD_TEST_CHD CD_TEST_DIR "/fake.chd"
+
+/* Big-endian writers for the CHD header, map, and metadata. */
+static void cd_put_be32(uint8_t* p, uint32_t v) {
+    p[0] = (uint8_t)(v >> 24);
+    p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);
+    p[3] = (uint8_t)v;
+}
+
+static void cd_put_be64(uint8_t* p, uint64_t v) {
+    p[0] = (uint8_t)(v >> 56);
+    p[1] = (uint8_t)(v >> 48);
+    p[2] = (uint8_t)(v >> 40);
+    p[3] = (uint8_t)(v >> 32);
+    p[4] = (uint8_t)(v >> 24);
+    p[5] = (uint8_t)(v >> 16);
+    p[6] = (uint8_t)(v >> 8);
+    p[7] = (uint8_t)v;
+}
+
+/* A synthetic uncompressed CHD v5 holding the same fake disc
+ * as build_fake_disc (20 raw sectors, 2352 bytes each, + 96
+ * zero subcode bytes per frame = 2448-byte frames). The layout
+ * is the CHD v5 on-disk format, hand-built: a 124-byte header
+ * (no compression — compressors[0] == 0), an uncompressed map
+ * (one big-endian uint32 entry per hunk — the hunk's file
+ * offset divided by hunkbytes), zero padding up to the first
+ * hunkbytes-aligned offset, the hunk data, and one CHTR2 track
+ * metadata entry. The hunk holds 4 frames, so
+ * the 20 frames span 5 hunks and the reader's frame-offset
+ * arithmetic is exercised. The hash must come out the same as
+ * the .cue + .bin disc: the MD5 of the 16 PRG bytes. */
+static void build_fake_chd(void) {
+    static const uint32_t kFrames = 20;
+    static const uint32_t kUnitBytes = 2448;
+    static const uint32_t kHunkBytes = 4 * 2448;
+    static const uint32_t kHunks = 5;
+    static const uint64_t kLogicalBytes = (uint64_t)kFrames * kUnitBytes;
+    static const uint64_t kMapOffset = 124;
+    /* The hunk data starts at the first hunkbytes-aligned offset
+     * after the header + map (the uncompressed map entry is the
+     * file offset divided by hunkbytes — libchdr's read path
+     * computes blockoffs = entry * hunkbytes — and entry 0 means
+     * "all zeros", so the first hunk cannot sit at offset 0).
+     * Header 124 + map 20 = 144, so the first hunk starts at
+     * 9792 (1 * hunkbytes) and entry[h] = 1 + h. */
+    static const uint64_t kDataStart =
+        ((124 + (uint64_t)kHunks * 4 + kHunkBytes - 1) / kHunkBytes) * kHunkBytes;
+    static const uint64_t kMetaOffset = kDataStart + (uint64_t)kHunks * kHunkBytes;
+
+    /* The 20 raw sectors, as in build_fake_disc (the PVD, root,
+     * IPL.TXT and GAME.PRG are sectors 16-19; the rest are
+     * zeroed user data). Rebuilt here so this test stands alone. */
+    static const char prg[16] = {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F
+    };
+    static const char ipl[] = "GAME.PRG\n";
+    uint8_t pvd[2048];
+    memset(pvd, 0, sizeof(pvd));
+    pvd[0] = 1;
+    memcpy(pvd + 1, "CD001", 5);
+    pvd[6] = 1;
+    pvd[128] = 0x00;
+    pvd[129] = 0x08;
+    {
+        uint8_t root_rec[34];
+        memset(root_rec, 0, sizeof(root_rec));
+        root_rec[0] = 34;
+        root_rec[2] = 17;
+        root_rec[10] = 0x00;
+        root_rec[11] = 0x08;
+        root_rec[25] = 2;
+        root_rec[28] = 1;
+        root_rec[31] = 1;
+        root_rec[32] = 1;
+        root_rec[33] = 0;
+        memcpy(pvd + 156, root_rec, 34);
+    }
+    uint8_t root[2048];
+    memset(root, 0, sizeof(root));
+    {
+        size_t off = 0;
+        uint8_t rec[64];
+        size_t len;
+        static const uint8_t dot[1] = { 0x00 };
+        static const uint8_t dotdot[1] = { 0x01 };
+        len = cd_dir_record(17, 2048, 2, dot, 1, rec);
+        memcpy(root + off, rec, len);
+        off += len;
+        len = cd_dir_record(17, 2048, 2, dotdot, 1, rec);
+        memcpy(root + off, rec, len);
+        off += len;
+        len = cd_dir_record(18, (uint32_t)sizeof(ipl) - 1, 0,
+                            (const uint8_t*)"IPL.TXT;1", 9, rec);
+        memcpy(root + off, rec, len);
+        off += len;
+        len = cd_dir_record(19, 16, 0,
+                            (const uint8_t*)"GAME.PRG;1", 10, rec);
+        memcpy(root + off, rec, len);
+        off += len;
+        (void)off;
+    }
+    uint8_t ipl_data[2048];
+    memset(ipl_data, 0, sizeof(ipl_data));
+    memcpy(ipl_data, ipl, sizeof(ipl) - 1);
+    uint8_t prg_data[2048];
+    memset(prg_data, 0, sizeof(prg_data));
+    memcpy(prg_data, prg, 16);
+
+    FILE* f = fopen(CD_TEST_CHD, "wb");
+    CHECK(f != NULL);
+    if (!f)
+        return;
+
+    /* The 124-byte v5 header. */
+    uint8_t header[124];
+    memset(header, 0, sizeof(header));
+    memcpy(header, "MComprHD", 8);
+    cd_put_be32(header + 8, 124);
+    cd_put_be32(header + 12, 5);
+    /* compressors[4] stay 0: uncompressed, including the map. */
+    cd_put_be64(header + 32, kLogicalBytes);
+    cd_put_be64(header + 40, kMapOffset);
+    cd_put_be64(header + 48, kMetaOffset);
+    cd_put_be32(header + 56, kHunkBytes);
+    cd_put_be32(header + 60, kUnitBytes);
+    /* rawsha1 / sha1 / parentsha1 stay 0: libchdr does not
+     * verify them on open. */
+    fwrite(header, 1, sizeof(header), f);
+
+    /* The uncompressed map: one big-endian entry per hunk — the
+     * file offset of the hunk divided by hunkbytes. */
+    uint32_t h;
+    for (h = 0; h < kHunks; ++h) {
+        uint8_t off[4];
+        cd_put_be32(off, (uint32_t)(kDataStart / kHunkBytes) + h);
+        fwrite(off, 1, sizeof(off), f);
+    }
+
+    /* Zero padding up to the first hunk. */
+    uint8_t pad[1024];
+    memset(pad, 0, sizeof(pad));
+    uint64_t remaining = kDataStart - (kMapOffset + (uint64_t)kHunks * 4);
+    while (remaining > 0) {
+        size_t chunk = remaining < sizeof(pad) ? (size_t)remaining : sizeof(pad);
+        fwrite(pad, 1, chunk, f);
+        remaining -= chunk;
+    }
+
+    /* The hunk data: 20 frames, 4 per hunk. */
+    uint8_t zeros[2048];
+    memset(zeros, 0, sizeof(zeros));
+    uint8_t subcode[96];
+    memset(subcode, 0, sizeof(subcode));
+    uint32_t i;
+    for (i = 0; i < kFrames; ++i) {
+        uint8_t sector[2352];
+        const uint8_t* user = zeros;
+        if (i == 16)
+            user = pvd;
+        else if (i == 17)
+            user = root;
+        else if (i == 18)
+            user = ipl_data;
+        else if (i == 19)
+            user = prg_data;
+        cd_raw_sector((int)i, user, sector);
+        fwrite(sector, 1, sizeof(sector), f);
+        fwrite(subcode, 1, sizeof(subcode), f);
+    }
+
+    /* One CHTR2 track metadata entry (no NUL in the file, as
+     * chdman writes it — the reader must NUL-terminate its own
+     * copy before parsing). */
+    static const char track_meta[] =
+        "TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:20 PREGAP:0 PGTYPE:NONE PGSUB:NONE POSTGAP:0";
+    uint8_t meta_header[16];
+    memset(meta_header, 0, sizeof(meta_header));
+    cd_put_be32(meta_header + 0, 0x43485432); /* 'CHT2' */
+    cd_put_be32(meta_header + 4, (uint32_t)sizeof(track_meta) - 1);
+    cd_put_be64(meta_header + 8, 0); /* no next entry */
+    fwrite(meta_header, 1, sizeof(meta_header), f);
+    fwrite(track_meta, 1, sizeof(track_meta) - 1, f);
+    fclose(f);
+}
+
+static void test_chd_reader(void) {
+    rc_hash_cdreader_t cdreader;
+    ra_cdreader_get(&cdreader);
+    build_fake_chd();
+
+    /* open_track: track 1 only, and a .chd. A file that is not
+     * a CHD (even with a .chd name) fails to open. */
+    void* track = cdreader.open_track(CD_TEST_CHD, 1);
+    CHECK(track != NULL);
+    CHECK(cdreader.open_track(CD_TEST_CHD, 2) == NULL);
+    CHECK(cdreader.open_track(CD_TEST_CHD, 0) == NULL);
+    if (!track) {
+        remove(CD_TEST_CHD);
+        return;
+    }
+
+    CHECK(cdreader.first_track_sector(track) == 0);
+
+    uint8_t buf[2048];
+    size_t n = cdreader.read_sector(track, 16, buf, sizeof(buf));
+    CHECK(n == 2048 && memcmp(&buf[1], "CD001", 5) == 0);
+    n = cdreader.read_sector(track, 18, buf, sizeof(buf));
+    CHECK(n == 2048 && memcmp(buf, "GAME.PRG\n", 9) == 0);
+    n = cdreader.read_sector(track, 19, buf, sizeof(buf));
+    CHECK(n == 2048 && buf[0] == 0x00 && buf[15] == 0x0F);
+    CHECK(cdreader.read_sector(track, 0, buf, sizeof(buf)) == 2048);
+    /* A multi-sector read crosses the hunk boundary (4 frames
+     * per hunk): sectors 3-6 span hunks 0 and 1. */
+    uint8_t buf3[3 * 2048];
+    n = cdreader.read_sector(track, 3, buf3, sizeof(buf3));
+    CHECK(n == 3 * 2048);
+    cdreader.close_track(track);
+
+    /* The full hash, through rcheevos: the same MD5 as the
+     * .cue + .bin disc — the MD5 of the 16 PRG bytes. */
+    rc_hash_iterator_t iterator;
+    memset(&iterator, 0, sizeof(iterator));
+    iterator.path = CD_TEST_CHD;
+    iterator.callbacks.cdreader = cdreader;
+    iterator.callbacks.filereader.open = cd_stdio_open;
+    iterator.callbacks.filereader.seek = cd_stdio_seek;
+    iterator.callbacks.filereader.tell = cd_stdio_tell;
+    iterator.callbacks.filereader.read = cd_stdio_read;
+    iterator.callbacks.filereader.close = cd_stdio_close;
+    char hash[33] = "";
+    CHECK(rc_hash_generate(hash, RC_CONSOLE_NEO_GEO_CD, &iterator) == 1);
+    CHECK_STR_EQ(hash, "1ac1ef01e96caf1be0d329331a4fc2a8");
+    char hash2[33] = "";
+    CHECK(rc_hash_generate(hash2, RC_CONSOLE_NEO_GEO_CD, &iterator) == 1);
+    CHECK_STR_EQ(hash, hash2);
+
+    remove(CD_TEST_CHD);
+}
+
 /* The full flow through the wrapper with the mock server and
  * mock RAM: login -> load game -> frame (unlock) -> serialize
  * -> reset -> deserialize -> achievements list. */
@@ -741,6 +983,7 @@ int main(void) {
     test_read_memory_mapped();
     test_neo_hash();
     test_cdreader();
+    test_chd_reader();
     test_password_login();
     test_leaderboards_no_game();
     test_full_flow();

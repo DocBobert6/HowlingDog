@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <libchdr/chd.h>
+#include <libchdr/cdrom.h>
+
 /* A raw sector's sync pattern (12 bytes). */
 static const uint8_t k_sync_pattern[12] = {
     0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00
@@ -15,11 +18,22 @@ static const uint8_t k_sync_pattern[12] = {
 #define RA_CD_USER_DATA_SIZE 2048
 
 typedef struct ra_cd_track {
+    int kind; /* 0 = .cue + .bin, 1 = .chd */
+    /* .cue + .bin */
     FILE* bin;
     int sector_size;        /* 2352 or 2048 */
     int sector_header_size; /* 16 (MODE1/2352), 24 (MODE2/2352), 0 (MODE1/2048) */
     int64_t file_track_offset; /* byte offset of INDEX 01 in the .bin */
     int track_first_sector;    /* LBA of the track's first sector */
+    /* .chd (v1.2.0, item 3) */
+    chd_file* chd;
+    uint8_t* hunkbuf;       /* one decompressed hunk */
+    uint32_t hunkbytes;     /* bytes per hunk, from the CHD header */
+    uint32_t unitbytes;     /* frame stride: 2448 for a CD CHD (2352 + 96 subcode), 2048 cooked */
+    uint32_t frames_per_hunk;
+    int32_t cached_hunk;    /* the hunk in hunkbuf, -1 when none */
+    uint32_t chd_start;     /* CHD frame where track 1's data begins (after its pregap, if stored) */
+    int raw;                /* MODE1_RAW: frames carry a 16-byte header before the user data */
 } ra_cd_track_t;
 
 /* ---- small helpers ---- */
@@ -225,13 +239,13 @@ static int ra_cd_parse_cue(const char* text, ra_cd_cue_track1_t* out) {
 
 /* ---- the cdreader hooks ---- */
 
-static void* ra_cd_open_track(const char* path, uint32_t track) {
+static size_t ra_cd_cue_read_sector(ra_cd_track_t* cd, uint32_t sector, void* buffer, size_t requested_bytes);
+
+/* The .cue + .bin opener (the Phase 10 reader, unchanged
+ * apart from the name). The caller has already checked the
+ * extension. */
+static void* ra_cd_open_cue(const char* path, uint32_t track) {
     if (track != 1 || !path)
-        return NULL;
-    /* Only .cue + .bin: a .chd (or anything else) has no reader
-     * here, so the hash fails and RA stays inactive for it. */
-    size_t path_len = strlen(path);
-    if (path_len < 4 || strcasecmp(path + path_len - 4, ".cue") != 0)
         return NULL;
 
     FILE* cue = fopen(path, "rb");
@@ -285,6 +299,7 @@ static void* ra_cd_open_track(const char* path, uint32_t track) {
         fclose(bin);
         return NULL;
     }
+    cd->kind = 0;
     cd->bin = bin;
     switch (t1.mode) {
         case 0: /* MODE1/2352 */
@@ -324,8 +339,170 @@ static void* ra_cd_open_track(const char* path, uint32_t track) {
     return cd;
 }
 
+/* ---- .chd (v1.2.0, item 3) ---- */
+
+/* Track 1's metadata, parsed the way the core parses its TOC
+ * (src/geo_chd.c geo_chd_parse_toc): the CHTR2 format first,
+ * then the older CHTR format. Only track 1 matters for the
+ * hash. Returns 0 on success, with the CHD frame where track
+ * 1's data begins and whether its frames are MODE1_RAW.
+ *
+ * Track 1 is the first track, so its CHD position starts at 0;
+ * the pregap is not stored in the CHD data (the core's rule:
+ * a pregap advances the CHD position only when the previous
+ * track was not data, or when the pregap type is VAUDIO) — so
+ * chd_start is 0 unless the pregap type is VAUDIO, in which
+ * case the pregap IS stored and the data starts after it. */
+static int ra_cd_chd_track1(chd_file* chd, uint32_t* chd_start, int* raw) {
+    char metadata[256];
+    uint32_t len = 0, tag = 0;
+    /* The metadata string in the file carries no NUL (that is
+     * how chdman writes it), and sscanf needs one: zero the
+     * buffer and copy at most 255 bytes, so the last byte stays
+     * a NUL. The core's parser (src/geo_chd.c) does not do
+     * this — it relies on whatever follows the copy in the
+     * stack buffer. */
+    memset(metadata, 0, sizeof(metadata));
+    chd_error err = chd_get_metadata(chd, CDROM_TRACK_METADATA2_TAG, 0,
+        metadata, sizeof(metadata) - 1, &len, &tag, NULL);
+    if (err != CHDERR_NONE)
+        err = chd_get_metadata(chd, CDROM_TRACK_METADATA_TAG, 0,
+            metadata, sizeof(metadata) - 1, &len, &tag, NULL);
+    if (err != CHDERR_NONE)
+        return -1;
+
+    unsigned tracknum = 0, frames = 0, pregap = 0, postgap = 0;
+    char type[64], subtype[64], pgtype[64], pgsub[64];
+    type[0] = subtype[0] = pgtype[0] = pgsub[0] = '\0';
+    int parsed = sscanf(metadata, CDROM_TRACK_METADATA2_FORMAT,
+        &tracknum, type, subtype, &frames, &pregap, pgtype, pgsub, &postgap);
+    if (parsed < 4) {
+        parsed = sscanf(metadata, CDROM_TRACK_METADATA_FORMAT,
+            &tracknum, type, subtype, &frames);
+        if (parsed < 4)
+            return -1;
+    }
+    if (tracknum != 1 || frames == 0)
+        return -1;
+    *chd_start = (pregap && strcmp(pgtype, "VAUDIO") == 0) ? pregap : 0;
+    *raw = strcmp(type, "MODE1_RAW") == 0;
+    return 0;
+}
+
+static void* ra_cd_open_chd(const char* path, uint32_t track) {
+    chd_file* chd = NULL;
+    const chd_header* header;
+    if (track != 1 || !path)
+        return NULL;
+    if (chd_open(path, CHD_OPEN_READ, NULL, &chd) != CHDERR_NONE)
+        return NULL;
+    header = chd_get_header(chd);
+    if (!header || header->hunkbytes == 0 || header->unitbytes < 2048) {
+        chd_close(chd);
+        return NULL;
+    }
+    uint32_t chd_start = 0;
+    int raw = 0;
+    if (ra_cd_chd_track1(chd, &chd_start, &raw) != 0) {
+        chd_close(chd);
+        return NULL;
+    }
+    /* A raw frame needs room for the 16-byte header plus the
+     * 2048 user bytes; a cooked frame is the user data itself. */
+    if (raw && header->unitbytes < 16 + RA_CD_USER_DATA_SIZE) {
+        chd_close(chd);
+        return NULL;
+    }
+    ra_cd_track_t* cd = (ra_cd_track_t*)calloc(1, sizeof(*cd));
+    if (!cd) {
+        chd_close(chd);
+        return NULL;
+    }
+    cd->hunkbuf = (uint8_t*)calloc(1, header->hunkbytes);
+    if (!cd->hunkbuf) {
+        free(cd);
+        chd_close(chd);
+        return NULL;
+    }
+    cd->kind = 1;
+    cd->chd = chd;
+    cd->hunkbytes = header->hunkbytes;
+    cd->unitbytes = header->unitbytes;
+    cd->frames_per_hunk = header->hunkbytes / header->unitbytes;
+    if (cd->frames_per_hunk == 0)
+        cd->frames_per_hunk = 1;
+    cd->cached_hunk = -1;
+    cd->chd_start = chd_start;
+    cd->raw = raw;
+    return cd;
+}
+
+/* One CHD frame's user data, through the hunk cache (the core's
+ * geo_chd_read_frame, same shape). Returns 0 when the hunk
+ * cannot be read. */
+static int ra_cd_chd_read_frame(ra_cd_track_t* cd, uint32_t chd_frame, uint8_t* out) {
+    uint32_t hunknum = chd_frame / cd->frames_per_hunk;
+    uint32_t frameoff = chd_frame % cd->frames_per_hunk;
+    if ((int32_t)hunknum != cd->cached_hunk) {
+        if (chd_read(cd->chd, hunknum, cd->hunkbuf) != CHDERR_NONE) {
+            cd->cached_hunk = -1;
+            return 0;
+        }
+        cd->cached_hunk = (int32_t)hunknum;
+    }
+    memcpy(out, cd->hunkbuf + (size_t)frameoff * cd->unitbytes + (cd->raw ? 16 : 0), RA_CD_USER_DATA_SIZE);
+    return 1;
+}
+
+static size_t ra_cd_chd_read_sector(ra_cd_track_t* cd, uint32_t sector, void* buffer, size_t requested_bytes) {
+    uint8_t* out = (uint8_t*)buffer;
+    uint8_t frame[RA_CD_USER_DATA_SIZE];
+    size_t total_read = 0;
+    if (!cd || !buffer || requested_bytes == 0)
+        return 0;
+    /* `sector` is a volume LBA (the numbering rcheevos uses:
+     * the PVD is first_track_sector + 16, and the directory
+     * extents are volume LBAs passed raw). The V-th data frame
+     * of track 1 is CHD frame (chd_start + V). The pregap is
+     * invisible here, exactly as in the .bin reader (the .bin
+     * starts at INDEX 01, after the pregap). */
+    while (requested_bytes > 0) {
+        size_t want = requested_bytes < (size_t)RA_CD_USER_DATA_SIZE
+            ? requested_bytes : (size_t)RA_CD_USER_DATA_SIZE;
+        if (!ra_cd_chd_read_frame(cd, cd->chd_start + sector, frame))
+            return total_read;
+        memcpy(out, frame, want);
+        total_read += want;
+        out += want;
+        requested_bytes -= want;
+        ++sector;
+    }
+    return total_read;
+}
+
+/* The dispatcher: .cue + .bin, or .chd. Anything else has no
+ * reader, so the hash fails and RA stays inactive for it. */
+static void* ra_cd_open_track(const char* path, uint32_t track) {
+    if (track != 1 || !path)
+        return NULL;
+    size_t path_len = strlen(path);
+    if (path_len >= 4 && strcasecmp(path + path_len - 4, ".cue") == 0)
+        return ra_cd_open_cue(path, track);
+    if (path_len >= 4 && strcasecmp(path + path_len - 4, ".chd") == 0)
+        return ra_cd_open_chd(path, track);
+    return NULL;
+}
+
 static size_t ra_cd_read_sector(void* track_handle, uint32_t sector, void* buffer, size_t requested_bytes) {
     ra_cd_track_t* cd = (ra_cd_track_t*)track_handle;
+    if (!cd)
+        return 0;
+    if (cd->kind == 1)
+        return ra_cd_chd_read_sector(cd, sector, buffer, requested_bytes);
+    return ra_cd_cue_read_sector(cd, sector, buffer, requested_bytes);
+}
+
+static size_t ra_cd_cue_read_sector(ra_cd_track_t* cd, uint32_t sector, void* buffer, size_t requested_bytes) {
     uint8_t* out = (uint8_t*)buffer;
     size_t total_read = 0;
     if (!cd || !buffer || requested_bytes == 0)
@@ -361,14 +538,22 @@ static void ra_cd_close_track(void* track_handle) {
     ra_cd_track_t* cd = (ra_cd_track_t*)track_handle;
     if (!cd)
         return;
-    if (cd->bin)
-        fclose(cd->bin);
+    if (cd->kind == 1) {
+        if (cd->chd)
+            chd_close(cd->chd);
+        free(cd->hunkbuf);
+    } else {
+        if (cd->bin)
+            fclose(cd->bin);
+    }
     free(cd);
 }
 
 static uint32_t ra_cd_first_track_sector(void* track_handle) {
     ra_cd_track_t* cd = (ra_cd_track_t*)track_handle;
     if (!cd)
+        return 0;
+    if (cd->kind == 1)
         return 0;
     return (uint32_t)cd->track_first_sector;
 }

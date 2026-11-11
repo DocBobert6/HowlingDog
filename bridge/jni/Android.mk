@@ -24,14 +24,58 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := howlingdog-bridge
 LOCAL_SRC_FILES := bridge.cpp runahead.c ra_client.c ra_cdreader.c
 LOCAL_SHARED_LIBRARIES := retro-prebuilt
-LOCAL_STATIC_LIBRARIES := rcheevos
-LOCAL_C_INCLUDES := $(ROOT_DIR)/libretro $(ROOT_DIR)/deps/rcheevos/include
+LOCAL_STATIC_LIBRARIES := rcheevos libchdr
+LOCAL_C_INCLUDES := $(ROOT_DIR)/libretro $(ROOT_DIR)/deps/rcheevos/include $(ROOT_DIR)/deps/libretro-common/include
 # RC_CLIENT_SUPPORTS_HASH must also be defined here: bridge.cpp
 # and ra_client.c include rc_client.h, and the identify-and-load
 # API is guarded by it (see deps/rcheevos/Android.mk).
 LOCAL_CFLAGS := -DANDROID -D__LIBRETRO__ -DRC_CLIENT_SUPPORTS_HASH
-LOCAL_LDLIBS := -llog -landroid
+LOCAL_LDLIBS := -llog -landroid -lz
 include $(BUILD_SHARED_LIBRARY)
+
+# RetroAchievements hashing for .chd discs (v1.2.0, item 3):
+# libchdr, the CHD reader, built as a static library and linked
+# into the bridge. No new vendoring — libchdr was already in the
+# tree (the core compiles it into libretro.so). The source list
+# and defines mirror the core's build exactly
+# (libretro/Makefile.common): the libchdr sources, the zstd
+# decompress sources, the lzma sources, and miniz. -lz is on the
+# bridge's LDLIBS above (libchdr_zlib.c needs zlib).
+include $(CLEAR_VARS)
+LOCAL_MODULE := libchdr
+LOCAL_SRC_FILES := \
+    $(ROOT_DIR)/deps/libretro-common/formats/libchdr/libchdr_bitstream.c \
+    $(ROOT_DIR)/deps/libretro-common/formats/libchdr/libchdr_cdrom.c \
+    $(ROOT_DIR)/deps/libretro-common/formats/libchdr/libchdr_chd.c \
+    $(ROOT_DIR)/deps/libretro-common/formats/libchdr/libchdr_flac.c \
+    $(ROOT_DIR)/deps/libretro-common/formats/libchdr/libchdr_flac_codec.c \
+    $(ROOT_DIR)/deps/libretro-common/formats/libchdr/libchdr_huffman.c \
+    $(ROOT_DIR)/deps/libretro-common/formats/libchdr/libchdr_lzma.c \
+    $(ROOT_DIR)/deps/libretro-common/formats/libchdr/libchdr_zlib.c \
+    $(ROOT_DIR)/deps/libretro-common/formats/libchdr/libchdr_zstd.c \
+    $(ROOT_DIR)/deps/lzma/src/Alloc.c \
+    $(ROOT_DIR)/deps/lzma/src/CpuArch.c \
+    $(ROOT_DIR)/deps/lzma/src/LzFind.c \
+    $(ROOT_DIR)/deps/lzma/src/LzmaDec.c \
+    $(ROOT_DIR)/deps/lzma/src/LzmaEnc.c \
+    $(ROOT_DIR)/deps/miniz/miniz.c \
+    $(ROOT_DIR)/deps/zstd/lib/common/entropy_common.c \
+    $(ROOT_DIR)/deps/zstd/lib/common/error_private.c \
+    $(ROOT_DIR)/deps/zstd/lib/common/fse_decompress.c \
+    $(ROOT_DIR)/deps/zstd/lib/common/zstd_common.c \
+    $(ROOT_DIR)/deps/zstd/lib/common/xxhash.c \
+    $(ROOT_DIR)/deps/zstd/lib/decompress/huf_decompress.c \
+    $(ROOT_DIR)/deps/zstd/lib/decompress/zstd_ddict.c \
+    $(ROOT_DIR)/deps/zstd/lib/decompress/zstd_decompress.c \
+    $(ROOT_DIR)/deps/zstd/lib/decompress/zstd_decompress_block.c
+LOCAL_C_INCLUDES := \
+    $(ROOT_DIR)/deps \
+    $(ROOT_DIR)/deps/libretro-common/include \
+    $(ROOT_DIR)/deps/miniz \
+    $(ROOT_DIR)/deps/lzma/include \
+    $(ROOT_DIR)/deps/zstd/lib
+LOCAL_CFLAGS := -DANDROID -DHAVE_ZLIB -DHAVE_7ZIP -DHAVE_DR_FLAC -DHAVE_FLAC -DHAVE_ZSTD -DZSTD_DISABLE_ASM -DHAVE_CHDR -DZ7_ST
+include $(BUILD_STATIC_LIBRARY)
 
 # RetroAchievements (Phase 10): the vendored rcheevos client
 # library, built as a static library and linked into the bridge.

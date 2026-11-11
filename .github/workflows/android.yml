@@ -132,10 +132,29 @@ jobs:
           # mock RAM stands in for the core, so the full flow
           # (login -> load -> frame -> unlock -> serialize -> reset
           # -> deserialize) runs here. -lm is for rcheevos's fmod.
+          # libchdr (v1.2.0, item 3): the .chd reader links the
+          # same libchdr + zstd + lzma + miniz sources the bridge
+          # builds (see bridge/jni/Android.mk), with the same
+          # defines; -lz is for libchdr_zlib.c.
           RC_SRC="deps/rcheevos/src"
+          CHDR_SRC="deps/libretro-common/formats/libchdr"
           gcc -I bridge/jni -I deps/rcheevos/include -I "$RC_SRC" \
+            -I deps/libretro-common/include -I deps -I deps/miniz -I deps/lzma/include -I deps/zstd/lib \
+            -DHAVE_ZLIB -DHAVE_7ZIP -DHAVE_DR_FLAC -DHAVE_FLAC -DHAVE_ZSTD -DZSTD_DISABLE_ASM -DHAVE_CHDR \
+            -DZ7_ST \
             -DRC_CLIENT_SUPPORTS_HASH -D_GNU_SOURCE -std=c99 -Wall -Wextra \
             -o /tmp/ra_client_test tests/ra_client_test.c bridge/jni/ra_client.c bridge/jni/ra_cdreader.c \
+            "$CHDR_SRC/libchdr_bitstream.c" "$CHDR_SRC/libchdr_cdrom.c" "$CHDR_SRC/libchdr_chd.c" \
+            "$CHDR_SRC/libchdr_flac.c" "$CHDR_SRC/libchdr_flac_codec.c" "$CHDR_SRC/libchdr_huffman.c" \
+            "$CHDR_SRC/libchdr_lzma.c" "$CHDR_SRC/libchdr_zlib.c" "$CHDR_SRC/libchdr_zstd.c" \
+            deps/lzma/src/Alloc.c deps/lzma/src/CpuArch.c deps/lzma/src/LzFind.c \
+            deps/lzma/src/LzmaDec.c deps/lzma/src/LzmaEnc.c \
+            deps/miniz/miniz.c \
+            deps/zstd/lib/common/entropy_common.c deps/zstd/lib/common/error_private.c \
+            deps/zstd/lib/common/fse_decompress.c deps/zstd/lib/common/zstd_common.c \
+            deps/zstd/lib/common/xxhash.c deps/zstd/lib/decompress/huf_decompress.c \
+            deps/zstd/lib/decompress/zstd_ddict.c deps/zstd/lib/decompress/zstd_decompress.c \
+            deps/zstd/lib/decompress/zstd_decompress_block.c \
             "$RC_SRC/rc_client.c" "$RC_SRC/rc_compat.c" "$RC_SRC/rc_util.c" "$RC_SRC/rc_version.c" \
             "$RC_SRC/rcheevos/alloc.c" "$RC_SRC/rcheevos/condition.c" "$RC_SRC/rcheevos/condset.c" \
             "$RC_SRC/rcheevos/consoleinfo.c" "$RC_SRC/rcheevos/format.c" "$RC_SRC/rcheevos/lboard.c" \
@@ -147,7 +166,7 @@ jobs:
             "$RC_SRC/rhash/hash_zip.c" "$RC_SRC/rhash/md5.c" \
             "$RC_SRC/rapi/rc_api_common.c" "$RC_SRC/rapi/rc_api_editor.c" "$RC_SRC/rapi/rc_api_info.c" \
             "$RC_SRC/rapi/rc_api_runtime.c" "$RC_SRC/rapi/rc_api_user.c" \
-            -lm
+            -lm -lz
           /tmp/ra_client_test
 
       - name: Verify core
