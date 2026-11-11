@@ -11,6 +11,20 @@ binary redistribution.
 
 No BIOS files, games, or SNK artwork are included. HowlingDog is not affiliated with or endorsed by SNK Corporation.
 
+NEOGEO System Font (the display font)
+--------------------------------------
+Source: https://fontstruct.com/fontstructions/show/1158061
+Author: Eber (everiux365)
+Licence: Creative Commons Attribution 3.0 (CC BY 3.0)
+
+The FontStruction "NEOGEO System Font" by "everiux365" is licensed
+under a Creative Commons Attribution license
+(http://creativecommons.org/licenses/by/3.0/). It is a recreation
+of the Neo Geo system font (the dialog text of NAM-1975 and
+Mutation Nation), bundled as the app's display font for headings,
+the boot splash, the pause menu, the SYSTEM SETUP screen, and the
+countdown. The Neo-Geo CD System Font is NOT used.
+
 Geolith (the core itself)
 --------------------------------
 Source: https://github.com/libretro/geolith-libretro

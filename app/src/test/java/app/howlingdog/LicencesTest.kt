@@ -52,6 +52,9 @@ class LicencesTest {
         for (text in listOf(
             "not affiliated with or endorsed by SNK",
             "Geolith (the core itself)",
+            "NEOGEO System Font (the display font)",
+            "everiux365",
+            "Creative Commons Attribution 3.0",
             "ymfm (FM sound synthesis",
             "Speex resampler",
             "zstd (deps/zstd)",

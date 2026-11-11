@@ -1479,17 +1479,17 @@ class MainActivity : ComponentActivity() {
                         Text(
                             "HOWLINGDOG",
                             color = Color(EraUi.Palette.GOLD),
-                            fontSize = 44.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 4.sp,
+                            fontFamily = DisplayFontFamily,
+                            fontSize = DisplayFontSpec.BOOT_TITLE_SP.sp,
+                            fontWeight = FontWeight.Normal,
                         )
                         Spacer(Modifier.height(16.dp))
                         Text(
                             "PRESS START",
                             color = Color(EraUi.Palette.GOLD),
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 2.sp,
+                            fontFamily = DisplayFontFamily,
+                            fontSize = DisplayFontSpec.BOOT_PROMPT_SP.sp,
+                            fontWeight = FontWeight.Normal,
                             modifier = Modifier.alpha(pressStartAlpha),
                         )
                     }
@@ -1525,9 +1525,9 @@ class MainActivity : ComponentActivity() {
                         Text(
                             "SELECT YOUR GAME",
                             color = Color(EraUi.Palette.GOLD),
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 2.sp,
+                            fontFamily = DisplayFontFamily,
+                            fontSize = DisplayFontSpec.LIBRARY_TITLE_SP.sp,
+                            fontWeight = FontWeight.Normal,
                         )
                         // Audit fix F5: the countdown is hidden on
                         // an empty library — it only means something
@@ -1539,8 +1539,9 @@ class MainActivity : ComponentActivity() {
                             Text(
                                 "TIME %02d".format(timeLeft),
                                 color = if (timeLeft <= 3) Color(EraUi.Palette.WARNING) else Color(EraUi.Palette.TEXT),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontFamily = DisplayFontFamily,
+                                fontSize = DisplayFontSpec.COUNTDOWN_SP.sp,
+                                fontWeight = FontWeight.Normal,
                             )
                         }
                     }
@@ -3855,10 +3856,9 @@ private fun SetupScreen(
             Text(
                 "HOWLINGDOG — SYSTEM SETUP",
                 color = Color(EraUi.Palette.GOLD),
-                fontFamily = mono,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp,
+                fontFamily = DisplayFontFamily,
+                fontSize = DisplayFontSpec.SETUP_HEADING_SP.sp,
+                fontWeight = FontWeight.Normal,
             )
             Spacer(Modifier.height(8.dp))
             SetupRow(
@@ -3992,9 +3992,9 @@ private fun SetupRow(
             Text(
                 "$number  $title",
                 color = Color(EraUi.Palette.TEXT),
-                fontFamily = mono,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
+                fontFamily = DisplayFontFamily,
+                fontSize = DisplayFontSpec.SETUP_HEADING_SP.sp,
+                fontWeight = FontWeight.Normal,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (done) {
@@ -4082,15 +4082,16 @@ fun PauseMenu(
         Text(
             "CONTINUE?",
             color = Color(EraUi.Palette.GOLD),
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 2.sp,
+            fontFamily = DisplayFontFamily,
+            fontSize = DisplayFontSpec.PAUSE_TITLE_SP.sp,
+            fontWeight = FontWeight.Normal,
         )
         Text(
             "%d".format(timeLeft),
             color = Color(EraUi.Palette.TEXT),
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
+            fontFamily = DisplayFontFamily,
+            fontSize = DisplayFontSpec.COUNTDOWN_SP.sp,
+            fontWeight = FontWeight.Normal,
         )
         Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "RESUME", primary = true, compact = true, onClick = onResume)

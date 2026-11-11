@@ -46,6 +46,17 @@ jobs:
             exit 1
           }
 
+      - name: Verify display font is bundled
+        run: |
+          set -euo pipefail
+          # The NEOGEO System Font (CC BY 3.0, see NOTICE) is the era
+          # UI's display face — Theme.kt references
+          # R.font.neogeo_system_font, so the build would fail without
+          # it, but this step proves the file itself is a real
+          # TrueType font and not a placeholder or a corrupted copy.
+          test -f app/src/main/res/font/neogeo_system_font.ttf
+          file app/src/main/res/font/neogeo_system_font.ttf | grep -q "TrueType font data"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
