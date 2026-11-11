@@ -12,8 +12,8 @@ android {
         applicationId = "app.howlingdog"
         minSdk = 24
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.3.0"
+        versionCode = 10
+        versionName = "1.3.1"
     }
 
     // Phase 8: release signing. The release keystore is minted at

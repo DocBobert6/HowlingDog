@@ -272,6 +272,57 @@ jobs:
       - name: Build debug APK (proves the app compiles)
         run: ./gradlew :app:assembleDebug
 
+      - name: Verify no app method exceeds 255 registers (v1.3.1 dex guard)
+        run: |
+          set -euo pipefail
+          # v1.3.1: HowlingDogUi grew past 256 registers in v1.3.0, so
+          # the $changed parameter sat at v263 and d8 truncated it to
+          # v7 (263 & 0xFF) in the prologue's 8-bit-field instructions.
+          # ART rejected the class at launch (VerifyError) while the
+          # JVM (Robolectric) stayed green — CI never saw it. This
+          # guard fails the build if any app method crosses the limit
+          # again, so the next oversized composable is split before
+          # it ships instead of after.
+          DEXDUMP=$(ls "$ANDROID_HOME/build-tools/"*/dexdump | sort -V | tail -1)
+          export DEXDUMP
+          rm -rf /tmp/dexcheck && mkdir -p /tmp/dexcheck
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          unzip -o -q "$APK" 'classes*.dex' -d /tmp/dexcheck
+          python3 - <<'PYEOF'
+          import glob, re, subprocess, sys
+          import os
+          dexdump = os.environ['DEXDUMP']
+          worst = []
+          for dex in sorted(glob.glob('/tmp/dexcheck/classes*.dex')):
+              out = subprocess.run([dexdump, '-d', dex], capture_output=True,
+                                   text=True, errors='replace').stdout
+              cls = name = typ = None
+              for ln in out.splitlines():
+                  m = re.match(r"\s*Class descriptor\s*: '(.*);'", ln)
+                  if m:
+                      cls = m.group(1); continue
+                  m = re.match(r"\s*name\s*: '(.*)'", ln)
+                  if m:
+                      name = m.group(1); continue
+                  m = re.match(r"\s*type\s*: '(.*)'", ln)
+                  if m:
+                      typ = m.group(1); continue
+                  m = re.match(r"\s*registers\s*: (\d+)", ln)
+                  if m and cls and cls.startswith('Lapp/howlingdog/'):
+                      worst.append((int(m.group(1)), cls, name, typ))
+          worst.sort(reverse=True)
+          print('largest app methods by register count:')
+          for n, c, nm, t in worst[:8]:
+              print(f'  {n} {c} {nm}{t}')
+          bad = [w for w in worst if w[0] > 255]
+          if bad:
+              print('FAIL: methods over the 255-register limit:')
+              for n, c, nm, t in bad:
+                  print(f'  {n} {c} {nm}{t}')
+              sys.exit(1)
+          print('dex register guard OK')
+          PYEOF
+
       - name: Upload core artifact
         uses: actions/upload-artifact@v4
         with:
