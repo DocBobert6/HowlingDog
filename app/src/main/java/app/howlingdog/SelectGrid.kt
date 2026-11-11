@@ -62,8 +62,8 @@ fun ArcadeButton(
     modifier: Modifier = Modifier,
     primary: Boolean = false,
     compact: Boolean = false,
-    onClick: () -> Unit,
     tight: Boolean = false,
+    onClick: () -> Unit,
 ) {
     Button(
         onClick = onClick,
