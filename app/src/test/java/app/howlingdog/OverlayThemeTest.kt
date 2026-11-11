@@ -136,6 +136,24 @@ class OverlayThemeTest {
     }
 
     @Test
+    fun clusterSizeForFollowsResizedButtons() {
+        // Part 2: a button resized on its own grows the cluster
+        // to contain it. The grid is 120x180 with 56dp buttons;
+        // A at 1.5x is 84dp wide and tall, so its half is 42dp
+        // instead of 28dp: the grid grows 14dp on A's side in
+        // both axes (134 wide, 194 tall).
+        val offsets = OverlayTheme.buttonOffsets(OverlayTheme.ButtonLayout.GRID)
+        assertEquals(120f to 180f, OverlayTheme.clusterSizeFor(offsets))
+        assertEquals(134f to 194f, OverlayTheme.clusterSizeFor(offsets, mapOf("A" to 1.5f)))
+        // No entry means the base size: the cluster is unchanged.
+        assertEquals(120f to 180f, OverlayTheme.clusterSizeFor(offsets, mapOf("B" to 1.0f)))
+        // A single button: 56dp at scale 1, 84dp at 1.5x.
+        val single = mapOf("A" to (0f to 0f))
+        assertEquals(56f to 56f, OverlayTheme.clusterSizeFor(single))
+        assertEquals(84f to 84f, OverlayTheme.clusterSizeFor(single, mapOf("A" to 1.5f)))
+    }
+
+    @Test
     fun buttonsNeverOverlapInAnyLayout() {
         // The smallest centre distance between two buttons must
         // hold both: a main button (56dp) next to a small one

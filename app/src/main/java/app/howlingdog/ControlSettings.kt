@@ -37,13 +37,28 @@ class ControlSettings(private val store: OptionStore) {
 
     companion object {
         const val KEY_HAPTICS = "controls.haptics"
-        const val KEY_OPACITY = "controls.opacity" // int percent, 20..100
+        const val KEY_OPACITY = "controls.opacity" // int percent, 20..100 (legacy: one opacity for the whole overlay)
+        /** Per-group opacity (int percent, 20..100): the stick/D-pad
+            and the buttons each have their own. Absent means the
+            legacy KEY_OPACITY value, so a user who already set an
+            opacity keeps it for both groups. */
+        const val KEY_STICK_OPACITY = "controls.stickOpacity"
+        const val KEY_BUTTONS_OPACITY = "controls.buttonsOpacity"
         const val KEY_SIZE = "controls.size"
         const val KEY_STICK_POS = "controls.stickPos" // "x,y" fractions
         const val KEY_BUTTONS_POS = "controls.buttonsPos"
         const val KEY_LEFT_CONTROL = "controls.leftControl" // "stick" / "dpad"
         const val KEY_STICK_SCALE = "controls.stickScale" // float, 0.7..1.5
         const val KEY_BUTTONS_SCALE = "controls.buttonsScale"
+        /** The D-pad's own resize multiplier (float, 0.7..1.5). The
+            stick and the D-pad share one slot but are sized
+            separately; absent means the stick's scale, so switching
+            to the D-pad keeps the size the stick had. */
+        const val KEY_DPAD_SCALE = "controls.dpadScale"
+        /** Per-button size multipliers, "controls.buttonSize.<id>" =
+            float, 0.7..1.5 (1.0 = the group size). One key per
+            button id; absent means 1.0. */
+        const val KEY_BUTTON_SIZE_PREFIX = "controls.buttonSize."
         /** Per-button offset overrides, "dx,dy" in dp at scale 1.0
             (relative to the cluster centre). One key per button id
             ("A", "B", "C", "D", "Coin", "Start"); absent means the
@@ -92,6 +107,29 @@ class ControlSettings(private val store: OptionStore) {
 
     fun setOpacity(percent: Int) {
         store.put(KEY_OPACITY, percent.coerceIn(MIN_OPACITY, MAX_OPACITY).toString())
+    }
+
+    /** The stick/D-pad's own opacity (0.0..1.0). Falls back to the
+        legacy whole-overlay opacity when never set, so an existing
+        user's choice carries over. */
+    fun stickOpacity(): Float = readOpacity(KEY_STICK_OPACITY)
+
+    /** The buttons' own opacity (0.0..1.0). Same fallback as the stick's. */
+    fun buttonsOpacity(): Float = readOpacity(KEY_BUTTONS_OPACITY)
+
+    fun setStickOpacity(percent: Int) {
+        store.put(KEY_STICK_OPACITY, percent.coerceIn(MIN_OPACITY, MAX_OPACITY).toString())
+    }
+
+    fun setButtonsOpacity(percent: Int) {
+        store.put(KEY_BUTTONS_OPACITY, percent.coerceIn(MIN_OPACITY, MAX_OPACITY).toString())
+    }
+
+    private fun readOpacity(key: String): Float {
+        val pct = store.get(key)?.toIntOrNull()
+            ?: store.get(KEY_OPACITY)?.toIntOrNull()
+            ?: DEFAULT_OPACITY
+        return pct.coerceIn(MIN_OPACITY, MAX_OPACITY) / 100f
     }
 
     fun size(): ControlSize {
@@ -163,13 +201,52 @@ class ControlSettings(private val store: OptionStore) {
         store.put(KEY_BUTTONS_SCALE, scale.coerceIn(MIN_GROUP_SCALE, MAX_GROUP_SCALE).toString())
     }
 
-    /** Restore both control positions and both group scales to their defaults. */
+    /** The D-pad's own resize multiplier (1.0 = the preset size).
+        Falls back to the stick's scale when never set, so switching
+        to the D-pad keeps the size the stick had. */
+    fun dpadScale(): Float {
+        val raw = store.get(KEY_DPAD_SCALE)?.toFloatOrNull()
+        return if (raw != null && raw in MIN_GROUP_SCALE..MAX_GROUP_SCALE) raw else stickScale()
+    }
+
+    fun setDpadScale(scale: Float) {
+        store.put(KEY_DPAD_SCALE, scale.coerceIn(MIN_GROUP_SCALE, MAX_GROUP_SCALE).toString())
+    }
+
+    /** One button's own size multiplier (1.0 = the group size), or
+        1.0 when never set. */
+    fun buttonSizeMult(id: String): Float = readScale(KEY_BUTTON_SIZE_PREFIX + id)
+
+    /** All stored per-button size multipliers, by button id. */
+    fun buttonSizeMults(): Map<String, Float> =
+        BUTTON_IDS.mapNotNull { id ->
+            store.get(KEY_BUTTON_SIZE_PREFIX + id)?.toFloatOrNull()
+                ?.takeIf { it in MIN_GROUP_SCALE..MAX_GROUP_SCALE }
+                ?.let { id to it }
+        }.toMap()
+
+    fun setButtonSizeMult(id: String, mult: Float) {
+        if (id !in BUTTON_IDS) return
+        store.put(
+            KEY_BUTTON_SIZE_PREFIX + id,
+            mult.coerceIn(MIN_GROUP_SCALE, MAX_GROUP_SCALE).toString(),
+        )
+    }
+
+    /** Drop every per-button size multiplier (the buttons return to the group size). */
+    fun clearButtonSizeMults() {
+        for (id in BUTTON_IDS) store.put(KEY_BUTTON_SIZE_PREFIX + id, "")
+    }
+
+    /** Restore both control positions, all three group scales, and the per-button sizes to their defaults. */
     fun resetLayout() {
         setStickPosition(DEFAULT_STICK_POS)
         setButtonsPosition(DEFAULT_BUTTONS_POS)
         setStickScale(DEFAULT_GROUP_SCALE)
         setButtonsScale(DEFAULT_GROUP_SCALE)
+        setDpadScale(DEFAULT_GROUP_SCALE)
         clearButtonOffsets()
+        clearButtonSizeMults()
     }
 
     /** A button's stored offset override (dp at scale 1.0, relative to the cluster centre), or null when it uses the theme layout's default. */

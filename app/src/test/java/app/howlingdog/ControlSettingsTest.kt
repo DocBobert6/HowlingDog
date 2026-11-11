@@ -239,4 +239,112 @@ class ControlSettingsTest {
         assertTrue(ControlSize.MEDIUM.scale < ControlSize.LARGE.scale)
         assertEquals(1.0f, ControlSize.MEDIUM.scale, 0.001f)
     }
+
+    // Part 2 — per-group opacity: the stick/D-pad and the buttons
+    // each have their own, 20–100%, default 60.
+
+    @Test
+    fun perGroupOpacityDefaultsToSixty() {
+        val s = ControlSettings(MapStore())
+        assertEquals(0.6f, s.stickOpacity(), 0.001f)
+        assertEquals(0.6f, s.buttonsOpacity(), 0.001f)
+    }
+
+    @Test
+    fun perGroupOpacityFallsBackToTheLegacyOpacity() {
+        // A user who already set the old whole-overlay opacity
+        // keeps it for both groups until they move a slider.
+        val store = MapStore()
+        store.put(ControlSettings.KEY_OPACITY, "80")
+        val s = ControlSettings(store)
+        assertEquals(0.8f, s.stickOpacity(), 0.001f)
+        assertEquals(0.8f, s.buttonsOpacity(), 0.001f)
+        // Moving one slider leaves the other on the legacy value.
+        s.setStickOpacity(40)
+        assertEquals(0.4f, s.stickOpacity(), 0.001f)
+        assertEquals(0.8f, s.buttonsOpacity(), 0.001f)
+    }
+
+    @Test
+    fun perGroupOpacityRoundTripsAndClamps() {
+        val s = ControlSettings(MapStore())
+        s.setStickOpacity(35)
+        s.setButtonsOpacity(90)
+        assertEquals(0.35f, s.stickOpacity(), 0.001f)
+        assertEquals(0.9f, s.buttonsOpacity(), 0.001f)
+        s.setStickOpacity(5)
+        s.setButtonsOpacity(250)
+        assertEquals(0.2f, s.stickOpacity(), 0.001f)
+        assertEquals(1.0f, s.buttonsOpacity(), 0.001f)
+    }
+
+    // Part 2 — the D-pad's own scale: sized separately from the
+    // stick, falling back to the stick's scale when never set.
+
+    @Test
+    fun dpadScaleFallsBackToTheStickScale() {
+        val s = ControlSettings(MapStore())
+        s.setStickScale(1.3f)
+        assertEquals(1.3f, s.dpadScale(), 0.001f)
+        // Once set, it is independent of the stick's scale.
+        s.setDpadScale(0.8f)
+        s.setStickScale(1.0f)
+        assertEquals(0.8f, s.dpadScale(), 0.001f)
+    }
+
+    @Test
+    fun dpadScaleRoundTripsAndClamps() {
+        val s = ControlSettings(MapStore())
+        s.setDpadScale(1.5f)
+        assertEquals(1.5f, s.dpadScale(), 0.001f)
+        s.setDpadScale(0.2f)
+        assertEquals(0.7f, s.dpadScale(), 0.001f)
+        s.setDpadScale(9.0f)
+        assertEquals(1.5f, s.dpadScale(), 0.001f)
+    }
+
+    // Part 2 — per-button size multipliers: one button's own size
+    // relative to the group size (1.0 = the group size).
+
+    @Test
+    fun buttonSizeMultDefaultsToOne() {
+        val s = ControlSettings(MapStore())
+        assertEquals(1.0f, s.buttonSizeMult("A"), 0.001f)
+        assertEquals(1.0f, s.buttonSizeMult("Coin"), 0.001f)
+        assertTrue(s.buttonSizeMults().isEmpty())
+    }
+
+    @Test
+    fun buttonSizeMultRoundTripsAndClamps() {
+        val s = ControlSettings(MapStore())
+        s.setButtonSizeMult("A", 1.5f)
+        s.setButtonSizeMult("Coin", 0.7f)
+        assertEquals(1.5f, s.buttonSizeMult("A"), 0.001f)
+        assertEquals(0.7f, s.buttonSizeMult("Coin"), 0.001f)
+        assertEquals(1.0f, s.buttonSizeMult("B"), 0.001f)
+        assertEquals(mapOf("A" to 1.5f, "Coin" to 0.7f), s.buttonSizeMults())
+        s.setButtonSizeMult("A", 0.2f)
+        assertEquals(0.7f, s.buttonSizeMult("A"), 0.001f)
+        s.setButtonSizeMult("A", 9.0f)
+        assertEquals(1.5f, s.buttonSizeMult("A"), 0.001f)
+    }
+
+    @Test
+    fun buttonSizeMultIgnoresUnknownButtons() {
+        val s = ControlSettings(MapStore())
+        s.setButtonSizeMult("Z", 1.5f)
+        assertEquals(1.0f, s.buttonSizeMult("Z"), 0.001f)
+        assertTrue(s.buttonSizeMults().isEmpty())
+    }
+
+    @Test
+    fun buttonSizeMultsResetWithTheLayout() {
+        val s = ControlSettings(MapStore())
+        s.setButtonSizeMult("A", 1.4f)
+        s.setDpadScale(0.8f)
+        s.resetLayout()
+        assertEquals(1.0f, s.buttonSizeMult("A"), 0.001f)
+        assertTrue(s.buttonSizeMults().isEmpty())
+        assertEquals(1.0f, s.dpadScale(), 0.001f)
+    }
 }
