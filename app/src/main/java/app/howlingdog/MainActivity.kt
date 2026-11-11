@@ -174,6 +174,41 @@ class MainActivity : ComponentActivity() {
     private val inputHistory = InputHistory()
 
     /**
+     * 2.0, feature 6 — the Arcade Manager's counts: the session's
+     * presses (in memory, reset on persist) and the previous input
+     * mask (for the press transitions). The stored per-game counts
+     * live in filesDir/arcade-stats.txt via [arcadeStatsStore].
+     * The session is persisted on pause and on quit, so a kill
+     * mid-game loses only the running session's counts.
+     */
+    private val arcadeStatsStore by lazy { ArcadeStatsStore(File(filesDir, "arcade-stats.txt")) }
+    private val arcadeMutex = Mutex()
+    private var arcadeSessionCounts = ArcadeCounts()
+    private var lastArcadeMask: Int = 0
+
+    /**
+     * 2.0, feature 6 — persist the session's arcade counts:
+     * capture and reset them on the main thread (pushMask runs
+     * there too, so no race), then merge them into the stored
+     * counts and write the file on IO, serialized through
+     * arcadeMutex so a pause-persist and a quit-persist cannot
+     * interleave and lose each other's counts.
+     */
+    private fun persistArcadeStats() {
+        val game = playingGameState.value ?: return
+        val session = arcadeSessionCounts
+        if (session.isEmpty()) return
+        arcadeSessionCounts = ArcadeCounts()
+        val mainFile = game.mainFile
+        lifecycleScope.launch(Dispatchers.IO) {
+            arcadeMutex.withLock {
+                val merged = arcadeStatsStore.load(mainFile) + session
+                arcadeStatsStore.save(mainFile, merged)
+            }
+        }
+    }
+
+    /**
      * 2.0, feature 1 — serializes the playtime persists: pause
      * and quit both persist, and without this a pause-persist
      * launched just before a quit-persist could land after it
@@ -342,6 +377,34 @@ class MainActivity : ComponentActivity() {
     private fun refreshMemoryCard() {
         memoryCardEntriesState.value =
             MemoryCard.listEntries(File(filesDir, "saves"), gamesState.value)
+    }
+
+    /**
+     * 2.0, feature 6 — rebuild the Arcade Manager's entries and
+     * totals from the arcade-stats file and the library, so the
+     * screen always shows the counts as they are. Called when
+     * the screen is opened. Games with neither playtime nor
+     * counts are left out; the rest sort by presses, most first.
+     * The totals cover every game in the library (playtime) and
+     * every stored count (coins, including games no longer in
+     * the library).
+     */
+    private fun refreshArcadeManager() {
+        val stored = arcadeStatsStore.loadAll()
+        val games = gamesState.value
+        arcadeEntriesState.value = games
+            .map { game ->
+                ArcadeManagerEntry(
+                    mainFile = game.mainFile,
+                    displayName = game.effectiveName,
+                    playtimeMillis = game.totalPlayMillis,
+                    counts = stored[game.mainFile] ?: ArcadeCounts(),
+                )
+            }
+            .filter { it.counts.totalPresses > 0 || it.playtimeMillis > 0 }
+            .sortedByDescending { it.counts.totalPresses }
+        arcadeTotalCoinsState.value = stored.values.sumOf { it.coin }
+        arcadeTotalPlaytimeState.value = games.sumOf { it.totalPlayMillis }
     }
 
     /** Recompute the gamepad mask from the held buttons and axes, and hand it to the UI. */
@@ -615,7 +678,7 @@ class MainActivity : ComponentActivity() {
         return super.onGenericMotionEvent(event)
     }
 
-    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings, Achievements, Leaderboards, GamepadRemap, Cheats, MemoryCard }
+    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings, Achievements, Leaderboards, GamepadRemap, Cheats, MemoryCard, ArcadeManager }
 
     private data class Held(
         val up: Boolean = false,
@@ -699,6 +762,14 @@ class MainActivity : ComponentActivity() {
     // screen shows, re-read from the saves folder whenever the
     // screen is opened or a save is deleted.
     private val memoryCardEntriesState by lazy { mutableStateOf<List<MemoryCard.Entry>>(emptyList()) }
+    // 2.0, feature 6 — the Arcade Manager's entries and totals,
+    // re-read from the arcade-stats file and the library whenever
+    // the screen is opened; and where Back returns to (the
+    // library, or Settings).
+    private val arcadeEntriesState by lazy { mutableStateOf<List<ArcadeManagerEntry>>(emptyList()) }
+    private val arcadeTotalCoinsState by lazy { mutableStateOf(0L) }
+    private val arcadeTotalPlaytimeState by lazy { mutableStateOf(0L) }
+    private val arcadeManagerFromState by lazy { mutableStateOf(Screen.Library) }
     private val modePickerForState by lazy { mutableStateOf<GameEntry?>(null) }
     private val renameForState by lazy { mutableStateOf<GameEntry?>(null) }
     private val renameTextState by lazy { mutableStateOf("") }
@@ -798,6 +869,12 @@ class MainActivity : ComponentActivity() {
         // 2.0, feature 3 — the memory card entries the MemoryCard
         // screen shows.
         var memoryCardEntries by memoryCardEntriesState
+        // 2.0, feature 6 — the Arcade Manager's entries and
+        // totals, and where Back returns to.
+        var arcadeEntries by arcadeEntriesState
+        var arcadeTotalCoins by arcadeTotalCoinsState
+        var arcadeTotalPlaytime by arcadeTotalPlaytimeState
+        var arcadeManagerFrom by arcadeManagerFromState
         var settingsFrom by settingsFromState
         var paused by pausedState
         var pauseStatus by pauseStatusState
@@ -1269,6 +1346,13 @@ class MainActivity : ComponentActivity() {
             if (inputHistory.record(raw, SystemClock.uptimeMillis())) {
                 inputHistoryEvents = inputHistory.snapshot()
             }
+            // 2.0, feature 6 — the Arcade Manager counts the same
+            // raw mask's transitions (presses, not time held):
+            // each new direction actuation and each button press
+            // adds one to the session's counts, persisted on pause
+            // and quit.
+            arcadeSessionCounts = ArcadeStats.recordTransition(lastArcadeMask, raw, arcadeSessionCounts)
+            lastArcadeMask = raw
         }
 
         /**
@@ -1394,6 +1478,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            // 2.0, feature 6 — the pause also persists the
+            // session's arcade counts, so a kill mid-pause loses
+            // nothing.
+            persistArcadeStats()
             // Phase 9, item 7 — a pause always shows the bar, so
             // SAVE / LOAD stay reachable even when it had hidden
             // (e.g. paused from the gamepad while hidden).
@@ -1637,6 +1725,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            // 2.0, feature 6 — the quit also persists the
+            // session's arcade counts. If the game was paused, the
+            // pause already persisted and the session is empty, so
+            // this is a no-op and never double-counts.
+            persistArcadeStats()
             playtimeTracker = null
             session?.stop()
             session = null
@@ -1836,6 +1929,10 @@ class MainActivity : ComponentActivity() {
             // input strip.
             inputHistory.clear()
             inputHistoryEvents = emptyList()
+            // 2.0, feature 6 — a new game starts with empty
+            // arcade session counts and a neutral last mask.
+            arcadeSessionCounts = ArcadeCounts()
+            lastArcadeMask = 0
             // v1.5, feature 4 — cheats: this game's enabled codes
             // go to the session now, so they are written after
             // every displayed frame from the first one. A game
@@ -2134,7 +2231,7 @@ class MainActivity : ComponentActivity() {
         // Settings: back returns to where Settings was opened
         // from (the library, or the game). A game's own settings
         // screen (Phase 9, item 8) returns to the library.
-        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings || screen == Screen.Achievements || screen == Screen.Leaderboards || screen == Screen.GamepadRemap || screen == Screen.Cheats || screen == Screen.MemoryCard) {
+        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings || screen == Screen.Achievements || screen == Screen.Leaderboards || screen == Screen.GamepadRemap || screen == Screen.Cheats || screen == Screen.MemoryCard || screen == Screen.ArcadeManager) {
             when (screen) {
                 Screen.Playing -> when {
                     editControls -> exitEditMode()
@@ -2148,6 +2245,7 @@ class MainActivity : ComponentActivity() {
                 Screen.Leaderboards -> screen = Screen.Playing
                 Screen.Cheats -> screen = Screen.Playing
                 Screen.MemoryCard -> screen = Screen.Settings
+                Screen.ArcadeManager -> screen = arcadeManagerFrom
                 Screen.GamepadRemap -> {
                     remapCapturing = null
                     screen = Screen.Settings
@@ -2745,6 +2843,19 @@ class MainActivity : ComponentActivity() {
                     onBack = { screen = Screen.Settings },
                 )
             }
+            Screen.ArcadeManager -> {
+                // 2.0, feature 6 — the Arcade Manager: input
+                // heatmaps and the virtual revenue / time tracker,
+                // the home for the playtime stats. Back returns to
+                // where it was opened from (the library, or
+                // Settings).
+                ArcadeManagerScreen(
+                    entries = arcadeEntries,
+                    totalPlaytimeMillis = arcadeTotalPlaytime,
+                    totalCoins = arcadeTotalCoins,
+                    onBack = { screen = arcadeManagerFrom },
+                )
+            }
         }
     }
 
@@ -2773,6 +2884,9 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         var screen by screenState
         var settingsFrom by settingsFromState
+        // 2.0, feature 6 — where the Arcade Manager's Back returns
+        // to (the library, when opened from here).
+        var arcadeManagerFrom by arcadeManagerFromState
         var games by gamesState
         var bios by biosState
         var status by statusState
@@ -2966,6 +3080,13 @@ class MainActivity : ComponentActivity() {
                 ArcadeButton(text = "Settings") {
                     settingsFrom = Screen.Library
                     screen = Screen.Settings
+                }
+                // 2.0, feature 6 — the Arcade Manager: input
+                // heatmaps and the virtual revenue / time tracker.
+                ArcadeButton(text = "Arcade Manager") {
+                    arcadeManagerFrom = Screen.Library
+                    refreshArcadeManager()
+                    screen = Screen.ArcadeManager
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -3927,6 +4048,22 @@ class MainActivity : ComponentActivity() {
                 refreshMemoryCard()
                 screen = Screen.MemoryCard
             }) { Text("Memory card") }
+            // 2.0, feature 6 — the Arcade Manager: input heatmaps
+            // and the virtual revenue / time tracker. The entries
+            // are re-read when the screen opens, so it always shows
+            // the counts as they are.
+            Spacer(Modifier.height(16.dp))
+            Text("Arcade Manager", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "How much each game has been played, what it would have cost in quarters, and which controls wear out first.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = {
+                arcadeManagerFrom = Screen.Settings
+                refreshArcadeManager()
+                screen = Screen.ArcadeManager
+            }) { Text("Arcade Manager") }
             // Phase 9, item 10 — in-app updater: a manual
             // check on demand, plus the download when one
             // is available. A manual check clears any
