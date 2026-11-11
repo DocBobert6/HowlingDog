@@ -48,7 +48,28 @@ class CrtRenderer : GLSurfaceView.Renderer {
     @Volatile
     private var curveOn: Boolean = true
 
+    /**
+     * 2.0, feature 7 — the edge-smoothing mode. When it is on,
+     * the edge program draws the frame and the CRT program is
+     * not used (they fight visually); when it is off, the CRT
+     * program draws when shaderOn, and the plain program when
+     * the CRT is off too.
+     *
+     * The edge shader needs hard texels: it detects edges and
+     * dither from the texel grid, so while it is on the texture
+     * magnification filter is GL_NEAREST (the shader does all
+     * the smoothing). With GL_LINEAR the dither would already be
+     * blurred into mud before the shader ever saw it. The filter
+     * is switched back to GL_LINEAR when the edge mode turns
+     * off. [lastEdgeMagNearest] tracks the filter in effect so
+     * the parameter is only set when the mode changes.
+     */
+    @Volatile
+    private var edgeMode: EdgeMode = EdgeMode.OFF
+    private var lastEdgeMagNearest: Boolean? = null
+
     private var program = 0
+    private var edgeProgram = 0
     private var plainProgram = 0
     private var textureId = 0
     private var vbo = 0
@@ -69,10 +90,11 @@ class CrtRenderer : GLSurfaceView.Renderer {
         pendingBitmap = bitmap
     }
 
-    fun setPreset(p: ShaderPreset, shader: Boolean, curve: Boolean) {
+    fun setPreset(p: ShaderPreset, shader: Boolean, curve: Boolean, edge: EdgeMode = EdgeMode.OFF) {
         preset = p
         shaderOn = shader
         curveOn = curve
+        edgeMode = edge
         meshKey = null
     }
 
@@ -83,6 +105,13 @@ class CrtRenderer : GLSurfaceView.Renderer {
         program = buildProgram(CrtShaders.VERTEX, CrtShaders.FRAGMENT)
         if (program == 0) {
             Log.e(TAG, "CRT program failed to compile; using the plain fallback")
+        }
+        // 2.0, feature 7 — the edge-smoothing program. If it
+        // fails to compile, the edge mode falls back to the CRT
+        // program (or the plain one), so the game stays visible.
+        edgeProgram = buildProgram(CrtShaders.VERTEX, CrtShaders.EDGE_FRAGMENT)
+        if (edgeProgram == 0) {
+            Log.e(TAG, "Edge program failed to compile; the edge mode falls back to the CRT program")
         }
         plainProgram = buildProgram(CrtShaders.VERTEX, CrtShaders.PLAIN_FRAGMENT)
         val tex = IntArray(1)
@@ -143,7 +172,16 @@ class CrtRenderer : GLSurfaceView.Renderer {
             }
         }
         if (textureId == 0 || frameW <= 0 || viewW <= 0 || viewH <= 0) return
-        val prog = if (program != 0) program else plainProgram
+        // 2.0, feature 7 — the edge program wins when the edge
+        // mode is on (the CRT is off then); otherwise the CRT
+        // program when the shader is on, else the plain one. A
+        // program that failed to compile falls through to the
+        // next one, so the game stays visible.
+        val prog = when {
+            edgeMode != EdgeMode.OFF && edgeProgram != 0 -> edgeProgram
+            shaderOn && program != 0 -> program
+            else -> plainProgram
+        }
         if (prog == 0) return
         // The mesh (rebuilt only when its key changes): the
         // curve and round values come from this system's preset.
@@ -158,7 +196,13 @@ class CrtRenderer : GLSurfaceView.Renderer {
         }
         GLES20.glUseProgram(prog)
         GLES20.glUniform1i(uniform(prog, "uTex"), 0)
-        if (prog == program) {
+        if (prog == edgeProgram) {
+            // 2.0, feature 7 — the edge program's uniforms.
+            // Scanlines only for the "sharp CRT" combined mode,
+            // and only at the preset's scan strength.
+            GLES20.glUniform2f(uniform(prog, "uTexSize"), frameW.toFloat(), frameH.toFloat())
+            GLES20.glUniform1f(uniform(prog, "uScan"), if (edgeMode == EdgeMode.SHARP_CRT) preset.scan else 0f)
+        } else if (prog == program) {
             // The chain's uniforms; all zero/neutral when the
             // shader is off, so the pass is a plain sample.
             val on = shaderOn
@@ -175,6 +219,19 @@ class CrtRenderer : GLSurfaceView.Renderer {
         }
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
+        // 2.0, feature 7 — the magnification filter follows the
+        // edge mode: GL_NEAREST while the edge shader is on (it
+        // needs hard texels), GL_LINEAR otherwise. Only set when
+        // the mode changed, so it is not a per-frame state change.
+        val wantNearest = edgeMode != EdgeMode.OFF
+        if (lastEdgeMagNearest != wantNearest) {
+            GLES20.glTexParameteri(
+                GLES20.GL_TEXTURE_2D,
+                GLES20.GL_TEXTURE_MAG_FILTER,
+                if (wantNearest) GLES20.GL_NEAREST else GLES20.GL_LINEAR,
+            )
+            lastEdgeMagNearest = wantNearest
+        }
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vbo)
         GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, ibo)
         val aPos = GLES20.glGetAttribLocation(prog, "aPos")

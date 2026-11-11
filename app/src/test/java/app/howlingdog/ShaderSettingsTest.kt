@@ -97,4 +97,81 @@ class ShaderSettingsTest {
         assertTrue(s.shaderOn("bogus"))
         assertEquals(ShaderPresets.forMode("aes").curveOn, s.curvatureOn("bogus"))
     }
+
+    @Test
+    fun edgeModeDefaultsOff() {
+        val s = ShaderSettings(MapStore())
+        assertEquals(EdgeMode.OFF, s.edgeMode("aes"))
+        assertEquals(EdgeMode.OFF, s.edgeMaster())
+        assertEquals(DisplayMode.CRT, s.displayMode("aes"))
+    }
+
+    @Test
+    fun edgeModeRoundTrips() {
+        val store = MapStore()
+        val s = ShaderSettings(store)
+        s.setEdgeMaster(EdgeMode.EDGE)
+        assertEquals(EdgeMode.EDGE, s.edgeMaster())
+        assertEquals(EdgeMode.EDGE, s.edgeMode("aes"))
+        s.setEdgeMaster(EdgeMode.SHARP_CRT)
+        assertEquals(EdgeMode.SHARP_CRT, s.edgeMaster())
+        assertEquals(EdgeMode.SHARP_CRT, s.edgeMode("mvs"))
+        s.setEdgeMaster(EdgeMode.OFF)
+        assertEquals(EdgeMode.OFF, s.edgeMaster())
+    }
+
+    @Test
+    fun perSystemEdgeModeWinsOverMaster() {
+        val store = MapStore()
+        val s = ShaderSettings(store)
+        s.setEdgeMaster(EdgeMode.EDGE)
+        s.setEdgeMode("aes", EdgeMode.SHARP_CRT)
+        assertEquals(EdgeMode.SHARP_CRT, s.edgeMode("aes"))
+        assertEquals(EdgeMode.EDGE, s.edgeMode("mvs"))
+        s.setEdgeMode("aes", EdgeMode.OFF)
+        assertEquals(EdgeMode.OFF, s.edgeMode("aes"))
+    }
+
+    @Test
+    fun badEdgeValuesFallBackToOff() {
+        val store = MapStore()
+        val s = ShaderSettings(store)
+        store.put(ShaderSettings.KEY_EDGE_MASTER, "sharper")
+        assertEquals(EdgeMode.OFF, s.edgeMaster())
+        store.put(ShaderSettings.KEY_EDGE_MASTER, "SHARP_CRT")
+        assertEquals("an underscore is not the stored form", EdgeMode.OFF, s.edgeMaster())
+        store.put(ShaderSettings.KEY_EDGE_MASTER, "sharpcrt")
+        assertEquals(EdgeMode.SHARP_CRT, s.edgeMaster())
+        store.put(ShaderSettings.KEY_EDGE_PREFIX + "aes", "EDGE")
+        assertEquals("the stored form is case-insensitive on read", EdgeMode.EDGE, s.edgeMode("aes"))
+    }
+
+    @Test
+    fun edgeModeWinsOverCrt() {
+        // The exclusivity rule: the edge shader is the
+        // alternative display mode, so when it is on the CRT is
+        // off, whatever the CRT toggle says.
+        assertEquals(DisplayMode.EDGE, resolveDisplayMode(true, EdgeMode.EDGE))
+        assertEquals(DisplayMode.EDGE, resolveDisplayMode(false, EdgeMode.EDGE))
+        assertEquals(DisplayMode.SHARP_CRT, resolveDisplayMode(true, EdgeMode.SHARP_CRT))
+        assertEquals(DisplayMode.SHARP_CRT, resolveDisplayMode(false, EdgeMode.SHARP_CRT))
+        // With the edge mode off, the CRT toggle decides.
+        assertEquals(DisplayMode.CRT, resolveDisplayMode(true, EdgeMode.OFF))
+        assertEquals(DisplayMode.PLAIN, resolveDisplayMode(false, EdgeMode.OFF))
+    }
+
+    @Test
+    fun displayModeFollowsTheStoredSettings() {
+        val store = MapStore()
+        val s = ShaderSettings(store)
+        assertEquals(DisplayMode.CRT, s.displayMode("aes"))
+        s.setEdgeMaster(EdgeMode.EDGE)
+        assertEquals(DisplayMode.EDGE, s.displayMode("aes"))
+        s.setShaderMaster(false)
+        assertEquals("the CRT toggle is moot while the edge mode is on", DisplayMode.EDGE, s.displayMode("aes"))
+        s.setEdgeMaster(EdgeMode.OFF)
+        assertEquals(DisplayMode.PLAIN, s.displayMode("aes"))
+        s.setShaderMaster(true)
+        assertEquals(DisplayMode.CRT, s.displayMode("aes"))
+    }
 }

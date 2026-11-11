@@ -820,6 +820,8 @@ class MainActivity : ComponentActivity() {
     private val raPasswordTextState by lazy { mutableStateOf("") }
     private val showBootState by lazy { mutableStateOf(appSettings.showBoot()) }
     private val crtShaderOnState by lazy { mutableStateOf(shaderSettings.shaderMasterOn()) }
+    // 2.0, feature 7 — the edge-smoothing mode (off by default).
+    private val edgeModeState by lazy { mutableStateOf(shaderSettings.edgeMaster()) }
     private val curvatureOnState by lazy { mutableStateOf(shaderSettings.curvatureMasterOn()) }
     private val stickPosState by lazy { mutableStateOf(controlSettings.stickPosition()) }
     private val buttonsPosState by lazy { mutableStateOf(controlSettings.buttonsPosition()) }
@@ -3638,6 +3640,8 @@ class MainActivity : ComponentActivity() {
         var screen by screenState
         var crtShaderOn by crtShaderOnState
         var curvatureOn by curvatureOnState
+        // 2.0, feature 7 — the edge-smoothing mode (off by default).
+        var edgeMode by edgeModeState
         // 2.0, feature 6 fix — the Arcade Manager's Back target
         // was used by the Settings button but never declared in
         // this screen, so the build failed (unresolved
@@ -3701,6 +3705,36 @@ class MainActivity : ComponentActivity() {
             }
             Text(
                 "Each system uses its own chain, tuned to the display it was played on — AES Hearth, Arcade Neon, Neo Geo CD Comet, Neo Geo CDZ Zenith. Takes effect the next time a game starts.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            // 2.0, feature 7 — the edge-smoothing display mode.
+            // Off by default. When it is on, the CRT shader above
+            // turns off (they fight visually) — the edge shader is
+            // the alternative display mode. "Sharp CRT" is edge
+            // smoothing then scanlines only, one tap.
+            ControlDropdownRow(
+                "Edge smoothing",
+                listOf(
+                    "off" to "Off",
+                    "edge" to "Edge smoothing",
+                    "sharpcrt" to "Sharp CRT",
+                ),
+                when (edgeMode) {
+                    EdgeMode.OFF -> "off"
+                    EdgeMode.EDGE -> "edge"
+                    EdgeMode.SHARP_CRT -> "sharpcrt"
+                },
+            ) { value ->
+                val mode = when (value) {
+                    "edge" -> EdgeMode.EDGE
+                    "sharpcrt" -> EdgeMode.SHARP_CRT
+                    else -> EdgeMode.OFF
+                }
+                shaderSettings.setEdgeMaster(mode)
+                edgeMode = mode
+            }
+            Text(
+                "Very clean, sharp pixel art: hard sprite edges are anti-aliased along their direction, while checkerboard dither (transparency, shadows, shading) is preserved and acute corners stay sharp. When on, the CRT shader turns off. Takes effect the next time a game starts.",
                 style = MaterialTheme.typography.bodySmall,
             )
             ControlDropdownRow(
@@ -4413,6 +4447,13 @@ class MainActivity : ComponentActivity() {
                                     entry.mainFile,
                                     shaderSettings.curvatureOn(mode),
                                 ),
+                                // 2.0, feature 7 — the edge mode
+                                // wins over the CRT (the renderer
+                                // picks the edge program when it is
+                                // on), so the CRT toggle above is
+                                // only in effect when the edge mode
+                                // is off.
+                                shaderSettings.edgeMode(mode),
                             )
                         }
                     },

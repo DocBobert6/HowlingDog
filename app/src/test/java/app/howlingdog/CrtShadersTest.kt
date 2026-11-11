@@ -65,4 +65,60 @@ class CrtShadersTest {
         assertTrue("plain fallback must not reference CRT uniforms", !src.contains("uScan"))
         assertBalanced(src)
     }
+
+    @Test
+    fun edgeShaderDeclaresEveryUniformTheRendererSets() {
+        val src = CrtShaders.EDGE_FRAGMENT
+        assertTrue(src.contains("precision mediump float"))
+        assertTrue(src.contains("varying vec2 vTex"))
+        assertTrue(src.contains("uniform sampler2D uTex"))
+        assertTrue(src.contains("uniform vec2 uTexSize"))
+        assertTrue(src.contains("uniform float uScan"))
+        assertTrue(src.contains("gl_FragColor"))
+        assertBalanced(src)
+    }
+
+    @Test
+    fun edgeShaderSamplesTheFull3x3Neighbourhood() {
+        val src = CrtShaders.EDGE_FRAGMENT
+        // The 3x3: the centre plus all eight neighbours.
+        for (sample in listOf(
+            "texture2D(uTex, vTex)",
+            "vTex + vec2(0.0, texel.y)",
+            "vTex - vec2(0.0, texel.y)",
+            "vTex + vec2(texel.x, 0.0)",
+            "vTex - vec2(texel.x, 0.0)",
+            "vTex + vec2(texel.x, texel.y)",
+            "vTex + vec2(-texel.x, texel.y)",
+            "vTex + vec2(texel.x, -texel.y)",
+            "vTex + vec2(-texel.x, -texel.y)",
+        )) {
+            assertTrue("edge shader must sample $sample", src.contains(sample))
+        }
+    }
+
+    @Test
+    fun edgeShaderHasDitherCornerAndColorAwareGuards() {
+        val src = CrtShaders.EDGE_FRAGMENT
+        // Dither: the 2x2 checkerboard test (diagonal vs both
+        // orthogonal distances), gated by a dither factor.
+        assertTrue(src.contains("dDiag"))
+        assertTrue(src.contains("dE"))
+        assertTrue(src.contains("dS"))
+        assertTrue(src.contains("(1.0 - dither)"))
+        // Corner: a strong gradient in both directions, gated
+        // by a corner factor.
+        assertTrue(src.contains("corner"))
+        assertTrue(src.contains("(1.0 - corner)"))
+        // Color-aware: the blend is clamped to the range of the
+        // colours it mixes.
+        assertTrue(src.contains("clamp(col, lo, hi)"))
+        // Directional: the blend runs along the edge, with the
+        // weight from the sub-pixel position.
+        assertTrue(src.contains("fract(vTex * uTexSize)"))
+        // Temporal stability: no noise and no time uniform, so
+        // the output is a pure function of the current frame.
+        assertTrue("edge shader must not use noise", !src.contains("noise"))
+        assertTrue("edge shader must not use a time uniform", !src.contains("uTime"))
+    }
 }
