@@ -206,10 +206,19 @@ jobs:
             "$READELF" -d "$BRIDGE"
             exit 1
           }
+          # Capture the export list once and match it with bash
+          # substring tests — piping llvm-nm straight into grep -q
+          # flakes under pipefail: grep exits on the first match
+          # while nm is still writing, nm dies on SIGPIPE, and
+          # pipefail reports the pipeline as failed even though
+          # the symbol is present (hit 2026-11-11 on
+          # nativeFlushSaveData; all 31 symbols were in the
+          # output).
+          EXPORTS=$("$NM" -D "$BRIDGE")
           for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeSetOption nativeSerialize nativeUnserialize nativeFlushSaveData nativeUnloadGame nativeDeinit nativeLastError nativeSetRunahead nativeRunFrameRunahead nativeRaInit nativeRaLogin nativeRaLogout nativeRaIsLoggedIn nativeRaLoggedInUsername nativeRaLoadGame nativeRaUnloadGame nativeRaIsGameLoaded nativeRaGameTitle nativeRaDoFrame nativeRaReset nativeRaSerializeProgress nativeRaDeserializeProgress nativeRaGetAchievements nativeRaHttpResponse; do
-            "$NM" -D "$BRIDGE" | grep -q "Java_app_howlingdog_Bridge_$sym" || {
+            [[ "$EXPORTS" == *"Java_app_howlingdog_Bridge_$sym"* ]] || {
               echo "missing JNI export: $sym"
-              "$NM" -D "$BRIDGE"
+              echo "$EXPORTS"
               exit 1
             }
           done
