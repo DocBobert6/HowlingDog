@@ -40,9 +40,14 @@ class GameGlView @JvmOverloads constructor(
         requestRender()
     }
 
-    /** Apply a system's preset and toggles (called at game start, and when the game changes). */
-    fun setPreset(preset: ShaderPreset, shaderOn: Boolean, curveOn: Boolean) {
-        renderer.setPreset(preset, shaderOn, curveOn)
+    /**
+     * Apply a system's preset and toggles (called at game start,
+     * and when the game changes). The edge mode is forwarded to
+     * the renderer: when it is on, the edge program draws and
+     * the CRT program does not.
+     */
+    fun setPreset(preset: ShaderPreset, shaderOn: Boolean, curveOn: Boolean, edge: EdgeMode = EdgeMode.OFF) {
+        renderer.setPreset(preset, shaderOn, curveOn, edge)
         requestRender()
     }
 }
