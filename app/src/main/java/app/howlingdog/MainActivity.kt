@@ -811,6 +811,10 @@ class MainActivity : ComponentActivity() {
     private val autoSaveOnQuitState by lazy { mutableStateOf(appSettings.autoSaveOnQuit()) }
     private val raUsernameTextState by lazy { mutableStateOf(appSettings.raUsername()) }
     private val raPasswordTextState by lazy { mutableStateOf("") }
+    // 2.0.1, audit fix 6 — whether the RA login fields are
+    // shown while logged in. False by default: when logged in,
+    // the fields stay hidden until "Log in again" is tapped.
+    private val raLoginFieldsVisibleState by lazy { mutableStateOf(false) }
     private val showBootState by lazy { mutableStateOf(appSettings.showBoot()) }
     private val crtShaderOnState by lazy { mutableStateOf(shaderSettings.shaderMasterOn()) }
     // 2.0, feature 7 — the edge-smoothing mode (off by default).
@@ -3651,6 +3655,7 @@ class MainActivity : ComponentActivity() {
         var runaheadFrames by runaheadFramesState
         var raUsernameText by raUsernameTextState
         var raPasswordText by raPasswordTextState
+        var raLoginFieldsVisible by raLoginFieldsVisibleState
         var stickOpacity by stickOpacityState
         var buttonsOpacity by buttonsOpacityState
         var showBoot by showBootState
@@ -3937,24 +3942,31 @@ class MainActivity : ComponentActivity() {
             // no nagging. The status line below is the live
             // session state.
             Text("RetroAchievements", style = MaterialTheme.typography.titleSmall)
-            OutlinedTextField(
-                value = raUsernameText,
-                onValueChange = { raUsernameText = it },
-                singleLine = true,
-                label = { Text("Username") },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = raPasswordText,
-                onValueChange = { raPasswordText = it },
-                singleLine = true,
-                label = { Text("Password") },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(8.dp))
+            // 2.0.1, audit fix 6 — when logged in, the Username
+            // and Password fields are hidden: an empty Password
+            // field under "Logged in as ..." reads as if a
+            // password is still needed. The fields show only
+            // when logged out, or after "Log in again" is tapped.
+            if (!RaClient.loggedIn || raLoginFieldsVisible) {
+                OutlinedTextField(
+                    value = raUsernameText,
+                    onValueChange = { raUsernameText = it },
+                    singleLine = true,
+                    label = { Text("Username") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = raPasswordText,
+                    onValueChange = { raPasswordText = it },
+                    singleLine = true,
+                    label = { Text("Password") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+            }
             Text(
                 RaClient.status.ifEmpty { "Not logged in." },
                 style = MaterialTheme.typography.bodyMedium,
@@ -3962,6 +3974,15 @@ class MainActivity : ComponentActivity() {
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
+                    // 2.0.1, audit fix 6 — when logged in and
+                    // the fields are hidden, the first tap only
+                    // reveals them: submitting with the hidden,
+                    // empty password would otherwise log the
+                    // user out (the else branch below).
+                    if (RaClient.loggedIn && !raLoginFieldsVisible) {
+                        raLoginFieldsVisible = true
+                        return@Button
+                    }
                     val user = raUsernameText.trim()
                     val password = raPasswordText
                     appSettings.setRaUsername(user)
@@ -3981,6 +4002,13 @@ class MainActivity : ComponentActivity() {
                     } else {
                         RaClient.logout()
                     }
+                    // Hide the fields again after submitting,
+                    // so a successful login returns to the
+                    // clean logged-in view (a failed login
+                    // shows its error in the status line, and
+                    // another "Log in again" tap reveals the
+                    // fields to retry).
+                    raLoginFieldsVisible = false
                 }) {
                     Text(if (RaClient.loggedIn) "Log in again" else "Log in")
                 }
