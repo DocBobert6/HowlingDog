@@ -939,28 +939,65 @@ Java_app_howlingdog_Bridge_nativeRaInit(JNIEnv *env, jobject thiz) {
 }
 
 JNIEXPORT jboolean JNICALL
-Java_app_howlingdog_Bridge_nativeRaLogin(JNIEnv *env, jobject /* thiz */, jstring username, jstring api_key) {
+Java_app_howlingdog_Bridge_nativeRaLogin(JNIEnv *env, jobject /* thiz */, jstring username, jstring password) {
     const char *user;
-    const char *key;
+    const char *pass;
     int rc;
-    if (!ra_is_ready() || !username || !api_key)
+    if (!ra_is_ready() || !username || !password)
         return JNI_FALSE;
     user = env->GetStringUTFChars(username, NULL);
-    key = env->GetStringUTFChars(api_key, NULL);
-    if (!user || !key) {
+    pass = env->GetStringUTFChars(password, NULL);
+    if (!user || !pass) {
         if (user)
             env->ReleaseStringUTFChars(username, user);
-        if (key)
-            env->ReleaseStringUTFChars(api_key, key);
+        if (pass)
+            env->ReleaseStringUTFChars(password, pass);
         return JNI_FALSE;
     }
-    // The username and key are copied into the request by
+    // The username and password are copied into the request by
     // rcheevos before this returns, so releasing them here is
-    // safe.
-    rc = ra_login(user, key, bridge_ra_login_result, NULL);
+    // safe. The password is used once, for this login only — it
+    // is never stored anywhere (the session token the server
+    // returns is what the app keeps; see nativeRaToken).
+    rc = ra_login_with_password(user, pass, bridge_ra_login_result, NULL);
     env->ReleaseStringUTFChars(username, user);
-    env->ReleaseStringUTFChars(api_key, key);
+    env->ReleaseStringUTFChars(password, pass);
     return rc == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+// Re-log in with a stored session token (the token a password
+// login returned on an earlier launch). No password involved.
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeRaLoginWithToken(JNIEnv *env, jobject /* thiz */, jstring username, jstring token) {
+    const char *user;
+    const char *tok;
+    int rc;
+    if (!ra_is_ready() || !username || !token)
+        return JNI_FALSE;
+    user = env->GetStringUTFChars(username, NULL);
+    tok = env->GetStringUTFChars(token, NULL);
+    if (!user || !tok) {
+        if (user)
+            env->ReleaseStringUTFChars(username, user);
+        if (tok)
+            env->ReleaseStringUTFChars(token, tok);
+        return JNI_FALSE;
+    }
+    // As above: rcheevos copies the credentials into the request
+    // before this returns.
+    rc = ra_login_with_token(user, tok, bridge_ra_login_result, NULL);
+    env->ReleaseStringUTFChars(username, user);
+    env->ReleaseStringUTFChars(token, tok);
+    return rc == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+// The session token of the logged-in user (NULL when logged
+// out) — what the app stores after a password login, so the
+// next launch can re-log in without the password.
+JNIEXPORT jstring JNICALL
+Java_app_howlingdog_Bridge_nativeRaToken(JNIEnv *env, jobject /* thiz */) {
+    const char *token = ra_logged_in_token();
+    return token ? env->NewStringUTF(token) : NULL;
 }
 
 JNIEXPORT void JNICALL

@@ -92,8 +92,11 @@ object RaLoginErrors {
         "No response" ->
             "Could not reach the RetroAchievements server. Check your connection and try again."
 
+        "Invalid user/password combination. Please try again." ->
+            "Invalid username or password. Check both in your RetroAchievements account settings."
+
         "Invalid user/token combination." ->
-            "Invalid username or API key. Check both in your RetroAchievements account settings."
+            "Your saved login is no longer valid. Log in again with your username and password."
 
         "Request has timed out." ->
             "The server did not answer in time. Try again."

@@ -99,11 +99,19 @@ static const char* kAwardResponse =
 static int g_server_calls;
 static int g_unexpected_requests;
 
+/* The last request body the mock server saw, so a test can
+ * check what a login actually sent (password vs token). */
+static char g_last_post_data[1024];
+
 static void mock_server_call(int request_id, const char* url, const char* post_data, void* ctx) {
     const char* body = NULL;
     (void)url;
     (void)ctx;
     ++g_server_calls;
+    if (post_data)
+        snprintf(g_last_post_data, sizeof(g_last_post_data), "%s", post_data);
+    else
+        g_last_post_data[0] = '\0';
     if (!post_data) {
         ++g_unexpected_requests;
         body = "";
@@ -542,7 +550,7 @@ static void test_full_flow(void) {
     CHECK(!ra_is_game_loaded());
 
     /* Login (the mock answers the login2 call synchronously). */
-    CHECK(ra_login("User", "ApiToken", mock_result, NULL) == 0);
+    CHECK(ra_login_with_token("User", "ApiToken", mock_result, NULL) == 0);
     CHECK(g_last_result == 0);
     CHECK(ra_is_logged_in());
     CHECK_STR_EQ(ra_logged_in_username(), "User");
@@ -622,11 +630,59 @@ static void test_full_flow(void) {
     remove(kNeoPath);
 }
 
+/* The password login (v1.1.2 — the API-key login is gone):
+ * the request must carry the password (p=), never a token
+ * (t=); on success the session token the server returned is
+ * available for the app to store, and a later launch can
+ * re-log in with that token alone. */
+static void test_password_login(void) {
+    g_server_calls = 0;
+    g_unexpected_requests = 0;
+    g_last_result = -999;
+    g_last_post_data[0] = '\0';
+
+    CHECK(ra_init(mock_memory_provider, NULL, mock_server_call, NULL, mock_event, NULL) == 0);
+    CHECK(ra_is_ready());
+    CHECK(!ra_is_logged_in());
+
+    /* Password login: the mock answers login2 synchronously. */
+    CHECK(ra_login_with_password("User", "SecretPass", mock_result, NULL) == 0);
+    CHECK(g_last_result == 0);
+    CHECK(ra_is_logged_in());
+    CHECK_STR_EQ(ra_logged_in_username(), "User");
+    /* The request sent the password, not a token. */
+    CHECK(strstr(g_last_post_data, "p=SecretPass") != NULL);
+    CHECK(strstr(g_last_post_data, "t=") == NULL);
+    /* The token the server returned is what the app stores. */
+    CHECK(ra_logged_in_token() != NULL);
+    if (ra_logged_in_token())
+        CHECK_STR_EQ(ra_logged_in_token(), "ApiToken");
+    CHECK(g_unexpected_requests == 0);
+
+    /* Log out, then re-log in with the stored token alone —
+     * the next launch, with no password involved. */
+    ra_logout();
+    CHECK(!ra_is_logged_in());
+    CHECK(ra_logged_in_token() == NULL);
+    g_last_result = -999;
+    CHECK(ra_login_with_token("User", "ApiToken", mock_result, NULL) == 0);
+    CHECK(g_last_result == 0);
+    CHECK(ra_is_logged_in());
+    CHECK(strstr(g_last_post_data, "t=ApiToken") != NULL);
+    CHECK(strstr(g_last_post_data, "p=") == NULL);
+
+    ra_logout();
+    CHECK(!ra_is_logged_in());
+    ra_shutdown();
+    CHECK(!ra_is_ready());
+}
+
 int main(void) {
     test_console_id_for_path();
     test_read_memory_mapped();
     test_neo_hash();
     test_cdreader();
+    test_password_login();
     test_full_flow();
     printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

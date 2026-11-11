@@ -14,12 +14,20 @@ import java.net.URL
  * Phase 10 — RetroAchievements: the Kotlin-side session.
  *
  * Owns the RA client once it is initialised: the login (username
- * + API key from [AppSettings]), the game load, the per-frame
- * evaluation, the unlock popup data, the achievements list, and
- * the progress serialize/deserialize that the save-state sidecar
- * carries. The native client lives for the app's lifetime once
- * created (login persists); only the loaded game is unloaded
- * when a game quits (the bridge does that in nativeUnloadGame).
+ * + password from [AppSettings] — v1.1.2, the API-key login is
+ * gone), the game load, the per-frame evaluation, the unlock
+ * popup data, the achievements list, and the progress
+ * serialize/deserialize that the save-state sidecar carries.
+ * The native client lives for the app's lifetime once created
+ * (login persists); only the loaded game is unloaded when a game
+ * quits (the bridge does that in nativeUnloadGame).
+ *
+ * The password is used once, for the login that types it, and is
+ * never stored: the server hands back a session token, the app
+ * keeps the token ([AppSettings.setRaToken]), and the next launch
+ * re-logs in with the token. A rejected token is cleared, so the
+ * user types their password again instead of retrying a dead
+ * token on every launch.
  *
  * The native layer calls back into Kotlin through [Bridge]
  * (raHttpRequest / raEventUnlocked / raLoginResult /
@@ -78,15 +86,27 @@ object RaClient {
     var status by mutableStateOf("")
         private set
 
+    /** The settings the session token lives in (set by [init]). */
+    private var settings: AppSettings? = null
+
     /**
      * Initialise the native RA client and wire the Bridge
-     * callbacks. Idempotent. If [AppSettings] holds credentials,
-     * the login starts here (the result arrives through
-     * [onLoginResult]). Returns false when the native libraries
+     * callbacks. Idempotent. If [AppSettings] holds a username
+     * and a session token, the login starts here (the result
+     * arrives through [onLoginResult]) — unless [autoLogin] is
+     * false, in which case the caller logs in explicitly (the
+     * Settings screen does this when the user just typed a
+     * password: the typed password is the fresh intent, not the
+     * stored token). Returns false when the native libraries
      * could not be loaded or the client could not be created.
+     * Also removes any API key a v1.1.0/v1.1.1 install stored —
+     * the API-key login is gone, so the old key must not be
+     * left behind.
      */
-    fun init(settings: AppSettings): Boolean {
+    fun init(settings: AppSettings, autoLogin: Boolean = true): Boolean {
         if (initialised) return true
+        this.settings = settings
+        settings.clearLegacyRaApiKey()
         if (!Bridge.ensureLoaded()) return false
         Bridge.raHttpRequestHandler = { id, url, post -> onHttpRequest(id, url, post) }
         Bridge.raEventUnlockedHandler = { id, title, desc, points -> onUnlocked(id, title, desc, points) }
@@ -97,30 +117,49 @@ object RaClient {
             return false
         }
         initialised = true
-        val user = settings.raUsername()
-        val key = settings.raApiKey()
-        if (user.isNotEmpty() && key.isNotEmpty()) {
-            login(user, key)
+        if (autoLogin) {
+            val user = settings.raUsername()
+            val token = settings.raToken()
+            if (user.isNotEmpty() && token.isNotEmpty()) {
+                loginWithToken(user, token)
+            }
         }
         return true
     }
 
     /**
-     * Log in with a username and API key. The result arrives
-     * asynchronously through [onLoginResult]; until then
-     * [loginPending] is true. The credentials are NOT stored here
-     * — the caller stores them in [AppSettings] first.
+     * Log in with a username and password (v1.1.2 — the API-key
+     * login is gone). The result arrives asynchronously through
+     * [onLoginResult]; until then [loginPending] is true. The
+     * password is NOT stored anywhere — on success the session
+     * token the server returned is stored instead (see
+     * [onLoginResult]). The caller stores the username in
+     * [AppSettings] first.
      */
-    fun login(user: String, apiKey: String) {
+    fun login(user: String, password: String) {
         if (!initialised) return
         loginPending = true
         status = "Logging in…"
-        Bridge.nativeRaLogin(user, apiKey)
+        Bridge.nativeRaLogin(user, password)
     }
 
-    /** Log out and clear the session state. */
+    /**
+     * Re-log in with a stored session token (the next launch
+     * after a password login). Not offered in the UI — the user
+     * only ever types a username and a password.
+     */
+    fun loginWithToken(user: String, token: String) {
+        if (!initialised) return
+        loginPending = true
+        status = "Logging in…"
+        Bridge.nativeRaLoginWithToken(user, token)
+    }
+
+    /** Log out and clear the session state, including the stored username and token. */
     fun logout() {
         if (initialised) Bridge.nativeRaLogout()
+        settings?.setRaUsername("")
+        settings?.setRaToken("")
         loggedIn = false
         loginPending = false
         username = ""
@@ -219,8 +258,17 @@ object RaClient {
         if (success) {
             username = Bridge.nativeRaLoggedInUsername() ?: ""
             status = if (username.isNotEmpty()) "Logged in as $username." else "Logged in."
+            // Keep the session token the server returned, so the
+            // next launch re-logs in without the password. The
+            // password itself is never stored.
+            Bridge.nativeRaToken()?.takeIf { it.isNotEmpty() }?.let { settings?.setRaToken(it) }
         } else {
             username = ""
+            // A rejected token is dead: clear it, so the next
+            // launch asks for the password instead of retrying
+            // the same token and failing the same way. A failed
+            // password login stores nothing in the first place.
+            settings?.setRaToken("")
             // A failure is never silent and never vague: the raw
             // rcheevos error is mapped to a message that names
             // what went wrong (see RaLoginErrors).

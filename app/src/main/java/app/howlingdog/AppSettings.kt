@@ -16,12 +16,18 @@ class AppSettings(private val store: OptionStore) {
         const val KEY_LAST_UPDATE_CHECK = "app.lastUpdateCheck" // epoch ms, as a string
         const val KEY_RUNAHEAD = "app.runahead" // "off" / "1" / "2" frames ahead
         // Phase 10 — RetroAchievements: the account the user logs
-        // in with (a username and an API key from the RA site).
-        // Both blank means logged out; achievements are simply
-        // inactive then. Stored in the app's private preferences,
-        // the standard approach for an RA client.
+        // in with. v1.1.2: a username and the session token the
+        // password login returned — the password itself is never
+        // stored anywhere. Both blank means logged out;
+        // achievements are simply inactive then. Stored in the
+        // app's private preferences, the standard approach for
+        // an RA client.
         const val KEY_RA_USERNAME = "ra.username"
-        const val KEY_RA_API_KEY = "ra.apiKey"
+        const val KEY_RA_TOKEN = "ra.token"
+        // The API-key login is gone (v1.1.2). This key name is
+        // kept only so an upgrade from v1.1.0/v1.1.1 can remove
+        // the stored key — it is never written again.
+        private const val LEGACY_RA_API_KEY = "ra.apiKey"
 
         const val DEFAULT_SHOW_BOOT = true
     }
@@ -89,10 +95,28 @@ class AppSettings(private val store: OptionStore) {
         store.put(KEY_RA_USERNAME, username)
     }
 
-    /** Phase 10 — RetroAchievements: the stored API key ("" when logged out). */
-    fun raApiKey(): String = store.get(KEY_RA_API_KEY) ?: ""
+    /**
+     * Phase 10 — RetroAchievements: the stored session token
+     * ("" when logged out). This is the token the password login
+     * returned — the password itself is never stored anywhere.
+     * The next launch re-logs in with this token, so the user
+     * only types their password when the token is rejected.
+     */
+    fun raToken(): String = store.get(KEY_RA_TOKEN) ?: ""
 
-    fun setRaApiKey(apiKey: String) {
-        store.put(KEY_RA_API_KEY, apiKey)
+    fun setRaToken(token: String) {
+        store.put(KEY_RA_TOKEN, token)
+    }
+
+    /**
+     * v1.1.2 — the API-key login is gone: remove the API key a
+     * v1.1.0/v1.1.1 install stored, so the old key is not left
+     * lying around after the login it belonged to is removed.
+     * A no-op once it is gone.
+     */
+    fun clearLegacyRaApiKey() {
+        if (store.get(LEGACY_RA_API_KEY)?.isNotEmpty() == true) {
+            store.put(LEGACY_RA_API_KEY, "")
+        }
     }
 }

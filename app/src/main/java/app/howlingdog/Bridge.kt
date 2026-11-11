@@ -86,7 +86,14 @@ object Bridge {
     // 68k mapping lives in ra_client.c. HTTP responses and the
     // achievements JSON cross as byte[] (UTF-8, encoding-safe).
     external fun nativeRaInit(): Boolean
-    external fun nativeRaLogin(username: String, apiKey: String)
+    // Password login (v1.1.2 — the API-key login is gone): the
+    // password is used once for this login and is never stored.
+    // The session token the server returns is kept instead, via
+    // nativeRaToken, and the next launch re-logs in with
+    // nativeRaLoginWithToken.
+    external fun nativeRaLogin(username: String, password: String)
+    external fun nativeRaLoginWithToken(username: String, token: String)
+    external fun nativeRaToken(): String?
     external fun nativeRaLogout()
     external fun nativeRaIsLoggedIn(): Boolean
     external fun nativeRaLoggedInUsername(): String?

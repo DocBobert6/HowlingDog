@@ -39,8 +39,24 @@ class RaLoginErrorsTest {
 
     @Test
     fun describeMapsInvalidCredentials() {
+        // v1.1.2 — the password login (the API-key login is
+        // gone): the live endpoint answers a wrong password
+        // with "Invalid user/password combination. Please try
+        // again." (verified by probe, 2026-11-11).
         assertEquals(
-            "Invalid username or API key. Check both in your RetroAchievements account settings.",
+            "Invalid username or password. Check both in your RetroAchievements account settings.",
+            RaLoginErrors.describe("Invalid user/password combination. Please try again."),
+        )
+    }
+
+    @Test
+    fun describeMapsRejectedSavedLoginToRelogin() {
+        // A stored session token the server rejects (the old
+        // "Invalid user/token combination." from the token
+        // login) can only mean the saved login is dead — the
+        // user logs in again with their password.
+        assertEquals(
+            "Your saved login is no longer valid. Log in again with your username and password.",
             RaLoginErrors.describe("Invalid user/token combination."),
         )
     }

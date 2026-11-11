@@ -82,17 +82,49 @@ class AppSettingsTest {
     fun raCredentialsDefaultToLoggedOutAndRoundTrip() {
         // Phase 10 — RetroAchievements: no credentials stored
         // means logged out (achievements simply inactive).
+        // v1.1.2: the stored credential is the session token a
+        // password login returned — the password itself is never
+        // stored anywhere, and the API-key login is gone.
         val settings = settingsWith()
         assertEquals("", settings.raUsername())
-        assertEquals("", settings.raApiKey())
+        assertEquals("", settings.raToken())
         settings.setRaUsername("PlayerOne")
-        settings.setRaApiKey("abc123key")
+        settings.setRaToken("session-token-abc")
         assertEquals("PlayerOne", settings.raUsername())
-        assertEquals("abc123key", settings.raApiKey())
+        assertEquals("session-token-abc", settings.raToken())
         // Logging out clears both.
         settings.setRaUsername("")
-        settings.setRaApiKey("")
+        settings.setRaToken("")
         assertEquals("", settings.raUsername())
-        assertEquals("", settings.raApiKey())
+        assertEquals("", settings.raToken())
+    }
+
+    @Test
+    fun legacyApiKeyIsClearedOnUpgrade() {
+        // v1.1.2 — the API-key login is gone: an API key a
+        // v1.1.0/v1.1.1 install stored must not be left behind.
+        // The legacy key name is written here, not in
+        // AppSettings, because AppSettings no longer knows it
+        // as a credential — only as the key to remove. The
+        // store's map is kept in this test so the removal itself
+        // (not just the accessors) is what is checked.
+        val map = mutableMapOf("ra.apiKey" to "old-api-key")
+        val store = object : OptionStore {
+            override fun get(key: String): String? = map[key]
+            override fun put(key: String, value: String) {
+                map[key] = value
+            }
+        }
+        val settings = AppSettings(store)
+        settings.setRaUsername("PlayerOne")
+        settings.setRaToken("session-token-abc")
+        settings.clearLegacyRaApiKey()
+        assertEquals("", map["ra.apiKey"])
+        // The username and token are untouched by the migration.
+        assertEquals("PlayerOne", settings.raUsername())
+        assertEquals("session-token-abc", settings.raToken())
+        // Clearing again is a no-op.
+        settings.clearLegacyRaApiKey()
+        assertEquals("", map["ra.apiKey"])
     }
 }

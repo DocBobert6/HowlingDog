@@ -279,23 +279,36 @@ int ra_is_ready(void) {
 /* Login                                                              */
 /* ------------------------------------------------------------------ */
 
-int ra_login(const char* username, const char* api_key, ra_result_fn result_cb, void* result_ctx) {
+/* Start one login (password or token): validate the inputs,
+ * hold the result callback, and hand the call to rcheevos.
+ * The result is always delivered through the callback, exactly
+ * once — whether the login completes asynchronously (a handle
+ * is returned) or synchronously (NULL is returned because the
+ * user state already changed). A NULL return is therefore not
+ * a failure; only the pre-validation below can fail without
+ * the callback firing. */
+static int ra_begin_login(rc_client_async_handle_t* (*begin_fn)(rc_client_t*, const char*, const char*,
+                                                                rc_client_callback_t, void*),
+                          const char* username, const char* credential,
+                          ra_result_fn result_cb, void* result_ctx) {
     ra_result_holder_t* holder;
-    if (!g_client || !username || !username[0] || !api_key || !api_key[0])
+    if (!g_client || !username || !username[0] || !credential || !credential[0])
         return -1;
     holder = (ra_result_holder_t*)malloc(sizeof(*holder));
     if (!holder)
         return -1;
     holder->fn = result_cb;
     holder->ctx = result_ctx;
-    /* The result is always delivered through the callback, exactly
-     * once — whether the login completes asynchronously (a handle
-     * is returned) or synchronously (NULL is returned because the
-     * user state already changed). A NULL return is therefore not
-     * a failure; only the pre-validation above can fail without
-     * the callback firing. */
-    rc_client_begin_login_with_token(g_client, username, api_key, ra_result_callback, holder);
+    begin_fn(g_client, username, credential, ra_result_callback, holder);
     return 0;
+}
+
+int ra_login_with_password(const char* username, const char* password, ra_result_fn result_cb, void* result_ctx) {
+    return ra_begin_login(rc_client_begin_login_with_password, username, password, result_cb, result_ctx);
+}
+
+int ra_login_with_token(const char* username, const char* token, ra_result_fn result_cb, void* result_ctx) {
+    return ra_begin_login(rc_client_begin_login_with_token, username, token, result_cb, result_ctx);
 }
 
 void ra_logout(void) {
@@ -313,6 +326,14 @@ const char* ra_logged_in_username(void) {
         return NULL;
     user = rc_client_get_user_info(g_client);
     return user ? user->username : NULL;
+}
+
+const char* ra_logged_in_token(void) {
+    const rc_client_user_t* user;
+    if (!g_client)
+        return NULL;
+    user = rc_client_get_user_info(g_client);
+    return user ? user->token : NULL;
 }
 
 /* ------------------------------------------------------------------ */

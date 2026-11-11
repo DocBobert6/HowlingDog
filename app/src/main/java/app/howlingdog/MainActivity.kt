@@ -89,6 +89,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -456,11 +458,13 @@ class MainActivity : ComponentActivity() {
         // Run-ahead (Phase 10): 0 = off, 1 or 2 frames ahead.
         // Off by default; takes effect the next time a game starts.
         var runaheadFrames by remember { mutableStateOf(appSettings.runaheadFrames()) }
-        // RetroAchievements (Phase 10): the username and API key
-        // typed in Settings. The stored values are the source of
-        // truth; these are the editable copies.
+        // RetroAchievements (Phase 10, v1.1.2): the username and
+        // password typed in Settings. The username is stored; the
+        // password lives only in this editable copy while the
+        // screen is open and is never stored anywhere — the login
+        // keeps the session token instead.
         var raUsernameText by remember { mutableStateOf(appSettings.raUsername()) }
-        var raApiKeyText by remember { mutableStateOf(appSettings.raApiKey()) }
+        var raPasswordText by remember { mutableStateOf("") }
         // The pulse state machine (each turbo button's press start time).
         val turboState = remember { TurboState() }
         var showBoot by remember { mutableStateOf(appSettings.showBoot()) }
@@ -2753,12 +2757,15 @@ class MainActivity : ComponentActivity() {
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(16.dp))
-                    // Phase 10 — RetroAchievements: sign in with a
-                    // username and an API key from the
-                    // RetroAchievements site (in your account
-                    // settings there). Logged out, achievements are
-                    // simply inactive — no errors, no nagging. The
-                    // status line below is the live session state.
+                    // Phase 10 — RetroAchievements (v1.1.2): sign
+                    // in with a username and password, like other
+                    // emulators — the API-key login is gone. The
+                    // password is used once, for this login, and is
+                    // never stored: the session token the server
+                    // returns is what the app keeps. Logged out,
+                    // achievements are simply inactive — no errors,
+                    // no nagging. The status line below is the live
+                    // session state.
                     Text("RetroAchievements", style = MaterialTheme.typography.titleSmall)
                     OutlinedTextField(
                         value = raUsernameText,
@@ -2769,11 +2776,12 @@ class MainActivity : ComponentActivity() {
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = raApiKeyText,
-                        onValueChange = { raApiKeyText = it },
+                        value = raPasswordText,
+                        onValueChange = { raPasswordText = it },
                         singleLine = true,
-                        label = { Text("API key") },
+                        label = { Text("Password") },
                         visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(8.dp))
@@ -2785,22 +2793,21 @@ class MainActivity : ComponentActivity() {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
                             val user = raUsernameText.trim()
-                            val key = raApiKeyText.trim()
+                            val password = raPasswordText
                             appSettings.setRaUsername(user)
-                            appSettings.setRaApiKey(key)
                             raUsernameText = user
-                            raApiKeyText = key
-                            if (user.isNotEmpty() && key.isNotEmpty()) {
+                            if (user.isNotEmpty() && password.isNotEmpty()) {
                                 // init logs in with the stored
-                                // credentials when it first creates
-                                // the client; a client that already
-                                // exists is logged in directly, so
+                                // token when it first creates the
+                                // client; here the typed password
+                                // is the fresh intent, so init
+                                // without the auto-login and log
+                                // in with the password directly —
                                 // the login is never started twice.
                                 if (!RaClient.initialised) {
-                                    RaClient.init(appSettings)
-                                } else {
-                                    RaClient.login(user, key)
+                                    RaClient.init(appSettings, autoLogin = false)
                                 }
+                                RaClient.login(user, password)
                             } else {
                                 RaClient.logout()
                             }
@@ -2810,9 +2817,9 @@ class MainActivity : ComponentActivity() {
                         if (RaClient.loggedIn || appSettings.raUsername().isNotEmpty()) {
                             OutlinedButton(onClick = {
                                 appSettings.setRaUsername("")
-                                appSettings.setRaApiKey("")
+                                appSettings.setRaToken("")
                                 raUsernameText = ""
-                                raApiKeyText = ""
+                                raPasswordText = ""
                                 RaClient.logout()
                             }) {
                                 Text("Log out")
@@ -2820,7 +2827,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     Text(
-                        "Sign in with your RetroAchievements account to earn achievements while you play. Your API key is in your account settings on retroachievements.org. Achievements are softcore — save states stay available. A game the site does not recognise (or a disc) simply has no achievements.",
+                        "Sign in with your RetroAchievements account to earn achievements while you play. Your password is used once to log in and is not stored on the device. Achievements are softcore — save states stay available. A game the site does not recognise (or a disc) simply has no achievements.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Row(

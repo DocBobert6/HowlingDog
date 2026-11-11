@@ -90,12 +90,21 @@ int ra_init(ra_memory_provider_fn memory_provider, void* memory_ctx,
 void ra_shutdown(void);
 int ra_is_ready(void);
 
-/* Login with a RetroAchievements username + API key. Async: the
- * result is delivered through result_cb. */
-int ra_login(const char* username, const char* api_key, ra_result_fn result_cb, void* result_ctx);
+/* Login. Password login is the only login the app offers
+ * (v1.1.2 — the API-key login is gone): the user types their
+ * RetroAchievements username and website password, the server
+ * hands back a session token, and the app stores the token
+ * (never the password) for the next launch, which re-logs in
+ * with it. Async: the result is delivered through result_cb. */
+int ra_login_with_password(const char* username, const char* password, ra_result_fn result_cb, void* result_ctx);
+int ra_login_with_token(const char* username, const char* token, ra_result_fn result_cb, void* result_ctx);
 void ra_logout(void);
 int ra_is_logged_in(void);
 const char* ra_logged_in_username(void);
+/* The session token of the logged-in user (NULL when logged
+ * out) — the token the password login returned, for the app to
+ * store and re-log in with on the next launch. */
+const char* ra_logged_in_token(void);
 
 /* Load a game (hash it and fetch its achievement set). Async:
  * the result is delivered through result_cb. console_id must
