@@ -623,20 +623,6 @@ class MainActivity : ComponentActivity() {
         val collectionStore = remember {
             CollectionStore(File(context.filesDir, "collections.txt"))
         }
-        // v1.5, feature 3 — the metadata per game (year/maker
-        // from the .NEO header, genre/players from the table),
-        // read once per library load: the header read is 256
-        // bytes per cart, so it stays on the main thread. The
-        // sort and the search both read this map.
-        val metadataByGame = remember(games) {
-            games.associate { entry ->
-                entry.mainFile to LibraryView.metadataFor(
-                    entry,
-                    coverArt.readIdentity(entry, gamesDir),
-                )
-            }
-        }
-
         // On-screen controls (stick, haptics, opacity, size, layout):
         // same SharedPreferences file as the core options, own keys.
         var hapticsLevel by hapticsLevelState
@@ -1908,528 +1894,13 @@ class MainActivity : ComponentActivity() {
             }
 
             Screen.Library -> {
-                // The whole screen scrolls (a small window or a long
-                // library must never push content out of reach).
-                // Phase 5 — the fighting-game select grid: black
-                // arcade background, chunky type, portrait tiles.
-                // Audit fix (a/f): status-bar inset padding, applied
-                // outside the scroll, so the header starts below the
-                // status bar (targetSdk 36 enforces edge-to-edge) and
-                // scrolled content can never slide under it.
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(EraUi.Palette.BACKGROUND))
-                        .statusBarsPadding()
-                        .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    // Select-screen header: the title and the
-                    // decorative countdown (resets on selection,
-                    // wraps at 0, never starts or quits anything).
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "SELECT YOUR GAME",
-                            color = Color(EraUi.Palette.GOLD),
-                            fontFamily = DisplayFontFamily,
-                            fontSize = DisplayFontSpec.LIBRARY_TITLE_SP.sp,
-                            fontWeight = FontWeight.Normal,
-                        )
-                        // Audit fix F5: the countdown is hidden on
-                        // an empty library — it only means something
-                        // once there are games to pick from, and on
-                        // an empty screen "TIME 09" reads like a
-                        // deadline. (A note under it would be clutter
-                        // drawing attention to a decorative element.)
-                        if (games.isNotEmpty()) {
-                            Text(
-                                "TIME %02d".format(timeLeft),
-                                color = if (timeLeft <= 3) Color(EraUi.Palette.WARNING) else Color(EraUi.Palette.TEXT),
-                                fontFamily = DisplayFontFamily,
-                                fontSize = DisplayFontSpec.COUNTDOWN_SP.sp,
-                                fontWeight = FontWeight.Normal,
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    // Phase 9, item 10 — update notice: shown when
-                    // a newer stable release is known and the user
-                    // has not dismissed this version. Dismissing
-                    // remembers the version (persisted), so it is
-                    // never re-offered; a newer version still
-                    // shows. The download starts only on an
-                    // explicit tap, on the current connection.
-                    val updateAvailable = UpdateChecker.availableVersion
-                    if (updateAvailable != null && updateAvailable != dismissedUpdate) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    Color(EraUi.Palette.SURFACE_RAISED),
-                                    RoundedCornerShape(8.dp),
-                                )
-                                .border(
-                                    1.dp,
-                                    Color(EraUi.Palette.GOLD_MUTED),
-                                    RoundedCornerShape(8.dp),
-                                )
-                                .padding(12.dp),
-                        ) {
-                            Text(
-                                "Update available — v$updateAvailable",
-                                color = Color(EraUi.Palette.GOLD),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            when (val progress = UpdateChecker.downloadProgress) {
-                                in 0..100 -> Text(
-                                    "Downloading… $progress%",
-                                    color = Color(EraUi.Palette.TEXT),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                -2 -> Text(
-                                    "The download failed — check your connection and try again.",
-                                    color = Color(EraUi.Palette.WARNING),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                -3 -> Text(
-                                    "That download failed its check and was deleted — try again.",
-                                    color = Color(EraUi.Palette.WARNING),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                -4 -> Text(
-                                    "Version v$updateAvailable is out, but it has no APK attached yet.",
-                                    color = Color(EraUi.Palette.TEXT),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                else -> Text(
-                                    "Downloads only when you tap Download, on your current connection.",
-                                    color = Color(EraUi.Palette.TEXT_MUTED),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (UpdateChecker.downloadUrl != null &&
-                                    UpdateChecker.downloadProgress !in 0..100
-                                ) {
-                                    ArcadeButton(text = "Download v$updateAvailable") {
-                                        UpdateChecker.downloadAndInstall(context)
-                                    }
-                                }
-                                ArcadeButton(text = "Not now") {
-                                    appSettings.setDismissedUpdateVersion(updateAvailable)
-                                    dismissedUpdate = updateAvailable
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(16.dp))
-                    }
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                Color(EraUi.Palette.SURFACE_RAISED),
-                                RoundedCornerShape(8.dp),
-                            )
-                            .padding(12.dp),
-                    ) {
-                        Text("System files", color = Color(EraUi.Palette.TEXT), style = MaterialTheme.typography.titleSmall)
-                        val b = bios
-                        if (b == null) {
-                            Text("Checking…", color = Color(EraUi.Palette.TEXT), style = MaterialTheme.typography.bodyMedium)
-                        } else {
-                            Text(
-                                "System files: ${b.readyCount} of ${b.totalCount} ready",
-                                color = Color(EraUi.Palette.TEXT),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            BiosRow("Home console", b.home)
-                            BiosRow("Arcade", b.arcade)
-                            BiosRow("Neo Geo CD", b.system1994)
-                            BiosRow("Neo Geo CDZ", b.system1995)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        ArcadeButton(text = "Pick BIOS folder") { biosPicker.launch(null) }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ArcadeButton(text = "Add game") { gamePicker.launch(arrayOf("*/*")) }
-                        ArcadeButton(text = "Add folder") { folderPicker.launch(null) }
-                        ArcadeButton(text = "Settings") {
-                            settingsFrom = Screen.Library
-                            screen = Screen.Settings
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    // v1.5, feature 3 — search, sort, collections.
-                    // The visible games are the searched, filtered,
-                    // sorted list; the portrait below keeps showing
-                    // the picked game even when the filter hides it.
-                    // Only once there are games to organise.
-                    val visibleGames: List<GameEntry> = if (games.isEmpty()) {
-                        emptyList()
-                    } else {
-                        var list = LibraryView.filterGames(games, searchText, metadataByGame)
-                        collectionFilter?.let { wanted ->
-                            list = list.filter { collectionStore.collectionFor(it.mainFile) == wanted }
-                        }
-                        LibraryView.sortGames(list, librarySort, metadataByGame)
-                    }
-                    if (games.isNotEmpty()) {
-                        OutlinedTextField(
-                            value = searchText,
-                            onValueChange = { searchText = it },
-                            singleLine = true,
-                            label = { Text("Search") },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        ControlDropdownRow(
-                            "Sort",
-                            listOf(
-                                "NAME" to "Name",
-                                "YEAR_NEW" to "Newest",
-                                "YEAR_OLD" to "Oldest",
-                                "RECENT" to "Recently played",
-                                "SYSTEM" to "System",
-                            ),
-                            librarySort.name,
-                        ) { librarySort = LibrarySort.valueOf(it) }
-                        // Collection chips: All, then each collection
-                        // in use. The row scrolls sideways, so a long
-                        // list of collections never wraps the screen.
-                        if (collections.isNotEmpty()) {
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                for (label in listOf("All") + collections) {
-                                    val picked = if (label == "All") {
-                                        collectionFilter == null
-                                    } else {
-                                        collectionFilter == label
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .height(28.dp)
-                                            .clickable {
-                                                collectionFilter = if (label == "All") null else label
-                                            }
-                                            .background(
-                                                if (picked) Color(EraUi.Palette.GOLD)
-                                                else Color(EraUi.Palette.SURFACE_RAISED),
-                                                RoundedCornerShape(2.dp),
-                                            )
-                                            .border(
-                                                1.dp,
-                                                if (picked) Color(EraUi.Palette.GOLD)
-                                                else Color(EraUi.Palette.GOLD_MUTED),
-                                                RoundedCornerShape(2.dp),
-                                            )
-                                            .padding(horizontal = 14.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            label,
-                                            color = if (picked) Color(EraUi.Palette.ON_GOLD)
-                                            else Color(EraUi.Palette.TEXT),
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(16.dp))
-                    }
-                    if (games.isEmpty()) {
-                        // Empty state: the icon, then the prompt.
-                        Image(
-                            painter = painterResource(R.drawable.howlingdog_icon),
-                            contentDescription = "HowlingDog icon",
-                            modifier = Modifier
-                                .fillMaxWidth(0.5f)
-                                .aspectRatio(1f),
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            "No games yet. Add a game to start.",
-                            color = Color(EraUi.Palette.TEXT),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    } else {
-                        // The picked game, big in the middle.
-                        val selected = selectedGame
-                        if (selected != null) {
-                            SelectedPortrait(
-                                entry = selected,
-                                onPlay = { startGame(selected) },
-                                onMode = { modePickerFor = selected },
-                                onRemove = { confirmRemove = selected },
-                                onRename = {
-                                    renameFor = selected
-                                    renameText = selected.effectiveName
-                                },
-                                onSettings = {
-                                    perGameFor = selected
-                                    screen = Screen.GameSettings
-                                },
-                                // v1.5, feature 3 — the metadata
-                                // line ("1998 · SNK · Fighting · 2
-                                // players", unknown parts omitted)
-                                // and the collection picker.
-                                metadataLine = metadataByGame[selected.mainFile]
-                                    ?.displayLine()?.takeIf { it.isNotEmpty() },
-                                collectionName = collectionStore.collectionFor(selected.mainFile),
-                                onCollection = {
-                                    collectionFor = selected
-                                    collectionText = ""
-                                },
-                                cover = covers[selected.mainFile],
-                            )
-                            Spacer(Modifier.height(12.dp))
-                        }
-                        if (visibleGames.isEmpty()) {
-                            Text(
-                                "No games match.",
-                                color = Color(EraUi.Palette.TEXT),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        } else {
-                        // The grid: plain Rows in the scrolling
-                        // Column, not a lazy list — the screen
-                        // itself scrolls, so every tile is composed
-                        // and reachable. Fine for a v1 library;
-                        // revisit if libraries grow very large.
-                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                            val cols = if (maxWidth > 600.dp) 4 else 3
-                            Column {
-                                for (row in visibleGames.chunked(cols)) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        for (game in row) {
-                                            GameTile(
-                                                entry = game,
-                                                selected = game.mainFile == selected?.mainFile,
-                                                onSelect = { selectedMainFile = game.mainFile },
-                                                onTogglePin = { togglePin(game) },
-                                                modifier = Modifier.weight(1f),
-                                                cover = covers[game.mainFile],
-                                            )
-                                        }
-                                        repeat(cols - row.size) {
-                                            Spacer(Modifier.weight(1f))
-                                        }
-                                    }
-                                    Spacer(Modifier.height(8.dp))
-                                }
-                            }
-                        }
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Text(status, color = Color(EraUi.Palette.TEXT), style = MaterialTheme.typography.bodyMedium)
-                }
-                val toRemove = confirmRemove
-                if (toRemove != null) {
-                    AlertDialog(
-                        onDismissRequest = { confirmRemove = null },
-                        title = { Text("Remove ${toRemove.effectiveName}?") },
-                        text = { Text("This deletes its files from the library.") },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    library.remove(toRemove)
-                                    withContext(Dispatchers.Main) {
-                                        confirmRemove = null
-                                        refreshLibrary()
-                                        status = "Removed ${toRemove.effectiveName}."
-                                    }
-                                }
-                            }) { Text("Remove") }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { confirmRemove = null }) {
-                                Text("Cancel")
-                            }
-                        },
-                    )
-                }
-                val modeGame = modePickerFor
-                if (modeGame != null) {
-                    AlertDialog(
-                        onDismissRequest = { modePickerFor = null },
-                        title = { Text("System for ${modeGame.effectiveName}") },
-                        text = {
-                            Column {
-                                Text(
-                                    "Takes effect the next time this game starts.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                for (mode in modesFor(modeGame)) {
-                                    TextButton(onClick = {
-                                        val target = modeGame
-                                        lifecycleScope.launch(Dispatchers.IO) {
-                                            library.setMode(target, mode)
-                                            withContext(Dispatchers.Main) {
-                                                modePickerFor = null
-                                                refreshLibrary()
-                                                status = "${target.effectiveName}: ${modeLabel(mode)}."
-                                            }
-                                        }
-                                    }) {
-                                        Text(
-                                            modeLabel(mode) +
-                                                if (mode == modeGame.effectiveMode) " ✓" else "",
-                                        )
-                                    }
-                                }
-                                TextButton(onClick = {
-                                    val target = modeGame
-                                    lifecycleScope.launch(Dispatchers.IO) {
-                                        library.setMode(target, null)
-                                        withContext(Dispatchers.Main) {
-                                            modePickerFor = null
-                                            refreshLibrary()
-                                            status = "${target.effectiveName}: default system."
-                                        }
-                                    }
-                                }) {
-                                    Text("Use default")
-                                }
-                            }
-                        },
-                        confirmButton = {},
-                        dismissButton = {
-                            TextButton(onClick = { modePickerFor = null }) {
-                                Text("Cancel")
-                            }
-                        },
-                    )
-                }
-                // v1.5, feature 3 — pick a collection for the
-                // game, or type a new one. One collection per
-                // game; "No collection" takes it out again. Saving
-                // an empty name clears it, like the rename dialog.
-                val collectionGame = collectionFor
-                if (collectionGame != null) {
-                    val current = collectionStore.collectionFor(collectionGame.mainFile)
-                    AlertDialog(
-                        onDismissRequest = { collectionFor = null },
-                        title = { Text("Collection for ${collectionGame.effectiveName}") },
-                        text = {
-                            Column {
-                                for (name in collections) {
-                                    TextButton(onClick = {
-                                        val target = collectionGame
-                                        lifecycleScope.launch(Dispatchers.IO) {
-                                            collectionStore.setCollection(target.mainFile, name)
-                                            withContext(Dispatchers.Main) {
-                                                collectionFor = null
-                                                refreshLibrary()
-                                                status = "${target.effectiveName} is in $name."
-                                            }
-                                        }
-                                    }) {
-                                        Text(name + if (name == current) " ✓" else "")
-                                    }
-                                }
-                                TextButton(onClick = {
-                                    val target = collectionGame
-                                    lifecycleScope.launch(Dispatchers.IO) {
-                                        collectionStore.setCollection(target.mainFile, null)
-                                        withContext(Dispatchers.Main) {
-                                            collectionFor = null
-                                            refreshLibrary()
-                                            status = "${target.effectiveName} has no collection."
-                                        }
-                                    }
-                                }) { Text("No collection") }
-                                Spacer(Modifier.height(8.dp))
-                                OutlinedTextField(
-                                    value = collectionText,
-                                    onValueChange = { collectionText = it },
-                                    singleLine = true,
-                                    label = { Text("New collection…") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                        },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                val target = collectionGame
-                                val typed = collectionText
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    collectionStore.setCollection(target.mainFile, typed)
-                                    withContext(Dispatchers.Main) {
-                                        collectionFor = null
-                                        collectionText = ""
-                                        refreshLibrary()
-                                        status = if (typed.isBlank()) {
-                                            "${target.effectiveName} has no collection."
-                                        } else {
-                                            "${target.effectiveName} is in ${typed.trim()}."
-                                        }
-                                    }
-                                }
-                            }) { Text("Save") }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { collectionFor = null }) { Text("Cancel") }
-                        },
-                    )
-                }
-                // Phase 9, item 4 — rename the picked game. Save
-                // with an empty name clears the custom name, so the
-                // game shows its original name again.
-                val renameTarget = renameFor
-                if (renameTarget != null) {
-                    AlertDialog(
-                        onDismissRequest = { renameFor = null },
-                        title = { Text("Rename ${renameTarget.effectiveName}") },
-                        text = {
-                            OutlinedTextField(
-                                value = renameText,
-                                onValueChange = { renameText = it },
-                                singleLine = true,
-                                label = { Text("Name") },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                val target = renameTarget
-                                val typed = renameText
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    val updated = library.setCustomName(target, typed)
-                                    withContext(Dispatchers.Main) {
-                                        renameFor = null
-                                        refreshLibrary()
-                                        status = if (updated.customName == null) {
-                                            "Back to ${updated.displayName}."
-                                        } else {
-                                            "Renamed to ${updated.effectiveName}."
-                                        }
-                                    }
-                                }
-                            }) { Text("Save") }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { renameFor = null }) {
-                                Text("Cancel")
-                            }
-                        },
-                    )
-                }
+                LibraryScreen(
+                    library = library,
+                    collectionStore = collectionStore,
+                    coverArt = coverArt,
+                    gamesDir = gamesDir,
+                    refreshLibrary = { refreshLibrary() },
+                )
             }
 
             Screen.Setup -> {
@@ -2911,6 +2382,587 @@ class MainActivity : ComponentActivity() {
                 // SNK disclaimer. Back returns to Settings.
                 LicencesScreen(onBack = { screen = Screen.Settings })
             }
+        }
+    }
+
+    // v1.5 merge — the library screen, split out of HowlingDogUi.
+    // After the v1.3.1 split + hoist landed in main, HowlingDogUi
+    // was still 266 registers (the v1.5 library overhaul lives in
+    // the Library branch, which stayed in HowlingDogUi). Splitting
+    // it out drops the method under the 255-register limit. Shared
+    // states are Activity-level lazy fields, re-delegated with `by`;
+    // the objects arrive as params so their `remember` lifecycle in
+    // HowlingDogUi is unchanged. The body below is HowlingDogUi's
+    // Library branch verbatim.
+    @Composable
+    private fun LibraryScreen(
+        library: GameLibrary,
+        collectionStore: CollectionStore,
+        coverArt: CoverArt,
+        gamesDir: File,
+        refreshLibrary: () -> Unit,
+    ) {
+        val context = LocalContext.current
+        var screen by screenState
+        var settingsFrom by settingsFromState
+        var games by gamesState
+        var bios by biosState
+        var status by statusState
+        var timeLeft by timeLeftState
+        var searchText by searchTextState
+        var librarySort by librarySortState
+        var collectionFilter by collectionFilterState
+        var collections by collectionsState
+        var collectionFor by collectionForState
+        var collectionText by collectionTextState
+        var selectedMainFile by selectedMainFileState
+        var confirmRemove by confirmRemoveState
+        var modePickerFor by modePickerForState
+        var perGameFor by perGameForState
+        var renameFor by renameForState
+        var renameText by renameTextState
+        var dismissedUpdate by dismissedUpdateState
+        var covers by coversState
+
+        // The select grid's picked game is a main-file name,
+        // derived fresh from `games`, so it never goes stale
+        // when the library reloads.
+        val selectedGame =
+            games.firstOrNull { it.mainFile == selectedMainFile } ?: games.firstOrNull()
+        // The metadata per game (year/maker from the .NEO
+        // header, genre/players from the table), read once per
+        // library load: the header read is 256 bytes per cart,
+        // so it stays on the main thread. The sort and the
+        // search both read this map.
+        val metadataByGame = remember(games) {
+            games.associate { entry ->
+                entry.mainFile to LibraryView.metadataFor(
+                    entry,
+                    coverArt.readIdentity(entry, gamesDir),
+                )
+            }
+        }
+        // The whole screen scrolls (a small window or a long
+        // library must never push content out of reach).
+        // Phase 5 — the fighting-game select grid: black
+        // arcade background, chunky type, portrait tiles.
+        // Audit fix (a/f): status-bar inset padding, applied
+        // outside the scroll, so the header starts below the
+        // status bar (targetSdk 36 enforces edge-to-edge) and
+        // scrolled content can never slide under it.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(EraUi.Palette.BACKGROUND))
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // Select-screen header: the title and the
+            // decorative countdown (resets on selection,
+            // wraps at 0, never starts or quits anything).
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "SELECT YOUR GAME",
+                    color = Color(EraUi.Palette.GOLD),
+                    fontFamily = DisplayFontFamily,
+                    fontSize = DisplayFontSpec.LIBRARY_TITLE_SP.sp,
+                    fontWeight = FontWeight.Normal,
+                )
+                // Audit fix F5: the countdown is hidden on
+                // an empty library — it only means something
+                // once there are games to pick from, and on
+                // an empty screen "TIME 09" reads like a
+                // deadline. (A note under it would be clutter
+                // drawing attention to a decorative element.)
+                if (games.isNotEmpty()) {
+                    Text(
+                        "TIME %02d".format(timeLeft),
+                        color = if (timeLeft <= 3) Color(EraUi.Palette.WARNING) else Color(EraUi.Palette.TEXT),
+                        fontFamily = DisplayFontFamily,
+                        fontSize = DisplayFontSpec.COUNTDOWN_SP.sp,
+                        fontWeight = FontWeight.Normal,
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            // Phase 9, item 10 — update notice: shown when
+            // a newer stable release is known and the user
+            // has not dismissed this version. Dismissing
+            // remembers the version (persisted), so it is
+            // never re-offered; a newer version still
+            // shows. The download starts only on an
+            // explicit tap, on the current connection.
+            val updateAvailable = UpdateChecker.availableVersion
+            if (updateAvailable != null && updateAvailable != dismissedUpdate) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Color(EraUi.Palette.SURFACE_RAISED),
+                            RoundedCornerShape(8.dp),
+                        )
+                        .border(
+                            1.dp,
+                            Color(EraUi.Palette.GOLD_MUTED),
+                            RoundedCornerShape(8.dp),
+                        )
+                        .padding(12.dp),
+                ) {
+                    Text(
+                        "Update available — v$updateAvailable",
+                        color = Color(EraUi.Palette.GOLD),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    when (val progress = UpdateChecker.downloadProgress) {
+                        in 0..100 -> Text(
+                            "Downloading… $progress%",
+                            color = Color(EraUi.Palette.TEXT),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        -2 -> Text(
+                            "The download failed — check your connection and try again.",
+                            color = Color(EraUi.Palette.WARNING),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        -3 -> Text(
+                            "That download failed its check and was deleted — try again.",
+                            color = Color(EraUi.Palette.WARNING),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        -4 -> Text(
+                            "Version v$updateAvailable is out, but it has no APK attached yet.",
+                            color = Color(EraUi.Palette.TEXT),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        else -> Text(
+                            "Downloads only when you tap Download, on your current connection.",
+                            color = Color(EraUi.Palette.TEXT_MUTED),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (UpdateChecker.downloadUrl != null &&
+                            UpdateChecker.downloadProgress !in 0..100
+                        ) {
+                            ArcadeButton(text = "Download v$updateAvailable") {
+                                UpdateChecker.downloadAndInstall(context)
+                            }
+                        }
+                        ArcadeButton(text = "Not now") {
+                            appSettings.setDismissedUpdateVersion(updateAvailable)
+                            dismissedUpdate = updateAvailable
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Color(EraUi.Palette.SURFACE_RAISED),
+                        RoundedCornerShape(8.dp),
+                    )
+                    .padding(12.dp),
+            ) {
+                Text("System files", color = Color(EraUi.Palette.TEXT), style = MaterialTheme.typography.titleSmall)
+                val b = bios
+                if (b == null) {
+                    Text("Checking…", color = Color(EraUi.Palette.TEXT), style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    Text(
+                        "System files: ${b.readyCount} of ${b.totalCount} ready",
+                        color = Color(EraUi.Palette.TEXT),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    BiosRow("Home console", b.home)
+                    BiosRow("Arcade", b.arcade)
+                    BiosRow("Neo Geo CD", b.system1994)
+                    BiosRow("Neo Geo CDZ", b.system1995)
+                }
+                Spacer(Modifier.height(8.dp))
+                ArcadeButton(text = "Pick BIOS folder") { biosPicker.launch(null) }
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ArcadeButton(text = "Add game") { gamePicker.launch(arrayOf("*/*")) }
+                ArcadeButton(text = "Add folder") { folderPicker.launch(null) }
+                ArcadeButton(text = "Settings") {
+                    settingsFrom = Screen.Library
+                    screen = Screen.Settings
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            // v1.5, feature 3 — search, sort, collections.
+            // The visible games are the searched, filtered,
+            // sorted list; the portrait below keeps showing
+            // the picked game even when the filter hides it.
+            // Only once there are games to organise.
+            val visibleGames: List<GameEntry> = if (games.isEmpty()) {
+                emptyList()
+            } else {
+                var list = LibraryView.filterGames(games, searchText, metadataByGame)
+                collectionFilter?.let { wanted ->
+                    list = list.filter { collectionStore.collectionFor(it.mainFile) == wanted }
+                }
+                LibraryView.sortGames(list, librarySort, metadataByGame)
+            }
+            if (games.isNotEmpty()) {
+                OutlinedTextField(
+                    value = searchText,
+                    onValueChange = { searchText = it },
+                    singleLine = true,
+                    label = { Text("Search") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                ControlDropdownRow(
+                    "Sort",
+                    listOf(
+                        "NAME" to "Name",
+                        "YEAR_NEW" to "Newest",
+                        "YEAR_OLD" to "Oldest",
+                        "RECENT" to "Recently played",
+                        "SYSTEM" to "System",
+                    ),
+                    librarySort.name,
+                ) { librarySort = LibrarySort.valueOf(it) }
+                // Collection chips: All, then each collection
+                // in use. The row scrolls sideways, so a long
+                // list of collections never wraps the screen.
+                if (collections.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        for (label in listOf("All") + collections) {
+                            val picked = if (label == "All") {
+                                collectionFilter == null
+                            } else {
+                                collectionFilter == label
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .height(28.dp)
+                                    .clickable {
+                                        collectionFilter = if (label == "All") null else label
+                                    }
+                                    .background(
+                                        if (picked) Color(EraUi.Palette.GOLD)
+                                        else Color(EraUi.Palette.SURFACE_RAISED),
+                                        RoundedCornerShape(2.dp),
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (picked) Color(EraUi.Palette.GOLD)
+                                        else Color(EraUi.Palette.GOLD_MUTED),
+                                        RoundedCornerShape(2.dp),
+                                    )
+                                    .padding(horizontal = 14.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    label,
+                                    color = if (picked) Color(EraUi.Palette.ON_GOLD)
+                                    else Color(EraUi.Palette.TEXT),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+            if (games.isEmpty()) {
+                // Empty state: the icon, then the prompt.
+                Image(
+                    painter = painterResource(R.drawable.howlingdog_icon),
+                    contentDescription = "HowlingDog icon",
+                    modifier = Modifier
+                        .fillMaxWidth(0.5f)
+                        .aspectRatio(1f),
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "No games yet. Add a game to start.",
+                    color = Color(EraUi.Palette.TEXT),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                // The picked game, big in the middle.
+                val selected = selectedGame
+                if (selected != null) {
+                    SelectedPortrait(
+                        entry = selected,
+                        onPlay = { startGame(selected) },
+                        onMode = { modePickerFor = selected },
+                        onRemove = { confirmRemove = selected },
+                        onRename = {
+                            renameFor = selected
+                            renameText = selected.effectiveName
+                        },
+                        onSettings = {
+                            perGameFor = selected
+                            screen = Screen.GameSettings
+                        },
+                        // v1.5, feature 3 — the metadata
+                        // line ("1998 · SNK · Fighting · 2
+                        // players", unknown parts omitted)
+                        // and the collection picker.
+                        metadataLine = metadataByGame[selected.mainFile]
+                            ?.displayLine()?.takeIf { it.isNotEmpty() },
+                        collectionName = collectionStore.collectionFor(selected.mainFile),
+                        onCollection = {
+                            collectionFor = selected
+                            collectionText = ""
+                        },
+                        cover = covers[selected.mainFile],
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                if (visibleGames.isEmpty()) {
+                    Text(
+                        "No games match.",
+                        color = Color(EraUi.Palette.TEXT),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                } else {
+                // The grid: plain Rows in the scrolling
+                // Column, not a lazy list — the screen
+                // itself scrolls, so every tile is composed
+                // and reachable. Fine for a v1 library;
+                // revisit if libraries grow very large.
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val cols = if (maxWidth > 600.dp) 4 else 3
+                    Column {
+                        for (row in visibleGames.chunked(cols)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                for (game in row) {
+                                    GameTile(
+                                        entry = game,
+                                        selected = game.mainFile == selected?.mainFile,
+                                        onSelect = { selectedMainFile = game.mainFile },
+                                        onTogglePin = { togglePin(game) },
+                                        modifier = Modifier.weight(1f),
+                                        cover = covers[game.mainFile],
+                                    )
+                                }
+                                repeat(cols - row.size) {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+                    }
+                }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(status, color = Color(EraUi.Palette.TEXT), style = MaterialTheme.typography.bodyMedium)
+        }
+        val toRemove = confirmRemove
+        if (toRemove != null) {
+            AlertDialog(
+                onDismissRequest = { confirmRemove = null },
+                title = { Text("Remove ${toRemove.effectiveName}?") },
+                text = { Text("This deletes its files from the library.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            library.remove(toRemove)
+                            withContext(Dispatchers.Main) {
+                                confirmRemove = null
+                                refreshLibrary()
+                                status = "Removed ${toRemove.effectiveName}."
+                            }
+                        }
+                    }) { Text("Remove") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmRemove = null }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
+        val modeGame = modePickerFor
+        if (modeGame != null) {
+            AlertDialog(
+                onDismissRequest = { modePickerFor = null },
+                title = { Text("System for ${modeGame.effectiveName}") },
+                text = {
+                    Column {
+                        Text(
+                            "Takes effect the next time this game starts.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        for (mode in modesFor(modeGame)) {
+                            TextButton(onClick = {
+                                val target = modeGame
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    library.setMode(target, mode)
+                                    withContext(Dispatchers.Main) {
+                                        modePickerFor = null
+                                        refreshLibrary()
+                                        status = "${target.effectiveName}: ${modeLabel(mode)}."
+                                    }
+                                }
+                            }) {
+                                Text(
+                                    modeLabel(mode) +
+                                        if (mode == modeGame.effectiveMode) " ✓" else "",
+                                )
+                            }
+                        }
+                        TextButton(onClick = {
+                            val target = modeGame
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                library.setMode(target, null)
+                                withContext(Dispatchers.Main) {
+                                    modePickerFor = null
+                                    refreshLibrary()
+                                    status = "${target.effectiveName}: default system."
+                                }
+                            }
+                        }) {
+                            Text("Use default")
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { modePickerFor = null }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
+        // v1.5, feature 3 — pick a collection for the
+        // game, or type a new one. One collection per
+        // game; "No collection" takes it out again. Saving
+        // an empty name clears it, like the rename dialog.
+        val collectionGame = collectionFor
+        if (collectionGame != null) {
+            val current = collectionStore.collectionFor(collectionGame.mainFile)
+            AlertDialog(
+                onDismissRequest = { collectionFor = null },
+                title = { Text("Collection for ${collectionGame.effectiveName}") },
+                text = {
+                    Column {
+                        for (name in collections) {
+                            TextButton(onClick = {
+                                val target = collectionGame
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    collectionStore.setCollection(target.mainFile, name)
+                                    withContext(Dispatchers.Main) {
+                                        collectionFor = null
+                                        refreshLibrary()
+                                        status = "${target.effectiveName} is in $name."
+                                    }
+                                }
+                            }) {
+                                Text(name + if (name == current) " ✓" else "")
+                            }
+                        }
+                        TextButton(onClick = {
+                            val target = collectionGame
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                collectionStore.setCollection(target.mainFile, null)
+                                withContext(Dispatchers.Main) {
+                                    collectionFor = null
+                                    refreshLibrary()
+                                    status = "${target.effectiveName} has no collection."
+                                }
+                            }
+                        }) { Text("No collection") }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = collectionText,
+                            onValueChange = { collectionText = it },
+                            singleLine = true,
+                            label = { Text("New collection…") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val target = collectionGame
+                        val typed = collectionText
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            collectionStore.setCollection(target.mainFile, typed)
+                            withContext(Dispatchers.Main) {
+                                collectionFor = null
+                                collectionText = ""
+                                refreshLibrary()
+                                status = if (typed.isBlank()) {
+                                    "${target.effectiveName} has no collection."
+                                } else {
+                                    "${target.effectiveName} is in ${typed.trim()}."
+                                }
+                            }
+                        }
+                    }) { Text("Save") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { collectionFor = null }) { Text("Cancel") }
+                },
+            )
+        }
+        // Phase 9, item 4 — rename the picked game. Save
+        // with an empty name clears the custom name, so the
+        // game shows its original name again.
+        val renameTarget = renameFor
+        if (renameTarget != null) {
+            AlertDialog(
+                onDismissRequest = { renameFor = null },
+                title = { Text("Rename ${renameTarget.effectiveName}") },
+                text = {
+                    OutlinedTextField(
+                        value = renameText,
+                        onValueChange = { renameText = it },
+                        singleLine = true,
+                        label = { Text("Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val target = renameTarget
+                        val typed = renameText
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            val updated = library.setCustomName(target, typed)
+                            withContext(Dispatchers.Main) {
+                                renameFor = null
+                                refreshLibrary()
+                                status = if (updated.customName == null) {
+                                    "Back to ${updated.displayName}."
+                                } else {
+                                    "Renamed to ${updated.effectiveName}."
+                                }
+                            }
+                        }
+                    }) { Text("Save") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { renameFor = null }) {
+                        Text("Cancel")
+                    }
+                },
+            )
         }
     }
 
