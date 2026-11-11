@@ -3104,12 +3104,19 @@ class MainActivity : ComponentActivity() {
                 LibraryView.sortGames(list, librarySort, metadataByGame)
             }
             if (games.isNotEmpty()) {
+                // 2.0.1, audit fix 7 — a plain OutlinedTextField
+                // renders 56dp tall, which read like a text area
+                // next to the 40dp library buttons. Pin it to
+                // the same height as the Add game / Add folder /
+                // Settings buttons (the Material3 Button minimum).
                 OutlinedTextField(
                     value = searchText,
                     onValueChange = { searchText = it },
                     singleLine = true,
                     label = { Text("Search") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp),
                 )
                 Spacer(Modifier.height(8.dp))
                 ControlDropdownRow(
