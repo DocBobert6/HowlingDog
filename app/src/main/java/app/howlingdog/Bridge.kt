@@ -56,6 +56,14 @@ object Bridge {
     external fun nativeSerialize(): ByteArray?
     external fun nativeUnserialize(data: ByteArray): Boolean
 
+    /**
+     * Flush the in-memory save data (memory card / NVRAM / cartridge
+     * RAM / CD backup RAM) to the save directory without unloading
+     * the game; only call while the emulation thread is paused.
+     * False when no game is loaded or a save failed.
+     */
+    external fun nativeFlushSaveData(): Boolean
+
     external fun nativeUnloadGame()
     external fun nativeDeinit()
     external fun nativeLastError(): String

@@ -7,6 +7,8 @@ import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Phase 2 spike session: owns the emulation thread, the audio thread,
@@ -97,6 +99,32 @@ class PlayerSession(
                 break
             }
         }
+        // Phase 9, item 5: flush the memory card (and NVRAM /
+        // cartridge RAM / CD backup RAM) to disk now, while the
+        // game is paused, so progress survives even if the app is
+        // killed before quit. The flush runs on the emu thread via
+        // a paused task — it can never race retro_run — and pause()
+        // waits for it (2 s timeout, same as the quick-save path),
+        // so the card is on disk by the time pause() returns. A
+        // failed flush only logs: quitting still writes the card
+        // as before, and the next pause retries it.
+        val flushDone = CountDownLatch(1)
+        var flushOk = false
+        postPausedTask {
+            flushOk = try {
+                Bridge.nativeFlushSaveData()
+            } catch (_: Exception) {
+                false
+            }
+            flushDone.countDown()
+        }
+        try {
+            flushDone.await(2, TimeUnit.SECONDS)
+        } catch (_: InterruptedException) {
+            // The flush may still land; quitting rewrites the card.
+        }
+        if (!flushOk)
+            Log.w(TAG, "memory-card flush on pause failed")
         audioTrack?.let {
             try {
                 it.pause()

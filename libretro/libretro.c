@@ -1385,10 +1385,18 @@ bool retro_load_game(const struct retro_game_info *info) {
     return true;
 }
 
-void retro_unload_game(void) {
-    // Save NVRAM, Cartridge RAM, Memory Card, and CD Backup RAM
+/* Save NVRAM, Cartridge RAM, Memory Card, and CD Backup RAM to the
+ * save directory. Types that do not apply to the loaded game (the
+ * memory card for a CD game, backup RAM for a cart, NVRAM for AES)
+ * are skipped by geo_savedata_save itself (return 2). Returns false
+ * if any applicable save failed. Used by retro_unload_game() on
+ * quit, and by geo_flush_savedata() on pause (HowlingDog Phase 9,
+ * item 5). Only call while no retro_run() is in flight:
+ * geo_savedata_save reads the core's live RAM buffers. */
+static bool save_all_savedata(void) {
     char savename[292];
     char *fext[] = { "nv", "srm", "mcr", "brm" };
+    bool ok = true;
 
     for (unsigned i = 0; i < GEO_SAVEDATA_MAX; ++i) {
         snprintf(savename, sizeof(savename), "%s%c%s.%s",
@@ -1398,9 +1406,29 @@ void retro_unload_game(void) {
 
         if (savestat == 1)
             log_cb(RETRO_LOG_DEBUG, "Saved: %s\n", savename);
-        else if (savestat != 2)
+        else if (savestat != 2) {
             log_cb(RETRO_LOG_DEBUG, "Save Failed: %s\n", savename);
+            ok = false;
+        }
     }
+    return ok;
+}
+
+/* HowlingDog extension (not part of the libretro API): flush the
+ * in-memory save data to disk now, without unloading the game — the
+ * same write retro_unload_game() does on quit. Exported via
+ * libretro/link.T; the bridge calls it while the game is paused, so
+ * progress survives even if the app is killed before quit. False
+ * when there is no save directory (no game loaded) or a save
+ * failed; quitting still writes the card as before. */
+bool geo_flush_savedata(void) {
+    if (!savedir)
+        return false;
+    return save_all_savedata();
+}
+
+void retro_unload_game(void) {
+    save_all_savedata();
 
     if (cd_mode) {
         // CD mode: close disc and cleanup CD subsystem

@@ -113,7 +113,7 @@ jobs:
           fi
           NM="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
           EXPORTS=$("$NM" -D "$SO")
-          for sym in retro_api_version retro_get_system_info retro_get_system_av_info retro_set_environment retro_set_video_refresh retro_set_audio_sample_batch retro_set_input_poll retro_set_input_state retro_init retro_deinit retro_load_game retro_run retro_reset retro_serialize_size retro_serialize retro_unserialize retro_get_memory_data retro_get_memory_size; do
+          for sym in retro_api_version retro_get_system_info retro_get_system_av_info retro_set_environment retro_set_video_refresh retro_set_audio_sample_batch retro_set_input_poll retro_set_input_state retro_init retro_deinit retro_load_game retro_run retro_reset retro_serialize_size retro_serialize retro_unserialize retro_get_memory_data retro_get_memory_size geo_flush_savedata; do
             echo "$EXPORTS" | grep -q " $sym" || {
               echo "missing export: $sym"
               echo "$EXPORTS"
@@ -163,14 +163,14 @@ jobs:
             "$READELF" -d "$BRIDGE"
             exit 1
           }
-          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeSetOption nativeSerialize nativeUnserialize nativeUnloadGame nativeDeinit nativeLastError; do
+          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeSetOption nativeSerialize nativeUnserialize nativeFlushSaveData nativeUnloadGame nativeDeinit nativeLastError; do
             "$NM" -D "$BRIDGE" | grep -q "Java_app_howlingdog_Bridge_$sym" || {
               echo "missing JNI export: $sym"
               "$NM" -D "$BRIDGE"
               exit 1
             }
           done
-          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 13 JNI entry points present"
+          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 14 JNI entry points present"
 
       - name: Stage native libs for Gradle
         run: |

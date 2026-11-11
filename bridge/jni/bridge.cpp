@@ -42,6 +42,12 @@
 
 #include "libretro.h"
 
+// HowlingDog extension defined in libretro/libretro.c and exported
+// via libretro/link.T: flush the in-memory save data (NVRAM /
+// cartridge RAM / memory card / CD backup RAM) to disk without
+// unloading the game. Not part of the libretro API.
+extern "C" bool geo_flush_savedata(void);
+
 #define LOG_TAG "HowlingDog"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
@@ -606,6 +612,23 @@ Java_app_howlingdog_Bridge_nativeUnserialize(JNIEnv *env, jobject /* thiz */,
     bool ok = retro_unserialize((const void *)buf, (size_t)len);
     env->ReleaseByteArrayElements(data, buf, JNI_ABORT);
     return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+// Flush save data (Phase 9, item 5): writes the in-memory NVRAM /
+// cartridge RAM / memory card / CD backup RAM to the save directory
+// without unloading the game. Must only be called while the
+// emulation thread is paused — never concurrently with retro_run —
+// for the same reason as the save-state calls above:
+// geo_savedata_save reads the core's live RAM buffers. False when
+// no game is loaded or a save failed; quitting still writes the
+// card as before, so a failed flush here loses nothing that quit
+// would not also retry.
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeFlushSaveData(JNIEnv * /* env */,
+                                               jobject /* thiz */) {
+    if (!g_inited || !g_loaded)
+        return JNI_FALSE;
+    return geo_flush_savedata() ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
