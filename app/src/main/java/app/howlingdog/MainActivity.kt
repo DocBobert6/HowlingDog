@@ -81,7 +81,6 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
-import androidx.compose.ui.input.pointer.awaitPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1613,8 +1612,10 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .background(Color.Black)
                         .pointerInput(topBar) {
-                            detectTopEdgeSwipeDown(topEdgePx, swipeMinPx) {
-                                onTopEdgeSwipe.value()
+                            awaitPointerEventScope {
+                                detectTopEdgeSwipeDown(topEdgePx, swipeMinPx) {
+                                    onTopEdgeSwipe.value()
+                                }
                             }
                         },
                 ) {
@@ -3428,10 +3429,19 @@ private suspend fun AwaitPointerEventScope.detectTopEdgeSwipeDown(
         val event = awaitPointerEvent()
         for (change in event.changes) {
             when {
-                change.changedToDown() && change.position.y <= edgePx -> {
-                    startY[change.id] = change.position.y
+                // A fresh press: record it if it started in the
+                // strip, and clear any stale entry (and the fired
+                // flag) if it started below it — so a reused
+                // pointer id can never fire on old state.
+                change.pressed && !change.previousPressed -> {
+                    if (change.position.y <= edgePx) {
+                        startY[change.id] = change.position.y
+                    } else {
+                        startY.remove(change.id)
+                    }
+                    fired.remove(change.id)
                 }
-                change.changedToUpOrCanceled() -> {
+                !change.pressed && change.previousPressed -> {
                     startY.remove(change.id)
                     fired.remove(change.id)
                 }
