@@ -296,6 +296,14 @@ class PlayerSession(
             } finally {
                 inFrame = false
             }
+            // Phase 10 — RetroAchievements: one evaluation per
+            // displayed frame, after the frame run. With run-ahead
+            // on, the re-simulation runs inside
+            // nativeRunFrameRunahead must not evaluate — they do
+            // not, because this call is here, once, after the
+            // displayed frame. A no-op while no game is loaded
+            // in RA.
+            RaClient.onFrame()
             if (Bridge.nativeGetFrame(pixels, dims)) {
                 val w = dims[0]
                 val h = dims[1]

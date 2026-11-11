@@ -109,4 +109,24 @@ class QuickSaveTest {
         assertEquals(emptyList<Int>(), QuickSave.occupiedSlots(dir, "kof98.neo"))
         dir.delete()
     }
+
+    @Test
+    fun raStateFileIsTheStateFilePlusRa() {
+        // Phase 10 — RetroAchievements: the sidecar is the state
+        // file's path with ".ra" appended, so each slot's RA
+        // progress travels with that slot's state.
+        val saves = File("/tmp/hd-test-saves")
+        assertEquals(
+            File(saves, "kof98.neo.state.ra"),
+            QuickSave.raStateFile(saves, "kof98.neo"),
+        )
+        assertEquals(
+            File(saves, "kof98.neo.state2.ra"),
+            QuickSave.raStateFile(saves, "kof98.neo", 2),
+        )
+        assertEquals(
+            File(saves, "kof98.neo.state3.ra"),
+            QuickSave.raStateFile(saves, "kof98.neo", 3),
+        )
+    }
 }

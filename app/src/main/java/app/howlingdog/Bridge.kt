@@ -77,4 +77,62 @@ object Bridge {
     external fun nativeUnloadGame()
     external fun nativeDeinit()
     external fun nativeLastError(): String
+
+    // Phase 10 — RetroAchievements (bridge/jni/ra_client.c).
+    // The client is created once and lives for the app's lifetime;
+    // login persists, so it is NOT shut down in nativeDeinit. Only
+    // the loaded game is unloaded in nativeUnloadGame. The memory
+    // provider calls retro_get_memory_data(SYSTEM_RAM); the
+    // 68k mapping lives in ra_client.c. HTTP responses and the
+    // achievements JSON cross as byte[] (UTF-8, encoding-safe).
+    external fun nativeRaInit(): Boolean
+    external fun nativeRaLogin(username: String, apiKey: String)
+    external fun nativeRaLogout()
+    external fun nativeRaIsLoggedIn(): Boolean
+    external fun nativeRaLoggedInUsername(): String?
+    external fun nativeRaLoadGame(path: String)
+    external fun nativeRaUnloadGame()
+    external fun nativeRaIsGameLoaded(): Boolean
+    external fun nativeRaGameTitle(): String?
+    external fun nativeRaDoFrame()
+    external fun nativeRaReset()
+    external fun nativeRaSerializeProgress(): ByteArray?
+    external fun nativeRaDeserializeProgress(data: ByteArray)
+    external fun nativeRaGetAchievements(): ByteArray?
+    external fun nativeRaHttpResponse(requestId: Int, body: ByteArray, httpStatus: Int)
+
+    /**
+     * The Kotlin-side handlers for the RA callbacks the native
+     * layer calls (looked up by GetMethodID in nativeRaInit, so
+     * the function names and signatures below must match
+     * bridge.cpp exactly). They are nullable lambdas, set by
+     * [RaClient] when it initialises — Bridge itself stays free
+     * of the RA session, so the pure-test harness still compiles
+     * this file. A callback with no handler set is a no-op (the
+     * native client is only created after the handlers are set).
+     */
+    var raHttpRequestHandler: ((requestId: Int, url: String, postData: String?) -> Unit)? = null
+    var raEventUnlockedHandler: ((id: Int, title: String, description: String, points: Int) -> Unit)? = null
+    var raLoginResultHandler: ((success: Boolean, error: String?) -> Unit)? = null
+    var raLoadGameResultHandler: ((success: Boolean, error: String?) -> Unit)? = null
+
+    /** A server call from the native layer (url + optional POST body). */
+    fun raHttpRequest(requestId: Int, url: String, postData: String?) {
+        raHttpRequestHandler?.invoke(requestId, url, postData)
+    }
+
+    /** An achievement was unlocked. */
+    fun raEventUnlocked(id: Int, title: String, description: String, points: Int) {
+        raEventUnlockedHandler?.invoke(id, title, description, points)
+    }
+
+    /** The login result. */
+    fun raLoginResult(success: Boolean, error: String?) {
+        raLoginResultHandler?.invoke(success, error)
+    }
+
+    /** The game-load result. */
+    fun raLoadGameResult(success: Boolean, error: String?) {
+        raLoadGameResultHandler?.invoke(success, error)
+    }
 }

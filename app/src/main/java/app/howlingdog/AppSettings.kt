@@ -15,6 +15,13 @@ class AppSettings(private val store: OptionStore) {
         const val KEY_DISMISSED_UPDATE = "app.dismissedUpdate" // tag of the update the user dismissed ("v1.1.0")
         const val KEY_LAST_UPDATE_CHECK = "app.lastUpdateCheck" // epoch ms, as a string
         const val KEY_RUNAHEAD = "app.runahead" // "off" / "1" / "2" frames ahead
+        // Phase 10 — RetroAchievements: the account the user logs
+        // in with (a username and an API key from the RA site).
+        // Both blank means logged out; achievements are simply
+        // inactive then. Stored in the app's private preferences,
+        // the standard approach for an RA client.
+        const val KEY_RA_USERNAME = "ra.username"
+        const val KEY_RA_API_KEY = "ra.apiKey"
 
         const val DEFAULT_SHOW_BOOT = true
     }
@@ -73,5 +80,19 @@ class AppSettings(private val store: OptionStore) {
 
     fun setRunaheadFrames(frames: Int) {
         store.put(KEY_RUNAHEAD, Runahead.store(frames))
+    }
+
+    /** Phase 10 — RetroAchievements: the stored username ("" when logged out). */
+    fun raUsername(): String = store.get(KEY_RA_USERNAME) ?: ""
+
+    fun setRaUsername(username: String) {
+        store.put(KEY_RA_USERNAME, username)
+    }
+
+    /** Phase 10 — RetroAchievements: the stored API key ("" when logged out). */
+    fun raApiKey(): String = store.get(KEY_RA_API_KEY) ?: ""
+
+    fun setRaApiKey(apiKey: String) {
+        store.put(KEY_RA_API_KEY, apiKey)
     }
 }

@@ -51,6 +51,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -88,6 +89,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -321,7 +323,7 @@ class MainActivity : ComponentActivity() {
         return super.onGenericMotionEvent(event)
     }
 
-    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings }
+    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings, Achievements }
 
     private data class Held(
         val up: Boolean = false,
@@ -454,6 +456,11 @@ class MainActivity : ComponentActivity() {
         // Run-ahead (Phase 10): 0 = off, 1 or 2 frames ahead.
         // Off by default; takes effect the next time a game starts.
         var runaheadFrames by remember { mutableStateOf(appSettings.runaheadFrames()) }
+        // RetroAchievements (Phase 10): the username and API key
+        // typed in Settings. The stored values are the source of
+        // truth; these are the editable copies.
+        var raUsernameText by remember { mutableStateOf(appSettings.raUsername()) }
+        var raApiKeyText by remember { mutableStateOf(appSettings.raApiKey()) }
         // The pulse state machine (each turbo button's press start time).
         val turboState = remember { TurboState() }
         var showBoot by remember { mutableStateOf(appSettings.showBoot()) }
@@ -605,6 +612,16 @@ class MainActivity : ComponentActivity() {
             if (quickStatus.isNotEmpty()) {
                 delay(2000)
                 quickStatus = ""
+            }
+        }
+
+        // Phase 10 — RetroAchievements: the unlock popup clears
+        // after four seconds. The effect restarts when a new
+        // unlock arrives, so a second unlock re-arms the timer.
+        LaunchedEffect(RaClient.lastUnlock) {
+            if (RaClient.lastUnlock != null) {
+                delay(4000)
+                RaClient.clearUnlock()
             }
         }
 
@@ -777,6 +794,9 @@ class MainActivity : ComponentActivity() {
             playingGame = null
             paused = false
             pauseStatus = ""
+            // Phase 10 — RetroAchievements: the game is gone, so
+            // the per-game RA state goes with it (the login stays).
+            RaClient.onGameQuit()
             // Phase 9, item 7 — reset the bar to shown for the next game.
             topBar.onQuit()
             syncTopBar()
@@ -886,6 +906,50 @@ class MainActivity : ComponentActivity() {
         fun stateFileFor(entry: GameEntry, slot: Int = QuickSave.QUICK_SLOT): File =
             QuickSave.stateFile(File(context.filesDir, "saves"), entry.mainFile, slot)
 
+        fun raStateFileFor(entry: GameEntry, slot: Int = QuickSave.QUICK_SLOT): File =
+            QuickSave.raStateFile(File(context.filesDir, "saves"), entry.mainFile, slot)
+
+        /**
+         * Phase 10 — RetroAchievements: write the RA progress to
+         * the save state's sidecar (or delete a stale one when RA
+         * is not tracking this game, so a state never carries
+         * progress from an older session). Only call while the
+         * emu thread is paused, like the state snapshot itself.
+         */
+        fun writeRaSidecar(entry: GameEntry, slot: Int) {
+            val sidecar = raStateFileFor(entry, slot)
+            try {
+                val bytes = RaClient.serializeProgress()
+                if (bytes != null) {
+                    sidecar.parentFile?.mkdirs()
+                    sidecar.writeBytes(bytes)
+                } else if (sidecar.isFile) {
+                    sidecar.delete()
+                }
+            } catch (_: Exception) {
+                // The state itself is already saved; a failed
+                // sidecar must not fail the save.
+            }
+        }
+
+        /**
+         * Phase 10 — RetroAchievements: restore the RA progress
+         * from a save state's sidecar (or reset it when the state
+         * has none, so the progress matches the rewound game).
+         * Only call after a successful unserialize, while paused.
+         */
+        fun readRaSidecar(entry: GameEntry, slot: Int) {
+            if (!RaClient.gameLoaded) return
+            val sidecar = raStateFileFor(entry, slot)
+            val bytes = try {
+                if (sidecar.isFile) sidecar.readBytes() else null
+            } catch (_: Exception) {
+                null
+            }
+            if (bytes != null) RaClient.deserializeProgress(bytes)
+            else RaClient.resetProgress()
+        }
+
         fun saveState() {
             val game = playingGame ?: return
             val s = session ?: return
@@ -898,6 +962,7 @@ class MainActivity : ComponentActivity() {
                 val file = stateFileFor(game, saveSlot)
                 file.parentFile?.mkdirs()
                 file.writeBytes(bytes)
+                writeRaSidecar(game, saveSlot)
                 pauseStatus = "Saved to slot $saveSlot."
             } catch (e: Exception) {
                 pauseStatus = "Could not save: ${e.message}"
@@ -919,6 +984,7 @@ class MainActivity : ComponentActivity() {
                 return
             }
             if (s.unserializeState(bytes)) {
+                readRaSidecar(game, saveSlot)
                 pauseStatus = "Loaded from slot $saveSlot."
                 resumeGame()
             } else {
@@ -961,6 +1027,9 @@ class MainActivity : ComponentActivity() {
                         try {
                             file.parentFile?.mkdirs()
                             file.writeBytes(bytes)
+                            // Phase 10 — RetroAchievements: the
+                            // sidecar travels with the state.
+                            writeRaSidecar(game, QuickSave.QUICK_SLOT)
                             true
                         } catch (e: Exception) {
                             false
@@ -1010,6 +1079,9 @@ class MainActivity : ComponentActivity() {
                 var ok = false
                 s.postPausedTask {
                     ok = bytes != null && s.unserializeState(bytes)
+                    // Phase 10 — RetroAchievements: the sidecar
+                    // rewinds the achievements with the game.
+                    if (ok) readRaSidecar(game, QuickSave.QUICK_SLOT)
                     done.countDown()
                 }
                 if (!done.await(2, TimeUnit.SECONDS)) {
@@ -1070,6 +1142,15 @@ class MainActivity : ComponentActivity() {
             screen = Screen.Playing
             session?.start()
             inputActive = true
+            // Phase 10 — RetroAchievements: initialise the client
+            // (and log in with the stored credentials) and load
+            // this game's achievements. The load is async; a game
+            // whose hash is not recognised (or a disc, whose hash
+            // needs a CD reader the app does not yet supply) simply
+            // leaves RA inactive for it.
+            if (RaClient.init(appSettings)) {
+                RaClient.loadGame(entry.mainPath(gamesDir).absolutePath)
+            }
             // Phase 9, item 7 — show the bar, then hide it after
             // the start delay (long enough to see it first).
             topBar.onGameStarted()
@@ -1296,7 +1377,7 @@ class MainActivity : ComponentActivity() {
         // Settings: back returns to where Settings was opened
         // from (the library, or the game). A game's own settings
         // screen (Phase 9, item 8) returns to the library.
-        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings) {
+        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings || screen == Screen.Achievements) {
             when (screen) {
                 Screen.Playing -> when {
                     editControls -> exitEditMode()
@@ -1306,6 +1387,7 @@ class MainActivity : ComponentActivity() {
                 Screen.Settings -> screen = settingsFrom
                 Screen.Licences -> screen = Screen.Settings
                 Screen.Setup -> leaveSetup()
+                Screen.Achievements -> screen = Screen.Playing
                 Screen.GameSettings -> {
                     perGameFor = null
                     screen = Screen.Library
@@ -2417,6 +2499,29 @@ class MainActivity : ComponentActivity() {
                                     .padding(horizontal = 12.dp, vertical = 6.dp),
                             )
                         }
+                        // Phase 10 — RetroAchievements: the unlock
+                        // popup, a gold note over the game area
+                        // (the same treatment as the quick status
+                        // above), cleared after four seconds (see
+                        // the LaunchedEffect above). Hidden while
+                        // paused.
+                        val unlock = RaClient.lastUnlock
+                        if (unlock != null && !paused) {
+                            Text(
+                                "Achievement Unlocked: ${unlock.title} (+${unlock.points} pts)",
+                                color = Color(EraUi.Palette.GOLD),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 8.dp)
+                                    .background(
+                                        Color(EraUi.Palette.SURFACE),
+                                        RoundedCornerShape(4.dp),
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                            )
+                        }
                         // Pause overlay: covers the game and the
                         // controls (drawn last, so it is on top) and
                         // swallows touches, so no button can be
@@ -2457,6 +2562,12 @@ class MainActivity : ComponentActivity() {
                                     onUniBiosMenu = { openUniBiosMenu() },
                                     onSaveState = { saveState() },
                                     onLoadState = { loadState() },
+                                    // Phase 10 — RetroAchievements:
+                                    // the achievements list, only
+                                    // when RA has a game loaded. The
+                                    // game stays paused underneath.
+                                    showAchievements = RaClient.gameLoaded,
+                                    onAchievements = { screen = Screen.Achievements },
                                     onSettings = {
                                         settingsFrom = Screen.Playing
                                         screen = Screen.Settings
@@ -2614,6 +2725,77 @@ class MainActivity : ComponentActivity() {
                         "Runs the game one or two frames ahead of the display, so a press shows up sooner. Off by default. Takes effect the next time a game starts.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Spacer(Modifier.height(16.dp))
+                    // Phase 10 — RetroAchievements: sign in with a
+                    // username and an API key from the
+                    // RetroAchievements site (in your account
+                    // settings there). Logged out, achievements are
+                    // simply inactive — no errors, no nagging. The
+                    // status line below is the live session state.
+                    Text("RetroAchievements", style = MaterialTheme.typography.titleSmall)
+                    OutlinedTextField(
+                        value = raUsernameText,
+                        onValueChange = { raUsernameText = it },
+                        singleLine = true,
+                        label = { Text("Username") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = raApiKeyText,
+                        onValueChange = { raApiKeyText = it },
+                        singleLine = true,
+                        label = { Text("API key") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        RaClient.status.ifEmpty { "Not logged in." },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            val user = raUsernameText.trim()
+                            val key = raApiKeyText.trim()
+                            appSettings.setRaUsername(user)
+                            appSettings.setRaApiKey(key)
+                            raUsernameText = user
+                            raApiKeyText = key
+                            if (user.isNotEmpty() && key.isNotEmpty()) {
+                                // init logs in with the stored
+                                // credentials when it first creates
+                                // the client; a client that already
+                                // exists is logged in directly, so
+                                // the login is never started twice.
+                                if (!RaClient.initialised) {
+                                    RaClient.init(appSettings)
+                                } else {
+                                    RaClient.login(user, key)
+                                }
+                            } else {
+                                RaClient.logout()
+                            }
+                        }) {
+                            Text(if (RaClient.loggedIn) "Log in again" else "Log in")
+                        }
+                        if (RaClient.loggedIn || appSettings.raUsername().isNotEmpty()) {
+                            OutlinedButton(onClick = {
+                                appSettings.setRaUsername("")
+                                appSettings.setRaApiKey("")
+                                raUsernameText = ""
+                                raApiKeyText = ""
+                                RaClient.logout()
+                            }) {
+                                Text("Log out")
+                            }
+                        }
+                    }
+                    Text(
+                        "Sign in with your RetroAchievements account to earn achievements while you play. Your API key is in your account settings on retroachievements.org. Achievements are softcore — save states stay available. A game the site does not recognise (or a disc) simply has no achievements.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2759,6 +2941,76 @@ class MainActivity : ComponentActivity() {
                     }
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { screen = settingsFrom }) { Text("Back") }
+                }
+            }
+            Screen.Achievements -> {
+                // Phase 10 — RetroAchievements: the loaded game's
+                // achievements. Reached from the pause menu; the
+                // game stays paused underneath (the session is not
+                // resumed until the player goes back).
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                ) {
+                    Text(
+                        RaClient.gameTitle ?: "Achievements",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (RaClient.gameLoaded) {
+                            RaAchievements.summary(RaClient.achievements)
+                        } else {
+                            "No achievements for this game."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    if (RaClient.gameLoaded) {
+                        for (achievement in RaClient.achievements) {
+                            if (achievement.state == RaAchievements.STATE_INACTIVE) continue
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        achievement.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Text(
+                                        achievement.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                    if (!achievement.measuredProgress.isNullOrEmpty()) {
+                                        Text(
+                                            achievement.measuredProgress,
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        if (achievement.isUnlocked) "Unlocked" else "${achievement.points} pts",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (achievement.isUnlocked) {
+                                            Color(EraUi.Palette.GOLD)
+                                        } else {
+                                            Color(EraUi.Palette.TEXT)
+                                        },
+                                        fontWeight = if (achievement.isUnlocked) FontWeight.Bold else FontWeight.Normal,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { screen = Screen.Playing }) { Text("Back") }
                 }
             }
             Screen.GameSettings -> {
@@ -3775,6 +4027,10 @@ fun PauseMenu(
     onUniBiosMenu: () -> Unit = {},
     onSaveState: () -> Unit,
     onLoadState: () -> Unit,
+    // Phase 10 — RetroAchievements: the achievements list,
+    // shown only when RA has a game loaded for this game.
+    showAchievements: Boolean = false,
+    onAchievements: () -> Unit = {},
     onSettings: () -> Unit,
     onAdjustControls: () -> Unit,
     onQuit: () -> Unit,
@@ -3855,6 +4111,12 @@ fun PauseMenu(
         Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "LOAD STATE", compact = true, onClick = onLoadState)
         Spacer(Modifier.height(2.dp))
+        // Phase 10 — RetroAchievements: the achievements list for
+        // this game, only when RA has one loaded.
+        if (showAchievements) {
+            ArcadeButton(text = "ACHIEVEMENTS", compact = true, onClick = onAchievements)
+            Spacer(Modifier.height(2.dp))
+        }
         ArcadeButton(text = "SETTINGS", compact = true, onClick = onSettings)
         Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "ADJUST CONTROLS", compact = true, onClick = onAdjustControls)

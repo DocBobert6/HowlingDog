@@ -77,4 +77,22 @@ class AppSettingsTest {
         assertEquals(123456789L, settings.lastUpdateCheck())
         assertEquals(0L, settingsWith(AppSettings.KEY_LAST_UPDATE_CHECK to "junk").lastUpdateCheck())
     }
+
+    @Test
+    fun raCredentialsDefaultToLoggedOutAndRoundTrip() {
+        // Phase 10 — RetroAchievements: no credentials stored
+        // means logged out (achievements simply inactive).
+        val settings = settingsWith()
+        assertEquals("", settings.raUsername())
+        assertEquals("", settings.raApiKey())
+        settings.setRaUsername("PlayerOne")
+        settings.setRaApiKey("abc123key")
+        assertEquals("PlayerOne", settings.raUsername())
+        assertEquals("abc123key", settings.raApiKey())
+        // Logging out clears both.
+        settings.setRaUsername("")
+        settings.setRaApiKey("")
+        assertEquals("", settings.raUsername())
+        assertEquals("", settings.raApiKey())
+    }
 }

@@ -44,6 +44,18 @@ object QuickSave {
     /** True when a quick load can proceed: a save file exists for this game. */
     fun loadAvailable(stateFile: File): Boolean = stateFile.isFile
 
+    /**
+     * Phase 10 — RetroAchievements: the sidecar that carries the
+     * RA progress for a save state, so loading a state rewinds
+     * the achievements to match the rewound game. It is the
+     * state file's path with ".ra" appended: slot 1 is
+     * `<mainFile>.state.ra`, slot 2 `<mainFile>.state2.ra`, slot 3
+     * `<mainFile>.state3.ra`. A save with no sidecar loads with
+     * the RA progress reset.
+     */
+    fun raStateFile(savesDir: File, mainFile: String, slot: Int = QUICK_SLOT): File =
+        File(stateFile(savesDir, mainFile, slot).path + ".ra")
+
     /** True when the given slot holds a save for this game. */
     fun slotOccupied(savesDir: File, mainFile: String, slot: Int): Boolean =
         loadAvailable(stateFile(savesDir, mainFile, slot))
