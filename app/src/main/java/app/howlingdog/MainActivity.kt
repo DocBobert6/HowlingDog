@@ -332,6 +332,67 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * 2.0, feature 2 — true when the current layout (the
+     * Activity-level states) is exactly the global layout. A
+     * per-game override that matches the global layout is
+     * redundant, so saving it is skipped and any stored override
+     * is dropped instead.
+     */
+    private fun layoutMatchesGlobal(): Boolean {
+        return stickPosState.value == controlSettings.stickPosition() &&
+            buttonsPosState.value == controlSettings.buttonsPosition() &&
+            stickScaleState.value == controlSettings.stickScale() &&
+            buttonsScaleState.value == controlSettings.buttonsScale() &&
+            dpadScaleState.value == controlSettings.dpadScale() &&
+            buttonOverridesState.value == controlSettings.buttonOffsets() &&
+            buttonSizeMultsState.value == controlSettings.buttonSizeMults()
+    }
+
+    /**
+     * 2.0, feature 2 — write the current control layout (the
+     * Activity-level states, the source of truth while the user
+     * drags) to the active scope. When "For this game" is on and a
+     * game is loaded, the layout is saved as that game's own
+     * override in PerGameSettings; otherwise it goes to the global
+     * ControlSettings, exactly as before. Called on every drag end
+     * and on Done, so the store always matches what the user sees.
+     * The per-button overrides are written per id with a null
+     * clear for absent ids, so the stored per-game set matches the
+     * current map exactly and a removed override does not go stale.
+     * When the layout matches the global one exactly, there is
+     * nothing to override — the game's saved layout is dropped
+     * instead of storing a redundant copy (this is what Reset
+     * does: it restores the global values, so Done after a Reset
+     * clears the override rather than re-storing it).
+     */
+    private fun saveLayoutToScope() {
+        val game = playingGameState.value
+        if (saveForThisGameState.value && game != null) {
+            if (layoutMatchesGlobal()) {
+                perGameSettings.clearControlLayout(game.mainFile)
+                return
+            }
+            perGameSettings.setStickPositionOverride(game.mainFile, stickPosState.value)
+            perGameSettings.setButtonsPositionOverride(game.mainFile, buttonsPosState.value)
+            perGameSettings.setStickScaleOverride(game.mainFile, stickScaleState.value)
+            perGameSettings.setButtonsScaleOverride(game.mainFile, buttonsScaleState.value)
+            perGameSettings.setDpadScaleOverride(game.mainFile, dpadScaleState.value)
+            for (id in ControlSettings.BUTTON_IDS) {
+                perGameSettings.setButtonOffsetOverride(game.mainFile, id, buttonOverridesState.value[id])
+                perGameSettings.setButtonSizeMultOverride(game.mainFile, id, buttonSizeMultsState.value[id])
+            }
+        } else {
+            controlSettings.setStickPosition(stickPosState.value)
+            controlSettings.setButtonsPosition(buttonsPosState.value)
+            controlSettings.setStickScale(stickScaleState.value)
+            controlSettings.setButtonsScale(buttonsScaleState.value)
+            controlSettings.setDpadScale(dpadScaleState.value)
+            for ((id, off) in buttonOverridesState.value) controlSettings.setButtonOffset(id, off)
+            for ((id, mult) in buttonSizeMultsState.value) controlSettings.setButtonSizeMult(id, mult)
+        }
+    }
+
+    /**
      * v1.5, feature 5 — two-player multiplayer: recompute the
      * player-2 gamepad mask and hand it straight to the session.
      * Player 2 is gamepad-only (no touch, no turbo, no UniBIOS
@@ -668,6 +729,11 @@ class MainActivity : ComponentActivity() {
     private val buttonOverridesState by lazy { mutableStateOf(controlSettings.buttonOffsets()) }
     private val buttonSizeMultsState by lazy { mutableStateOf(controlSettings.buttonSizeMults()) }
     private val moveTogetherState by lazy { mutableStateOf(true) }
+    // 2.0, feature 2 — where the adjust mode saves to: this game
+    // only (a per-game layout override) or all games (the global
+    // settings). Set when edit mode is entered: on when the game
+    // already has a saved layout, off otherwise.
+    private val saveForThisGameState by lazy { mutableStateOf(false) }
     private val editControlsState by lazy { mutableStateOf(false) }
     private val topBarVisibleState by lazy { mutableStateOf(topBar.visible) }
     private val topBarGenerationState by lazy { mutableStateOf(topBar.generation) }
@@ -836,6 +902,10 @@ class MainActivity : ComponentActivity() {
         // sit). While editing, the game stays paused, the pause
         // overlay hides, and the two control units drag.
         var editControls by editControlsState
+        // 2.0, feature 2 — where the adjust mode saves to: this
+        // game only (a per-game layout override) or all games (the
+        // global settings). Set when edit mode is entered.
+        var saveForThisGame by saveForThisGameState
         // Phase 9, item 7 — top bar auto-hide: the title row
         // (game name + SAVE / LOAD / Pause) hides a couple of
         // seconds after a game starts and comes back on a swipe
@@ -864,13 +934,10 @@ class MainActivity : ComponentActivity() {
         // restarts.
 
         fun exitEditMode() {
-            controlSettings.setStickPosition(stickPos)
-            controlSettings.setButtonsPosition(buttonsPos)
-            controlSettings.setStickScale(stickScale)
-            controlSettings.setButtonsScale(buttonsScale)
-            controlSettings.setDpadScale(dpadScale)
-            for ((id, off) in buttonOverrides) controlSettings.setButtonOffset(id, off)
-            for ((id, mult) in buttonSizeMults) controlSettings.setButtonSizeMult(id, mult)
+            // 2.0, feature 2 — Done commits the layout to the
+            // active scope: this game's own override when "For
+            // this game" is on, else the global settings.
+            saveLayoutToScope()
             editControls = false
             // Leaving edit mode re-arms the idle timer, so the bar
             // hides again a few seconds after Done.
@@ -897,13 +964,32 @@ class MainActivity : ComponentActivity() {
                     perGameSettings.resolveLeftControl(it.mainFile, controlSettings.leftControl())
                 } ?: controlSettings.leftControl()
                 turboMask = controlSettings.turboMask()
-                stickPos = controlSettings.stickPosition()
-                buttonsPos = controlSettings.buttonsPosition()
-                stickScale = controlSettings.stickScale()
-                buttonsScale = controlSettings.buttonsScale()
-                dpadScale = controlSettings.dpadScale()
-                buttonOverrides = controlSettings.buttonOffsets()
-                buttonSizeMults = controlSettings.buttonSizeMults()
+                // 2.0, feature 2 — the layout resolves per game
+                // first: a game's own saved positions win over the
+                // global layout, exactly like the left control
+                // above. A game with no saved layout follows the
+                // global one.
+                stickPos = playingGame?.let {
+                    perGameSettings.resolveStickPosition(it.mainFile, controlSettings.stickPosition())
+                } ?: controlSettings.stickPosition()
+                buttonsPos = playingGame?.let {
+                    perGameSettings.resolveButtonsPosition(it.mainFile, controlSettings.buttonsPosition())
+                } ?: controlSettings.buttonsPosition()
+                stickScale = playingGame?.let {
+                    perGameSettings.resolveStickScale(it.mainFile, controlSettings.stickScale())
+                } ?: controlSettings.stickScale()
+                buttonsScale = playingGame?.let {
+                    perGameSettings.resolveButtonsScale(it.mainFile, controlSettings.buttonsScale())
+                } ?: controlSettings.buttonsScale()
+                dpadScale = playingGame?.let {
+                    perGameSettings.resolveDpadScale(it.mainFile, controlSettings.dpadScale())
+                } ?: controlSettings.dpadScale()
+                buttonOverrides = playingGame?.let {
+                    perGameSettings.resolveButtonOffsets(it.mainFile, controlSettings.buttonOffsets())
+                } ?: controlSettings.buttonOffsets()
+                buttonSizeMults = playingGame?.let {
+                    perGameSettings.resolveButtonSizeMults(it.mainFile, controlSettings.buttonSizeMults())
+                } ?: controlSettings.buttonSizeMults()
             }
         }
 
@@ -3845,6 +3931,9 @@ class MainActivity : ComponentActivity() {
         var editControls by editControlsState
         var saveSlot by saveSlotState
         var moveTogether by moveTogetherState
+        // 2.0, feature 2 — where the adjust mode saves to: this
+        // game only (a per-game layout override) or all games.
+        var saveForThisGame by saveForThisGameState
         var stickPos by stickPosState
         var buttonsPos by buttonsPosState
         var stickScale by stickScaleState
@@ -3973,15 +4062,42 @@ class MainActivity : ComponentActivity() {
                             Text(if (moveTogether) "Together: On" else "Together: Off")
                         }
                         Spacer(Modifier.width(8.dp))
+                        // 2.0, feature 2 — where the layout saves
+                        // to. "This game only" writes the positions
+                        // as this game's own override (the global
+                        // layout stays the default for other
+                        // games); "All games" writes them to the
+                        // global settings, as before.
+                        Button(onClick = { saveForThisGame = !saveForThisGame }) {
+                            Text(if (saveForThisGame) "This game only" else "All games")
+                        }
+                        Spacer(Modifier.width(8.dp))
                         Button(onClick = {
-                            controlSettings.resetLayout()
-                            stickPos = ControlSettings.DEFAULT_STICK_POS
-                            buttonsPos = ControlSettings.DEFAULT_BUTTONS_POS
-                            stickScale = ControlSettings.DEFAULT_GROUP_SCALE
-                            buttonsScale = ControlSettings.DEFAULT_GROUP_SCALE
-                            dpadScale = ControlSettings.DEFAULT_GROUP_SCALE
-                            buttonOverrides = emptyMap()
-                            buttonSizeMults = emptyMap()
+                            val game = playingGame
+                            if (saveForThisGame && game != null) {
+                                // 2.0, feature 2 — Reset clears
+                                // this game's saved layout, so it
+                                // follows the global layout again;
+                                // the global layout itself is
+                                // untouched.
+                                perGameSettings.clearControlLayout(game.mainFile)
+                                stickPos = controlSettings.stickPosition()
+                                buttonsPos = controlSettings.buttonsPosition()
+                                stickScale = controlSettings.stickScale()
+                                buttonsScale = controlSettings.buttonsScale()
+                                dpadScale = controlSettings.dpadScale()
+                                buttonOverrides = controlSettings.buttonOffsets()
+                                buttonSizeMults = controlSettings.buttonSizeMults()
+                            } else {
+                                controlSettings.resetLayout()
+                                stickPos = ControlSettings.DEFAULT_STICK_POS
+                                buttonsPos = ControlSettings.DEFAULT_BUTTONS_POS
+                                stickScale = ControlSettings.DEFAULT_GROUP_SCALE
+                                buttonsScale = ControlSettings.DEFAULT_GROUP_SCALE
+                                dpadScale = ControlSettings.DEFAULT_GROUP_SCALE
+                                buttonOverrides = emptyMap()
+                                buttonSizeMults = emptyMap()
+                            }
                         }) { Text("Reset layout") }
                         Spacer(Modifier.width(8.dp))
                         Button(onClick = { exitEditMode() }) { Text("Done") }
@@ -4184,18 +4300,16 @@ class MainActivity : ComponentActivity() {
                                         start.y > sizePx - grip
                                 },
                                 onDragEnd = {
-                                    if (resizing) {
-                                        // Persist the scale of
-                                        // the control that is
-                                        // showing (Part 2).
-                                        if (leftControlState.value == LeftControl.DPAD) {
-                                            controlSettings.setDpadScale(dpadScaleState.value)
-                                        } else {
-                                            controlSettings.setStickScale(stickScaleState.value)
-                                        }
-                                    } else {
-                                        controlSettings.setStickPosition(stickPosState.value)
-                                    }
+                                    // 2.0, feature 2 — the drag
+                                    // commits the whole layout to
+                                    // the active scope (this game
+                                    // or all games); writing every
+                                    // value is the same as writing
+                                    // just the changed one, since
+                                    // the states are the source of
+                                    // truth and the rest are
+                                    // unchanged.
+                                    saveLayoutToScope()
                                 },
                                 onDrag = { change, dragAmount ->
                                     change.consume()
@@ -4337,18 +4451,11 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onDragEnd = {
-                                    val id = dragButton
-                                    val resizeId = resizeButton
-                                    when {
-                                        resizing -> controlSettings.setButtonsScale(buttonsScaleState.value)
-                                        resizeId != null -> buttonSizeMultsState.value[resizeId]?.let {
-                                            controlSettings.setButtonSizeMult(resizeId, it)
-                                        }
-                                        id != null -> buttonOverridesState.value[id]?.let {
-                                            controlSettings.setButtonOffset(id, it)
-                                        }
-                                        else -> controlSettings.setButtonsPosition(buttonsPosState.value)
-                                    }
+                                    // 2.0, feature 2 — the drag
+                                    // commits the whole layout to
+                                    // the active scope (this game
+                                    // or all games), as above.
+                                    saveLayoutToScope()
                                     dragButton = null
                                     resizeButton = null
                                 },
@@ -4874,6 +4981,15 @@ class MainActivity : ComponentActivity() {
                                 screen = Screen.Settings
                             },
                             onAdjustControls = {
+                                // 2.0, feature 2 — the scope
+                                // toggle starts on when this game
+                                // already has a saved layout (the
+                                // user is editing that layout),
+                                // off otherwise (the user is
+                                // editing the global one).
+                                saveForThisGame = playingGame?.let {
+                                    perGameSettings.hasControlLayoutOverride(it.mainFile)
+                                } == true
                                 editControls = true
                                 // Phase 9, item 7 — entering
                                 // edit mode always shows the

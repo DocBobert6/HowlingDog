@@ -202,4 +202,190 @@ class PerGameSettingsTest {
         assertEquals("jp", store.map["pergame.$game.geolith_region"])
         assertFalse("no global key may be written", store.map.containsKey("geolith_region"))
     }
+
+    // 2.0, feature 2 — per-game saved control positions.
+
+    @Test
+    fun unsetLayoutFallsBackToGlobal() {
+        val p = PerGameSettings(MapStore())
+        val stick = ControlPosition(0.14f, 0.72f)
+        val buttons = ControlPosition(0.86f, 0.72f)
+        assertNull(p.stickPositionOverride(game))
+        assertNull(p.buttonsPositionOverride(game))
+        assertNull(p.stickScaleOverride(game))
+        assertNull(p.buttonsScaleOverride(game))
+        assertNull(p.dpadScaleOverride(game))
+        assertTrue(p.buttonSizeMultsOverride(game).isEmpty())
+        assertTrue(p.buttonOffsetsOverride(game).isEmpty())
+        assertEquals(stick, p.resolveStickPosition(game, stick))
+        assertEquals(buttons, p.resolveButtonsPosition(game, buttons))
+        assertEquals(1.0f, p.resolveStickScale(game, 1.0f))
+        assertEquals(1.2f, p.resolveButtonsScale(game, 1.2f))
+        assertEquals(1.1f, p.resolveDpadScale(game, 1.1f))
+        assertEquals(mapOf("A" to 1.0f), p.resolveButtonSizeMults(game, mapOf("A" to 1.0f)))
+        assertEquals(mapOf("A" to (10f to 20f)), p.resolveButtonOffsets(game, mapOf("A" to (10f to 20f))))
+        assertFalse(p.hasControlLayoutOverride(game))
+        assertFalse(p.hasProfile(game))
+    }
+
+    @Test
+    fun layoutPositionsWinOverGlobalAndClear() {
+        val p = PerGameSettings(MapStore())
+        val stick = ControlPosition(0.2f, 0.8f)
+        val buttons = ControlPosition(0.8f, 0.6f)
+        p.setStickPositionOverride(game, stick)
+        p.setButtonsPositionOverride(game, buttons)
+        assertEquals(stick, p.stickPositionOverride(game))
+        assertEquals(buttons, p.buttonsPositionOverride(game))
+        assertEquals(stick, p.resolveStickPosition(game, ControlPosition(0.14f, 0.72f)))
+        assertEquals(buttons, p.resolveButtonsPosition(game, ControlPosition(0.86f, 0.72f)))
+        assertTrue(p.hasControlLayoutOverride(game))
+        assertTrue(p.hasProfile(game))
+        p.setStickPositionOverride(game, null)
+        p.setButtonsPositionOverride(game, null)
+        assertNull(p.stickPositionOverride(game))
+        assertNull(p.buttonsPositionOverride(game))
+        assertFalse(p.hasControlLayoutOverride(game))
+        assertFalse(p.hasProfile(game))
+    }
+
+    @Test
+    fun layoutScalesWinOverGlobalAndClear() {
+        val p = PerGameSettings(MapStore())
+        p.setStickScaleOverride(game, 1.3f)
+        p.setButtonsScaleOverride(game, 0.8f)
+        assertEquals(1.3f, p.stickScaleOverride(game))
+        assertEquals(0.8f, p.buttonsScaleOverride(game))
+        assertEquals(1.3f, p.resolveStickScale(game, 1.0f))
+        assertEquals(0.8f, p.resolveButtonsScale(game, 1.0f))
+        p.setStickScaleOverride(game, null)
+        p.setButtonsScaleOverride(game, null)
+        assertNull(p.stickScaleOverride(game))
+        assertEquals(1.0f, p.resolveStickScale(game, 1.0f))
+    }
+
+    @Test
+    fun dpadScaleFallsBackToPerGameStickScale() {
+        val p = PerGameSettings(MapStore())
+        // No override at all: the global value wins.
+        assertEquals(1.0f, p.resolveDpadScale(game, 1.0f))
+        // A stick-scale override stands in for the D-pad, mirroring
+        // ControlSettings' global fallback.
+        p.setStickScaleOverride(game, 1.4f)
+        assertEquals(1.4f, p.resolveDpadScale(game, 1.0f))
+        // An explicit D-pad override wins over both.
+        p.setDpadScaleOverride(game, 0.9f)
+        assertEquals(0.9f, p.resolveDpadScale(game, 1.0f))
+        p.setDpadScaleOverride(game, null)
+        assertEquals(1.4f, p.resolveDpadScale(game, 1.0f))
+    }
+
+    @Test
+    fun perButtonOverridesWinPerButtonAndMergeWithGlobal() {
+        val p = PerGameSettings(MapStore())
+        val globalSizes = mapOf("A" to 1.0f, "B" to 1.1f)
+        val globalOffsets = mapOf("A" to (0f to 0f), "C" to (5f to 5f))
+        // Only B's size and A's offset are overridden: the rest
+        // keep the global value.
+        p.setButtonSizeMultOverride(game, "B", 1.5f)
+        p.setButtonOffsetOverride(game, "A", 12f to -8f)
+        assertEquals(mapOf("A" to 1.0f, "B" to 1.5f), p.resolveButtonSizeMults(game, globalSizes))
+        assertEquals(
+            mapOf("A" to (12f to -8f), "C" to (5f to 5f)),
+            p.resolveButtonOffsets(game, globalOffsets),
+        )
+        assertTrue(p.hasControlLayoutOverride(game))
+        // Clearing one button restores the global value for it only.
+        p.setButtonSizeMultOverride(game, "B", null)
+        p.setButtonOffsetOverride(game, "A", null)
+        assertEquals(globalSizes, p.resolveButtonSizeMults(game, globalSizes))
+        assertEquals(globalOffsets, p.resolveButtonOffsets(game, globalOffsets))
+        assertFalse(p.hasControlLayoutOverride(game))
+    }
+
+    @Test
+    fun layoutOverridesArePerGame() {
+        val p = PerGameSettings(MapStore())
+        p.setStickPositionOverride(game, ControlPosition(0.2f, 0.8f))
+        p.setButtonSizeMultOverride(game, "A", 1.5f)
+        assertNull(p.stickPositionOverride(other))
+        assertEquals(ControlPosition(0.14f, 0.72f), p.resolveStickPosition(other, ControlPosition(0.14f, 0.72f)))
+        assertTrue(p.resolveButtonSizeMults(other, emptyMap()).isEmpty())
+        assertFalse(p.hasControlLayoutOverride(other))
+        assertFalse(p.hasProfile(other))
+    }
+
+    @Test
+    fun badStoredLayoutValuesReadAsUnset() {
+        val store = MapStore()
+        store.map["pergame.$game.controls.stickPos"] = "2.0,0.5"
+        store.map["pergame.$game.controls.buttonsPos"] = "0.8"
+        store.map["pergame.$game.controls.stickScale"] = "9.9"
+        store.map["pergame.$game.controls.dpadScale"] = "big"
+        store.map["pergame.$game.controls.buttonSize.A"] = "0.1"
+        store.map["pergame.$game.controls.buttonOffset.B"] = "999,0"
+        val p = PerGameSettings(store)
+        assertNull(p.stickPositionOverride(game))
+        assertNull(p.buttonsPositionOverride(game))
+        assertNull(p.stickScaleOverride(game))
+        assertNull(p.dpadScaleOverride(game))
+        assertNull(p.buttonSizeMultOverride(game, "A"))
+        assertNull(p.buttonOffsetOverride(game, "B"))
+        assertFalse("bad layout values must not count as a profile", p.hasProfile(game))
+    }
+
+    @Test
+    fun outOfRangeLayoutValuesAreClampedOnWrite() {
+        val p = PerGameSettings(MapStore())
+        p.setStickPositionOverride(game, ControlPosition(0.001f, 1.5f))
+        assertEquals(ControlPosition(0.02f, 0.98f), p.stickPositionOverride(game))
+        p.setStickScaleOverride(game, 5.0f)
+        assertEquals(1.5f, p.stickScaleOverride(game))
+        p.setButtonOffsetOverride(game, "A", 900f to -900f)
+        assertEquals(500f to -500f, p.buttonOffsetOverride(game, "A"))
+    }
+
+    @Test
+    fun clearControlLayoutDropsOnlyTheLayout() {
+        val p = PerGameSettings(MapStore())
+        p.setCoreOverride(game, "geolith_region", "jp")
+        p.setStickPositionOverride(game, ControlPosition(0.2f, 0.8f))
+        p.setStickScaleOverride(game, 1.3f)
+        p.setButtonSizeMultOverride(game, "A", 1.5f)
+        p.setButtonOffsetOverride(game, "B", 10f to 10f)
+        assertTrue(p.hasProfile(game))
+        p.clearControlLayout(game)
+        assertNull(p.stickPositionOverride(game))
+        assertNull(p.stickScaleOverride(game))
+        assertTrue(p.buttonSizeMultsOverride(game).isEmpty())
+        assertTrue(p.buttonOffsetsOverride(game).isEmpty())
+        assertFalse(p.hasControlLayoutOverride(game))
+        // The core override survives: Reset restores the global
+        // layout for this game, it does not wipe the profile.
+        assertEquals("jp", p.coreOverride(game, "geolith_region"))
+        assertTrue(p.hasProfile(game))
+    }
+
+    @Test
+    fun clearDropsLayoutOverridesToo() {
+        val p = PerGameSettings(MapStore())
+        p.setStickPositionOverride(game, ControlPosition(0.2f, 0.8f))
+        p.setButtonSizeMultOverride(game, "A", 1.5f)
+        p.setButtonOffsetOverride(game, "B", 10f to 10f)
+        p.clear(game)
+        assertNull(p.stickPositionOverride(game))
+        assertTrue(p.buttonSizeMultsOverride(game).isEmpty())
+        assertTrue(p.buttonOffsetsOverride(game).isEmpty())
+        assertFalse(p.hasProfile(game))
+    }
+
+    @Test
+    fun unknownButtonIdIsNeverStored() {
+        val p = PerGameSettings(MapStore())
+        p.setButtonSizeMultOverride(game, "X", 1.5f)
+        p.setButtonOffsetOverride(game, "Select", 10f to 10f)
+        assertNull(p.buttonSizeMultOverride(game, "X"))
+        assertNull(p.buttonOffsetOverride(game, "Select"))
+        assertFalse(p.hasControlLayoutOverride(game))
+    }
 }
