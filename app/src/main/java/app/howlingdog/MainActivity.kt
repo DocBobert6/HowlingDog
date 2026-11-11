@@ -3056,7 +3056,7 @@ class MainActivity : ComponentActivity() {
                     Text("Checking…", color = Color(EraUi.Palette.TEXT), style = MaterialTheme.typography.bodyMedium)
                 } else {
                     Text(
-                        "System files: ${b.readyCount} of ${b.totalCount} ready",
+                        "${b.readyCount} of ${b.totalCount} ready",
                         color = Color(EraUi.Palette.TEXT),
                         style = MaterialTheme.typography.bodyMedium,
                     )
