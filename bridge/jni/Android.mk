@@ -22,7 +22,7 @@ include $(PREBUILT_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := howlingdog-bridge
-LOCAL_SRC_FILES := bridge.cpp
+LOCAL_SRC_FILES := bridge.cpp runahead.c
 LOCAL_SHARED_LIBRARIES := retro-prebuilt
 LOCAL_C_INCLUDES := $(ROOT_DIR)/libretro
 LOCAL_CFLAGS := -DANDROID -D__LIBRETRO__

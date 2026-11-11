@@ -96,6 +96,19 @@ jobs:
           gcc -I src -Wall -Wextra -o /tmp/geo_slice_test tests/geo_slice_test.c
           /tmp/geo_slice_test
 
+      - name: Run run-ahead unit test (host)
+        run: |
+          set -euo pipefail
+          # Phase 10: the run-ahead state machine is pure C
+          # (bridge/jni/runahead.c), so it is tested on the host with
+          # a plain C compiler — no NDK, no game files. The stub
+          # callbacks record the exact call sequence, so a wrong
+          # ordering (an unsuppressed re-simulation run, a displayed
+          # frame that is not the last run) fails here instead of on
+          # device.
+          gcc -I bridge/jni -Wall -Wextra -o /tmp/runahead_test tests/runahead_test.c bridge/jni/runahead.c
+          /tmp/runahead_test
+
       - name: Verify core
         run: |
           set -euo pipefail
@@ -163,14 +176,14 @@ jobs:
             "$READELF" -d "$BRIDGE"
             exit 1
           }
-          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeSetOption nativeSerialize nativeUnserialize nativeFlushSaveData nativeUnloadGame nativeDeinit nativeLastError; do
+          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeSetOption nativeSerialize nativeUnserialize nativeFlushSaveData nativeUnloadGame nativeDeinit nativeLastError nativeSetRunahead nativeRunFrameRunahead; do
             "$NM" -D "$BRIDGE" | grep -q "Java_app_howlingdog_Bridge_$sym" || {
               echo "missing JNI export: $sym"
               "$NM" -D "$BRIDGE"
               exit 1
             }
           done
-          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 14 JNI entry points present"
+          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 16 JNI entry points present"
 
       - name: Stage native libs for Gradle
         run: |

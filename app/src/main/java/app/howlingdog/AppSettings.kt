@@ -14,6 +14,7 @@ class AppSettings(private val store: OptionStore) {
         const val KEY_SETUP_SEEN = "app.setupSeen" // "yes" once the SYSTEM SETUP screen has been dismissed
         const val KEY_DISMISSED_UPDATE = "app.dismissedUpdate" // tag of the update the user dismissed ("v1.1.0")
         const val KEY_LAST_UPDATE_CHECK = "app.lastUpdateCheck" // epoch ms, as a string
+        const val KEY_RUNAHEAD = "app.runahead" // "off" / "1" / "2" frames ahead
 
         const val DEFAULT_SHOW_BOOT = true
     }
@@ -61,5 +62,16 @@ class AppSettings(private val store: OptionStore) {
 
     fun setLastUpdateCheck(nowMillis: Long) {
         store.put(KEY_LAST_UPDATE_CHECK, nowMillis.toString())
+    }
+
+    /**
+     * Phase 10 — run-ahead frames (0 = off, 1 or 2 frames ahead).
+     * Off by default. Takes effect the next time a game starts,
+     * like the CRT shader/curvature masters.
+     */
+    fun runaheadFrames(): Int = Runahead.parse(store.get(KEY_RUNAHEAD))
+
+    fun setRunaheadFrames(frames: Int) {
+        store.put(KEY_RUNAHEAD, Runahead.store(frames))
     }
 }

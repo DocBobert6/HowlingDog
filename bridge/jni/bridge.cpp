@@ -41,6 +41,7 @@
 #include <string.h>
 
 #include "libretro.h"
+#include "runahead.h"
 
 // HowlingDog extension defined in libretro/libretro.c and exported
 // via libretro/link.T: flush the in-memory save data (NVRAM /
@@ -94,6 +95,23 @@ static bool g_resample_have_prev = false;
 
 // Input: player-1 joypad bitmask, bits are (1 << RETRO_DEVICE_ID_JOYPAD_*).
 static volatile int16_t g_input_mask = 0;
+
+// Run-ahead (Phase 10): the state ring lives here, on the bridge,
+// because the state bytes are native. The requested frame count is
+// stored separately from the ring so it survives an unload and is
+// re-applied (re-sized for the new game) on the next load. The ring
+// is only touched on the emu thread (nativeRunFrameRunahead and
+// nativeSetRunahead are both called from it or before it starts),
+// so no lock is needed. When run-ahead is off the flag is 0 and
+// nativeRunFrame() is used instead, so the off path is exactly the
+// v1.0.0 frame path.
+static runahead_t g_runahead;
+static int g_runahead_frames = 0;
+
+// Audio suppression for run-ahead re-simulation runs: while set,
+// bridge_audio_batch drops the batch instead of queueing it, so
+// the discarded ahead frames never reach the speakers.
+static volatile bool g_audio_suppress = false;
 
 // AV info captured at load.
 static int g_av_width = 0;
@@ -366,8 +384,53 @@ static void bridge_audio_push(const int16_t *data, size_t frames) {
 }
 
 static size_t bridge_audio_batch(const int16_t *data, size_t frames) {
+    if (g_audio_suppress) {
+        // Run-ahead re-simulation run: the batch belongs to a
+        // discarded ahead frame. Claim it as consumed so the core
+        // keeps its timing, but queue nothing.
+        (void)data;
+        return frames;
+    }
     bridge_audio_push(data, frames);
     return frames;
+}
+
+// Run-ahead callbacks (runahead.h): the state machine calls these;
+// the bridge wires the real retro_* functions in.
+static void ra_run_frame(void *ctx) {
+    (void)ctx;
+    retro_run();
+}
+
+static bool ra_serialize(void *ctx, uint8_t *buf) {
+    (void)ctx;
+    size_t size = retro_serialize_size();
+    if (size == 0)
+        return false;
+    return retro_serialize((void *)buf, size);
+}
+
+static bool ra_unserialize(void *ctx, const uint8_t *buf) {
+    (void)ctx;
+    size_t size = retro_serialize_size();
+    if (size == 0)
+        return false;
+    return retro_unserialize((const void *)buf, size);
+}
+
+static void ra_set_audio_suppress(void *ctx, bool suppress) {
+    (void)ctx;
+    g_audio_suppress = suppress;
+}
+
+// (Re)size the run-ahead ring for the loaded game. Called after a
+// load (the state size is only known then) and when the setting
+// changes. With no game loaded the ring is freed.
+static void runahead_apply(void) {
+    if (g_inited && g_loaded)
+        runahead_set_frames(&g_runahead, retro_serialize_size(), g_runahead_frames);
+    else
+        runahead_set_frames(&g_runahead, 0, 0);
 }
 
 static void bridge_input_poll(void) {
@@ -461,6 +524,9 @@ Java_app_howlingdog_Bridge_nativeLoadGame(JNIEnv *env, jobject /* thiz */,
     g_resample_pos = 0.0;
     g_resample_have_prev = false;
     g_loaded = true;
+    // Run-ahead (Phase 10): size the ring for this game now that
+    // the state size is known.
+    runahead_apply();
     LOGI("game loaded: %dx%d @ %.3f fps, audio %.1f Hz",
          g_av_width, g_av_height, g_av_fps, g_av_rate);
     return JNI_TRUE;
@@ -482,6 +548,41 @@ Java_app_howlingdog_Bridge_nativeRunFrame(JNIEnv * /* env */,
                                           jobject /* thiz */) {
     if (g_inited && g_loaded)
         retro_run();
+}
+
+// Run-ahead (Phase 10): 0 = off, 1 or 2 frames ahead. The setting
+// is read at game start (and takes effect on the next game start
+// when changed in Settings, like the CRT shader/curvature masters).
+// Clamped to 0..2; with no game loaded only the requested value is
+// stored, and the ring is (re)sized by runahead_apply() on load.
+JNIEXPORT void JNICALL
+Java_app_howlingdog_Bridge_nativeSetRunahead(JNIEnv * /* env */,
+                                             jobject /* thiz */,
+                                             jint frames) {
+    if (frames < 0)
+        frames = 0;
+    if (frames > RUNAHEAD_MAX_FRAMES)
+        frames = RUNAHEAD_MAX_FRAMES;
+    g_runahead_frames = (int)frames;
+    runahead_apply();
+}
+
+// One displayed frame with run-ahead. When the setting is off the
+// state machine degrades to a single plain retro_run(), but the
+// Kotlin side calls nativeRunFrame() instead in that case, so the
+// off path is exactly the v1.0.0 frame path.
+JNIEXPORT void JNICALL
+Java_app_howlingdog_Bridge_nativeRunFrameRunahead(JNIEnv * /* env */,
+                                                  jobject /* thiz */) {
+    if (!g_inited || !g_loaded)
+        return;
+    runahead_ops_t ops;
+    ops.run_frame = ra_run_frame;
+    ops.serialize = ra_serialize;
+    ops.unserialize = ra_unserialize;
+    ops.set_audio_suppress = ra_set_audio_suppress;
+    ops.ctx = NULL;
+    runahead_step(&g_runahead, &ops);
 }
 
 JNIEXPORT jboolean JNICALL
@@ -638,6 +739,8 @@ Java_app_howlingdog_Bridge_nativeUnloadGame(JNIEnv * /* env */,
         retro_unload_game();
         g_loaded = false;
     }
+    runahead_shutdown(&g_runahead);
+    g_audio_suppress = false;
     pthread_mutex_lock(&g_audio_mutex);
     g_audio_head = g_audio_tail = g_audio_count = 0;
     pthread_mutex_unlock(&g_audio_mutex);
@@ -654,6 +757,8 @@ Java_app_howlingdog_Bridge_nativeDeinit(JNIEnv * /* env */,
         g_inited = false;
         g_loaded = false;
     }
+    runahead_shutdown(&g_runahead);
+    g_audio_suppress = false;
     free(g_frame);
     g_frame = NULL;
     free(g_system_dir);

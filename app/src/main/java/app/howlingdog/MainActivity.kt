@@ -451,6 +451,9 @@ class MainActivity : ComponentActivity() {
         // Turbo/autofire (Phase 9, item 6): the per-button toggles,
         // persisted in ControlSettings, default off for every button.
         var turboMask by remember { mutableStateOf(controlSettings.turboMask()) }
+        // Run-ahead (Phase 10): 0 = off, 1 or 2 frames ahead.
+        // Off by default; takes effect the next time a game starts.
+        var runaheadFrames by remember { mutableStateOf(appSettings.runaheadFrames()) }
         // The pulse state machine (each turbo button's press start time).
         val turboState = remember { TurboState() }
         var showBoot by remember { mutableStateOf(appSettings.showBoot()) }
@@ -1053,6 +1056,11 @@ class MainActivity : ComponentActivity() {
                     playingGame = null
                     screen = Screen.Library
                 },
+                // Phase 10 — run-ahead for this game: the per-game
+                // override wins, otherwise the global setting.
+                runaheadFrames = perGameSettings.resolveRunahead(
+                    entry.mainFile, appSettings.runaheadFrames(),
+                ),
             )
             playingGame = entry
             // A new game starts on slot 1 — the legacy slot the
@@ -2591,6 +2599,21 @@ class MainActivity : ComponentActivity() {
                         "While held, a turbo button presses and releases about 12 times a second — for shooters and run-and-guns. Off by default. Applies to the on-screen buttons and the gamepad.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Spacer(Modifier.height(16.dp))
+                    Text("Latency", style = MaterialTheme.typography.titleSmall)
+                    ControlDropdownRow(
+                        "Run-ahead",
+                        Runahead.OPTIONS,
+                        Runahead.store(runaheadFrames),
+                    ) { value ->
+                        val frames = Runahead.parse(value)
+                        appSettings.setRunaheadFrames(frames)
+                        runaheadFrames = frames
+                    }
+                    Text(
+                        "Runs the game one or two frames ahead of the display, so a press shows up sooner. Off by default. Takes effect the next time a game starts.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2843,6 +2866,19 @@ class MainActivity : ComponentActivity() {
                                 "The D-pad is eight-way, like the stick — its corners are diagonals. It never switches to four-way.",
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                            Spacer(Modifier.height(16.dp))
+                            Text("Latency", style = MaterialTheme.typography.titleSmall)
+                            ControlDropdownRow(
+                                "Run-ahead",
+                                listOf("global" to "Use global") + Runahead.OPTIONS,
+                                perGameSettings.runaheadOverride(game.mainFile)?.let { Runahead.store(it) } ?: "global",
+                            ) { value ->
+                                perGameSettings.setRunaheadOverride(
+                                    game.mainFile,
+                                    if (value == "global") null else Runahead.parse(value),
+                                )
+                                perGameTick++
+                            }
                             Spacer(Modifier.height(16.dp))
                             Button(onClick = {
                                 perGameSettings.clear(game.mainFile)

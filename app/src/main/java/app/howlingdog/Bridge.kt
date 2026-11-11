@@ -52,6 +52,16 @@ object Bridge {
     /** Set one core option (see bridge.cpp). False for an unknown key. */
     external fun nativeSetOption(key: String, value: String): Boolean
 
+    /**
+     * Run-ahead (Phase 10): 0 = off, 1 or 2 frames ahead. Only
+     * call on the emu thread (or before it starts); takes effect
+     * on the next game start when changed in Settings.
+     */
+    external fun nativeSetRunahead(frames: Int)
+
+    /** One displayed frame with run-ahead (see bridge.cpp). */
+    external fun nativeRunFrameRunahead()
+
     /** Save-state bytes; only call while the emulation thread is paused. */
     external fun nativeSerialize(): ByteArray?
     external fun nativeUnserialize(data: ByteArray): Boolean

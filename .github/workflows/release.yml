@@ -70,6 +70,15 @@ jobs:
           gcc -I src -Wall -Wextra -o /tmp/geo_slice_test tests/geo_slice_test.c
           /tmp/geo_slice_test
 
+      - name: Run run-ahead unit test (host)
+        run: |
+          set -euo pipefail
+          # Phase 10: the run-ahead state machine is pure C
+          # (bridge/jni/runahead.c) — see android.yml for why it is
+          # tested on the host.
+          gcc -I bridge/jni -Wall -Wextra -o /tmp/runahead_test tests/runahead_test.c bridge/jni/runahead.c
+          /tmp/runahead_test
+
       - name: Build bridge (arm64-v8a only)
         run: |
           set -euo pipefail

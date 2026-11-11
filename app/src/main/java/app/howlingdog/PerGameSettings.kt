@@ -60,12 +60,14 @@ class PerGameSettings(private val store: OptionStore) {
         const val KEY_SHADER = "display.shader"
         const val KEY_CURVATURE = "display.curvature"
         const val KEY_LEFT_CONTROL = "controls.leftControl"
+        const val KEY_RUNAHEAD = "gameplay.runahead"
 
-        /** Every suffix a profile may store (core keys + display + control). */
+        /** Every suffix a profile may store (core keys + display + control + gameplay). */
         val ALL_SUFFIXES: List<String> = CORE_KEYS + listOf(
             KEY_SHADER,
             KEY_CURVATURE,
             KEY_LEFT_CONTROL,
+            KEY_RUNAHEAD,
         )
     }
 
@@ -138,12 +140,34 @@ class PerGameSettings(private val store: OptionStore) {
         store.put(key(mainFile, KEY_LEFT_CONTROL), control?.name?.lowercase() ?: "")
     }
 
+    /**
+     * Phase 10 — the stored run-ahead override for this game (0/1/2
+     * frames), or null when unset or invalid (an invalid stored
+     * value reads as unset, so it can never turn run-ahead on by
+     * accident).
+     */
+    fun runaheadOverride(mainFile: String): Int? {
+        val raw = store.get(key(mainFile, KEY_RUNAHEAD))?.takeIf { it.isNotBlank() } ?: return null
+        return when (raw.lowercase()) {
+            "off" -> Runahead.FRAMES_OFF
+            "1" -> Runahead.FRAMES_1
+            "2" -> Runahead.FRAMES_2
+            else -> null
+        }
+    }
+
+    /** Store (or clear, with null) this game's run-ahead override. */
+    fun setRunaheadOverride(mainFile: String, frames: Int?) {
+        store.put(key(mainFile, KEY_RUNAHEAD), frames?.let { Runahead.store(it) } ?: "")
+    }
+
     /** True when this game has at least one override that changes anything. */
     fun hasProfile(mainFile: String): Boolean {
         if (CORE_KEYS.any { coreOverride(mainFile, it) != null }) return true
         if (shaderOverride(mainFile) != null) return true
         if (curvatureOverride(mainFile) != null) return true
         if (leftControlOverride(mainFile) != null) return true
+        if (runaheadOverride(mainFile) != null) return true
         return false
     }
 
@@ -167,6 +191,10 @@ class PerGameSettings(private val store: OptionStore) {
     /** The left control's effective value for this game: the override wins, otherwise the global value. */
     fun resolveLeftControl(mainFile: String, global: LeftControl): LeftControl =
         leftControlOverride(mainFile) ?: global
+
+    /** Run-ahead's effective value for this game: the override wins, otherwise the global value. */
+    fun resolveRunahead(mainFile: String, global: Int): Int =
+        runaheadOverride(mainFile) ?: global
 
     /**
      * Push this game's stored core overrides into the bridge, on

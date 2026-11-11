@@ -34,6 +34,13 @@ class PlayerSession(
     private val gamePath: String,
     private val onFrame: (Bitmap) -> Unit,
     private val onError: (String) -> Unit,
+    /**
+     * Phase 10 — run-ahead frames for this game (0 = off, 1 or 2),
+     * resolved by the caller from the global setting and any
+     * per-game override. Read once at game start; changing it in
+     * Settings takes effect on the next game start.
+     */
+    private val runaheadFrames: Int = 0,
 ) {
     companion object {
         private const val TAG = "HowlingDog"
@@ -226,9 +233,14 @@ class PlayerSession(
         val width = av[0]
         val height = av[1]
         val fps = av[2] / 1000.0
-        Log.i(TAG, "playing ${width}x${height} @ $fps fps, audio ${av[3]} Hz -> $AUDIO_RATE Hz")
+        Log.i(TAG, "playing ${width}x${height} @ $fps fps, audio ${av[3]} Hz -> $AUDIO_RATE Hz, run-ahead ${runaheadFrames} frame(s)")
         // Push any input the UI already recorded before the load finished.
         Bridge.nativeSetInput(inputMask)
+        // Phase 10 — size the run-ahead ring for this game now
+        // that it is loaded (the state size is only known then).
+        // With run-ahead off this stores 0 and the loop below uses
+        // the plain frame path, exactly as in v1.0.0.
+        Bridge.nativeSetRunahead(runaheadFrames)
         if (width <= 0 || height <= 0 || fps <= 0.0) {
             Bridge.nativeUnloadGame()
             Bridge.nativeDeinit()
@@ -274,7 +286,13 @@ class PlayerSession(
             val t0 = System.nanoTime()
             inFrame = true
             try {
-                Bridge.nativeRunFrame()
+                // Phase 10 — with run-ahead on, the frame goes
+                // through the run-ahead step (restore, re-simulate,
+                // display); with it off, the plain v1.0.0 path.
+                if (runaheadFrames > 0)
+                    Bridge.nativeRunFrameRunahead()
+                else
+                    Bridge.nativeRunFrame()
             } finally {
                 inFrame = false
             }
