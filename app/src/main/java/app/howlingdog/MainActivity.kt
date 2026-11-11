@@ -3095,21 +3095,22 @@ fun PauseMenu(
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
         )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "RESUME", primary = true, compact = true, onClick = onResume)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         // Save-state slot picker: three small chips, one per
         // slot — a filled dot means the slot holds a save, an
         // open dot means it is empty, and the picked slot is
-        // gold. Chips, not full buttons: three compact buttons
-        // would push the menu past the ~355dp landscape game
-        // area and the menu would scroll (see PauseMenuTest).
+        // gold. Chips, not full buttons, and the gaps between
+        // rows are 2dp, not 4dp: three compact buttons would
+        // push the menu past the ~355dp landscape game area and
+        // the menu would scroll (see PauseMenuTest).
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (slot in 1..QuickSave.SLOT_COUNT) {
                 val picked = slot == selectedSlot
                 Box(
                     modifier = Modifier
-                        .height(32.dp)
+                        .height(28.dp)
                         .clickable { onSelectSlot(slot) }
                         .background(
                             if (picked) Color(EraUi.Palette.GOLD)
@@ -3135,15 +3136,15 @@ fun PauseMenu(
                 }
             }
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "SAVE STATE", compact = true, onClick = onSaveState)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "LOAD STATE", compact = true, onClick = onLoadState)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "SETTINGS", compact = true, onClick = onSettings)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "ADJUST CONTROLS", compact = true, onClick = onAdjustControls)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "QUIT TO LIBRARY", compact = true, onClick = onQuit)
         if (status.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
