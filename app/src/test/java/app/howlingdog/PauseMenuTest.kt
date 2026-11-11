@@ -3,14 +3,15 @@ package app.howlingdog
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -119,7 +120,10 @@ class PauseMenuTest {
         // there is no UniBIOS menu to open, so the row is not
         // shown at all and the six-button fit is unchanged.
         setMenu(width = 800, height = 360)
-        composeRule.onNodeWithText("UNIVERSE BIOS MENU").assertDoesNotExist()
+        assertTrue(
+            composeRule.onAllNodesWithText("UNIVERSE BIOS MENU")
+                .fetchSemanticsNodes().isEmpty(),
+        )
     }
 
     @Test
