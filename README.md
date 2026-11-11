@@ -59,6 +59,12 @@ system, each matched to the display that system was played on.
   overclocking, region, overscan, Universe BIOS hardware, memory
   card (on by default), free play, and the CD speed/DMA/loading
   options, in Settings.
+- **Per-game settings** — the gear chip on the picked game opens
+  that game's own settings: region, palette, aspect ratio, sprites
+  per line, overclocking, free play, CRT shader, screen curvature,
+  and the left control. Anything left on "Use global" follows
+  Settings, and Reset restores the global settings for that game.
+  Takes effect the next time the game starts.
 - **In-app Licences screen** — Settings → About → Licences shows
   the full licence texts for every library in the app (see
   [NOTICE](NOTICE)).

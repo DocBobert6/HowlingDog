@@ -64,6 +64,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -320,7 +321,7 @@ class MainActivity : ComponentActivity() {
         return super.onGenericMotionEvent(event)
     }
 
-    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup }
+    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings }
 
     private data class Held(
         val up: Boolean = false,
@@ -362,6 +363,12 @@ class MainActivity : ComponentActivity() {
         // the rename dialog (prefilled with the name it shows now).
         var renameFor by remember { mutableStateOf<GameEntry?>(null) }
         var renameText by remember { mutableStateOf("") }
+        // Phase 9, item 8 — the game whose own settings screen is
+        // open (null when it is closed). `perGameTick` is bumped on
+        // every per-game change so that screen recomposes from the
+        // store (its rows read the overrides directly).
+        var perGameFor by remember { mutableStateOf<GameEntry?>(null) }
+        var perGameTick by remember { mutableStateOf(0) }
         var settingsFrom by remember { mutableStateOf(Screen.Library) }
         var paused by remember { mutableStateOf(false) }
         var pauseStatus by remember { mutableStateOf("") }
@@ -454,6 +461,19 @@ class MainActivity : ComponentActivity() {
         }
         var crtShaderOn by remember { mutableStateOf(shaderSettings.shaderMasterOn()) }
         var curvatureOn by remember { mutableStateOf(shaderSettings.curvatureMasterOn()) }
+        // Phase 9, item 8 — per-game configuration profiles: a
+        // game's own overrides for region, a few core options, the
+        // CRT shader / curvature, and the left control. Same
+        // SharedPreferences file, own "pergame.*" keys.
+        val perGameSettings = remember {
+            PerGameSettings(
+                SharedPrefsStore(
+                    context.getSharedPreferences(
+                        "howlingdog-settings", Context.MODE_PRIVATE,
+                    ),
+                ),
+            )
+        }
         var stickPos by remember { mutableStateOf(controlSettings.stickPosition()) }
         var buttonsPos by remember { mutableStateOf(controlSettings.buttonsPosition()) }
         // Per-group resize multipliers, set by the resize handle in
@@ -516,13 +536,17 @@ class MainActivity : ComponentActivity() {
 
         // Re-read the control settings whenever the game screen is
         // entered, so a change made in Settings (or in the adjust
-        // layout mode) is live the next time a game starts.
+        // layout mode) is live the next time a game starts. The
+        // left control resolves per game first (Phase 9, item 8):
+        // a game's own choice wins over the global one.
         LaunchedEffect(screen) {
             if (screen == Screen.Playing) {
                 hapticsLevel = controlSettings.haptics()
                 overlayOpacity = controlSettings.opacity()
                 controlSize = controlSettings.size()
-                leftControl = controlSettings.leftControl()
+                leftControl = playingGame?.let {
+                    perGameSettings.resolveLeftControl(it.mainFile, controlSettings.leftControl())
+                } ?: controlSettings.leftControl()
                 turboMask = controlSettings.turboMask()
                 stickPos = controlSettings.stickPosition()
                 buttonsPos = controlSettings.buttonsPosition()
@@ -932,9 +956,13 @@ class MainActivity : ComponentActivity() {
             }
             // Push the stored options and this game's mode into the
             // bridge BEFORE the session starts: the core reads the
-            // system types only at retro_init.
+            // system types only at retro_init. The per-game core
+            // overrides (Phase 9, item 8) go on top of the global
+            // values, so a game starts with its own region, palette,
+            // and the rest.
             settings.applyAll()
             settings.applyMode(entry)
+            perGameSettings.applyCoreOverrides(entry)
             val saveDir = File(context.filesDir, "saves").apply { mkdirs() }
             status = "Starting ${entry.effectiveName}…"
             session = PlayerSession(
@@ -1182,8 +1210,9 @@ class MainActivity : ComponentActivity() {
         // pause menu, quits to the library — closing out of a game
         // returns to the library, never to the Android home screen.
         // Settings: back returns to where Settings was opened
-        // from (the library, or the game).
-        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup) {
+        // from (the library, or the game). A game's own settings
+        // screen (Phase 9, item 8) returns to the library.
+        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings) {
             when (screen) {
                 Screen.Playing -> when {
                     editControls -> exitEditMode()
@@ -1193,6 +1222,10 @@ class MainActivity : ComponentActivity() {
                 Screen.Settings -> screen = settingsFrom
                 Screen.Licences -> screen = Screen.Settings
                 Screen.Setup -> leaveSetup()
+                Screen.GameSettings -> {
+                    perGameFor = null
+                    screen = Screen.Library
+                }
                 else -> { /* Library/Boot: the handler is disabled there. */ }
             }
         }
@@ -1379,6 +1412,10 @@ class MainActivity : ComponentActivity() {
                                 onRename = {
                                     renameFor = selected
                                     renameText = selected.effectiveName
+                                },
+                                onSettings = {
+                                    perGameFor = selected
+                                    screen = Screen.GameSettings
                                 },
                                 cover = covers[selected.mainFile],
                             )
@@ -1706,10 +1743,20 @@ class MainActivity : ComponentActivity() {
                                 val entry = playingGame
                                 if (entry != null) {
                                     val mode = entry.effectiveMode
+                                    // Phase 9, item 8 — a game's own
+                                    // shader / curvature choice wins
+                                    // over the per-system → master
+                                    // chain; unset falls back to it.
                                     it.setPreset(
                                         ShaderPresets.forMode(mode),
-                                        shaderSettings.shaderOn(mode),
-                                        shaderSettings.curvatureOn(mode),
+                                        perGameSettings.resolveShader(
+                                            entry.mainFile,
+                                            shaderSettings.shaderOn(mode),
+                                        ),
+                                        perGameSettings.resolveCurvature(
+                                            entry.mainFile,
+                                            shaderSettings.curvatureOn(mode),
+                                        ),
                                     )
                                 }
                             },
@@ -2443,6 +2490,126 @@ class MainActivity : ComponentActivity() {
                     }
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { screen = settingsFrom }) { Text("Back") }
+                }
+            }
+            Screen.GameSettings -> {
+                // Phase 9, item 8 — this game's own settings: the
+                // per-game overrides (region, palette, aspect
+                // ratio, sprites per line, overclocking, free play,
+                // CRT shader, curvature, left control). Anything
+                // left on "Use global" follows Settings; Reset
+                // drops every override for this game, so it follows
+                // the global settings again. Takes effect the next
+                // time this game starts.
+                val game = perGameFor
+                if (game != null) {
+                    key(perGameTick) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .statusBarsPadding()
+                                .verticalScroll(rememberScrollState())
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                "Settings — ${game.effectiveName}",
+                                style = MaterialTheme.typography.headlineMedium,
+                            )
+                            Text(
+                                "Only this game. Anything left on \"Use global\" follows Settings. Takes effect the next time this game starts.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                if (perGameSettings.hasProfile(game.mainFile)) {
+                                    "This game has its own settings."
+                                } else {
+                                    "Using the global settings."
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            for (coreKey in PerGameSettings.CORE_KEYS) {
+                                val opt = CoreOptions.byKey(coreKey) ?: continue
+                                ControlDropdownRow(
+                                    opt.label,
+                                    listOf("global" to "Use global") + opt.values,
+                                    perGameSettings.coreOverride(game.mainFile, coreKey) ?: "global",
+                                ) { value ->
+                                    perGameSettings.setCoreOverride(
+                                        game.mainFile, coreKey,
+                                        if (value == "global") null else value,
+                                    )
+                                    perGameTick++
+                                }
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            Text("CRT display", style = MaterialTheme.typography.titleSmall)
+                            ControlDropdownRow(
+                                "CRT shader",
+                                listOf("global" to "Use global", "on" to "On", "off" to "Off"),
+                                perGameSettings.shaderOverride(game.mainFile)?.let { if (it) "on" else "off" } ?: "global",
+                            ) { value ->
+                                perGameSettings.setShaderOverride(
+                                    game.mainFile,
+                                    when (value) {
+                                        "on" -> true
+                                        "off" -> false
+                                        else -> null
+                                    },
+                                )
+                                perGameTick++
+                            }
+                            ControlDropdownRow(
+                                "Screen curvature",
+                                listOf("global" to "Use global", "on" to "On", "off" to "Off"),
+                                perGameSettings.curvatureOverride(game.mainFile)?.let { if (it) "on" else "off" } ?: "global",
+                            ) { value ->
+                                perGameSettings.setCurvatureOverride(
+                                    game.mainFile,
+                                    when (value) {
+                                        "on" -> true
+                                        "off" -> false
+                                        else -> null
+                                    },
+                                )
+                                perGameTick++
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            Text("On-screen controls", style = MaterialTheme.typography.titleSmall)
+                            ControlDropdownRow(
+                                "Left control",
+                                listOf("global" to "Use global", "stick" to "Joystick", "dpad" to "D-pad"),
+                                perGameSettings.leftControlOverride(game.mainFile)?.name?.lowercase() ?: "global",
+                            ) { value ->
+                                perGameSettings.setLeftControlOverride(
+                                    game.mainFile,
+                                    when (value) {
+                                        "stick" -> LeftControl.STICK
+                                        "dpad" -> LeftControl.DPAD
+                                        else -> null
+                                    },
+                                )
+                                perGameTick++
+                            }
+                            Text(
+                                "The D-pad is eight-way, like the stick — its corners are diagonals. It never switches to four-way.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Button(onClick = {
+                                perGameSettings.clear(game.mainFile)
+                                perGameTick++
+                                status = "${game.effectiveName}: using global settings."
+                            }) { Text("Reset to global settings") }
+                            Spacer(Modifier.height(16.dp))
+                            Button(onClick = {
+                                perGameFor = null
+                                screen = Screen.Library
+                            }) { Text("Back") }
+                        }
+                    }
                 }
             }
             Screen.Licences -> {

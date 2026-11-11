@@ -209,7 +209,7 @@ fun GameTile(
     }
 }
 
-/** The picked game, big in the middle. Tap the portrait (or START) to play. [cover] is the fetched box art, or null for the typographic portrait. RENAME opens the rename dialog (Phase 9, item 4) — the rename lives here, on the portrait, so the tile's long-press keeps meaning pin/unpin exactly as before. */
+/** The picked game, big in the middle. Tap the portrait (or START) to play. [cover] is the fetched box art, or null for the typographic portrait. RENAME opens the rename dialog (Phase 9, item 4) — the rename lives here, on the portrait, so the tile's long-press keeps meaning pin/unpin exactly as before. The gear chip in the top-right corner (Phase 9, item 8) opens this game's own settings — the four-button row below is untouched. */
 @Composable
 fun SelectedPortrait(
     entry: GameEntry,
@@ -217,6 +217,7 @@ fun SelectedPortrait(
     onMode: () -> Unit,
     onRemove: () -> Unit,
     onRename: () -> Unit,
+    onSettings: () -> Unit,
     modifier: Modifier = Modifier,
     cover: Bitmap? = null,
 ) {
@@ -315,6 +316,27 @@ fun SelectedPortrait(
                 Spacer(modifier = Modifier.padding(horizontal = 2.dp))
                 ArcadeButton(text = "REMOVE", onClick = onRemove, tight = true, modifier = Modifier.weight(1f))
             }
+        }
+        // Phase 9, item 8 — the gear chip opens this game's own
+        // settings. Top-right corner, clear of the name/system
+        // text (top-left) and the button row (bottom); a nested
+        // clickable, so tapping it never starts the game.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp)
+                .background(Color(EraUi.Palette.SURFACE).copy(alpha = 0.85f))
+                .border(1.dp, Color(EraUi.Palette.GOLD_MUTED))
+                .clickable { onSettings() }
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "⚙ SETTINGS",
+                color = Color(EraUi.Palette.TEXT),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }
