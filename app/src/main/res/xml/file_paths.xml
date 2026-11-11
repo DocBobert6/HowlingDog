@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 9, item 10: the in-app updater's FileProvider paths.
+     Only the update download directory is exposed — the APK the
+     updater hands to the system installer lives in
+     cacheDir/updates/. Nothing else is shared through this provider. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

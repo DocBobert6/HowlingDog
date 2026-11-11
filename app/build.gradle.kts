@@ -53,6 +53,9 @@ android {
     }
     buildFeatures {
         compose = true
+        // Phase 9, item 10: the in-app updater compares against the
+        // installed version via BuildConfig.VERSION_NAME.
+        buildConfig = true
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true

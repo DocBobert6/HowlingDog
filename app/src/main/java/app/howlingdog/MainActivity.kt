@@ -522,6 +522,12 @@ class MainActivity : ComponentActivity() {
         // and no games; it is consumed when the setup screen is
         // left, and never re-offered after it has been seen.
         var setupPending by remember { mutableStateOf(false) }
+        // Phase 9, item 10 — in-app updater: the update the user
+        // dismissed ("Not now" on the library notice), mirrored in
+        // a Compose state so dismissing it recomposes the banner
+        // away at once; the store is the source of truth across
+        // restarts.
+        var dismissedUpdate by remember { mutableStateOf(appSettings.dismissedUpdateVersion()) }
 
         fun exitEditMode() {
             controlSettings.setStickPosition(stickPos)
@@ -661,6 +667,16 @@ class MainActivity : ComponentActivity() {
         }
 
         LaunchedEffect(Unit) { refreshLibrary() }
+
+        // Phase 9, item 10 — automatic update check when the
+        // library is entered (throttled to once an hour inside
+        // checkAsync; the check itself is one small API call, and
+        // nothing downloads until the user taps Download).
+        LaunchedEffect(screen) {
+            if (screen == Screen.Library) {
+                UpdateChecker.checkAsync(appSettings, BuildConfig.VERSION_NAME)
+            }
+        }
 
         // Cover art: fetch the filename index once (Wi-Fi only,
         // cached on the device), then one small image per game —
@@ -1408,6 +1424,79 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     Spacer(Modifier.height(12.dp))
+                    // Phase 9, item 10 — update notice: shown when
+                    // a newer stable release is known and the user
+                    // has not dismissed this version. Dismissing
+                    // remembers the version (persisted), so it is
+                    // never re-offered; a newer version still
+                    // shows. The download starts only on an
+                    // explicit tap, on the current connection.
+                    val updateAvailable = UpdateChecker.availableVersion
+                    if (updateAvailable != null && updateAvailable != dismissedUpdate) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Color(EraUi.Palette.SURFACE_RAISED),
+                                    RoundedCornerShape(8.dp),
+                                )
+                                .border(
+                                    1.dp,
+                                    Color(EraUi.Palette.GOLD_MUTED),
+                                    RoundedCornerShape(8.dp),
+                                )
+                                .padding(12.dp),
+                        ) {
+                            Text(
+                                "Update available — v$updateAvailable",
+                                color = Color(EraUi.Palette.GOLD),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            when (val progress = UpdateChecker.downloadProgress) {
+                                in 0..100 -> Text(
+                                    "Downloading… $progress%",
+                                    color = Color(EraUi.Palette.TEXT),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                -2 -> Text(
+                                    "The download failed — check your connection and try again.",
+                                    color = Color(EraUi.Palette.WARNING),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                -3 -> Text(
+                                    "That download failed its check and was deleted — try again.",
+                                    color = Color(EraUi.Palette.WARNING),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                -4 -> Text(
+                                    "Version v$updateAvailable is out, but it has no APK attached yet.",
+                                    color = Color(EraUi.Palette.TEXT),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                else -> Text(
+                                    "Downloads only when you tap Download, on your current connection.",
+                                    color = Color(EraUi.Palette.TEXT_MUTED),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (UpdateChecker.downloadUrl != null &&
+                                    UpdateChecker.downloadProgress !in 0..100
+                                ) {
+                                    ArcadeButton(text = "Download v$updateAvailable") {
+                                        UpdateChecker.downloadAndInstall(context)
+                                    }
+                                }
+                                ArcadeButton(text = "Not now") {
+                                    appSettings.setDismissedUpdateVersion(updateAvailable)
+                                    dismissedUpdate = updateAvailable
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
+                    }
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2544,6 +2633,10 @@ class MainActivity : ComponentActivity() {
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
+                        "Version ${BuildConfig.VERSION_NAME}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
                         "HowlingDog is not affiliated with or endorsed by SNK Corporation.",
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -2554,6 +2647,92 @@ class MainActivity : ComponentActivity() {
                         // time: the debug-menu-style guide for a
                         // fresh install (audit 2).
                         Button(onClick = { screen = Screen.Setup }) { Text("Setup guide") }
+                    }
+                    // Phase 9, item 10 — in-app updater: a manual
+                    // check on demand, plus the download when one
+                    // is available. A manual check clears any
+                    // dismissal first, so a found update shows its
+                    // library notice again.
+                    Spacer(Modifier.height(16.dp))
+                    Text("Updates", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Updates come from the project's GitHub releases and install in place — same signature, your saves untouched.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            appSettings.clearDismissedUpdateVersion()
+                            dismissedUpdate = null
+                            UpdateChecker.checkAsync(appSettings, BuildConfig.VERSION_NAME, force = true)
+                        }) { Text("Check for updates") }
+                        val settingsAvailable = UpdateChecker.availableVersion
+                        if (settingsAvailable != null &&
+                            UpdateChecker.downloadUrl != null &&
+                            UpdateChecker.downloadProgress !in 0..100
+                        ) {
+                            Button(onClick = { UpdateChecker.downloadAndInstall(context) }) {
+                                Text("Download v$settingsAvailable")
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    when {
+                        UpdateChecker.checking -> Text(
+                            "Checking for updates…",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        UpdateChecker.downloadProgress in 0..100 -> Text(
+                            "Downloading version ${UpdateChecker.availableVersion}… ${UpdateChecker.downloadProgress}%",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        UpdateChecker.availableVersion != null -> {
+                            val settingsAvailable = UpdateChecker.availableVersion
+                            Text(
+                                "Version v$settingsAvailable is available.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            if (UpdateChecker.downloadUrl == null) {
+                                Text(
+                                    "It has no APK attached yet — check back later.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            UpdateChecker.releaseNotes?.let { notes ->
+                                Spacer(Modifier.height(8.dp))
+                                Text("What's new", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    notes.take(1000),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            if (UpdateChecker.downloadProgress == -2) {
+                                Text(
+                                    "The download failed — check your connection and try again.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                            if (UpdateChecker.downloadProgress == -3) {
+                                Text(
+                                    "That download failed its check and was deleted — try again.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                        UpdateChecker.lastCheckOutcome == CheckOutcome.UP_TO_DATE -> Text(
+                            "You're up to date.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        UpdateChecker.lastCheckOutcome == CheckOutcome.FAILED -> Text(
+                            "Couldn't check — check your connection and try again.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        else -> Text(
+                            "Updates are checked when you open the library.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { screen = settingsFrom }) { Text("Back") }

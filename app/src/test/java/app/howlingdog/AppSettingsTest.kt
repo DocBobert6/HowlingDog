@@ -1,6 +1,8 @@
 package app.howlingdog
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -50,5 +52,29 @@ class AppSettingsTest {
         assertTrue(settings.setupSeen())
         assertTrue(settingsWith(AppSettings.KEY_SETUP_SEEN to "yes").setupSeen())
         assertFalse(settingsWith(AppSettings.KEY_SETUP_SEEN to "no").setupSeen())
+    }
+
+    @Test
+    fun dismissedUpdateEmptyByDefault() {
+        assertNull(settingsWith().dismissedUpdateVersion())
+        assertNull(settingsWith(AppSettings.KEY_DISMISSED_UPDATE to "").dismissedUpdateVersion())
+    }
+
+    @Test
+    fun dismissedUpdateRoundTripsAndClears() {
+        val settings = settingsWith()
+        settings.setDismissedUpdateVersion("v1.1.0")
+        assertEquals("v1.1.0", settings.dismissedUpdateVersion())
+        settings.clearDismissedUpdateVersion()
+        assertNull(settings.dismissedUpdateVersion())
+    }
+
+    @Test
+    fun lastUpdateCheckDefaultsToZeroAndRoundTrips() {
+        val settings = settingsWith()
+        assertEquals(0L, settings.lastUpdateCheck())
+        settings.setLastUpdateCheck(123456789L)
+        assertEquals(123456789L, settings.lastUpdateCheck())
+        assertEquals(0L, settingsWith(AppSettings.KEY_LAST_UPDATE_CHECK to "junk").lastUpdateCheck())
     }
 }

@@ -12,6 +12,8 @@ class AppSettings(private val store: OptionStore) {
     companion object {
         const val KEY_SHOW_BOOT = "app.showBoot" // "on" / "off"
         const val KEY_SETUP_SEEN = "app.setupSeen" // "yes" once the SYSTEM SETUP screen has been dismissed
+        const val KEY_DISMISSED_UPDATE = "app.dismissedUpdate" // tag of the update the user dismissed ("v1.1.0")
+        const val KEY_LAST_UPDATE_CHECK = "app.lastUpdateCheck" // epoch ms, as a string
 
         const val DEFAULT_SHOW_BOOT = true
     }
@@ -34,5 +36,30 @@ class AppSettings(private val store: OptionStore) {
 
     fun setSetupSeen() {
         store.put(KEY_SETUP_SEEN, "yes")
+    }
+
+    /**
+     * Phase 9, item 10 — the update the user dismissed ("Not
+     * now" on the library notice). A dismissed version is never
+     * re-offered; a newer version still is, because the stored
+     * tag no longer matches. A manual "Check for updates" in
+     * Settings clears it, so the notice can show again.
+     */
+    fun dismissedUpdateVersion(): String? =
+        store.get(KEY_DISMISSED_UPDATE)?.takeIf { it.isNotBlank() }
+
+    fun setDismissedUpdateVersion(tag: String) {
+        store.put(KEY_DISMISSED_UPDATE, tag)
+    }
+
+    fun clearDismissedUpdateVersion() {
+        store.put(KEY_DISMISSED_UPDATE, "")
+    }
+
+    /** When the last update check completed (epoch ms; 0 = never). */
+    fun lastUpdateCheck(): Long = store.get(KEY_LAST_UPDATE_CHECK)?.toLongOrNull() ?: 0L
+
+    fun setLastUpdateCheck(nowMillis: Long) {
+        store.put(KEY_LAST_UPDATE_CHECK, nowMillis.toString())
     }
 }

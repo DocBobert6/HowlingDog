@@ -70,6 +70,16 @@ system, each matched to the display that system was played on.
 - **In-app Licences screen** — Settings → About → Licences shows
   the full licence texts for every library in the app (see
   [NOTICE](NOTICE)).
+- **In-app updater** — the app checks the project's GitHub releases
+  for a newer stable release when the library opens (one small API
+  call, at most once an hour) and shows a dismissible notice; a
+  dismissed version is never re-offered. Settings → About → Check
+  for updates checks on demand. The APK downloads only when you
+  tap Download, and installs through the system installer — you
+  confirm the install, and the download is refused unless it
+  matches the release's SHA-256 and the app's own signing
+  certificate. If "Install unknown apps" is not allowed for
+  HowlingDog, the app says so and opens that system page.
 
 ## Screenshots
 
