@@ -44,6 +44,7 @@ class PauseMenuTest {
         onSelectSlot: (Int) -> Unit = {},
         showUniBiosMenu: Boolean = false,
         onUniBiosMenu: () -> Unit = {},
+        onCheats: () -> Unit = {},
     ) {
         composeRule.setContent {
             Box(Modifier.size(width.dp, height.dp)) {
@@ -57,6 +58,7 @@ class PauseMenuTest {
                     onUniBiosMenu = onUniBiosMenu,
                     onSaveState = {},
                     onLoadState = {},
+                    onCheats = onCheats,
                     onSettings = {},
                     onAdjustControls = {},
                     onQuit = {},
@@ -74,9 +76,24 @@ class PauseMenuTest {
         composeRule.onNodeWithText("RESUME").assertIsDisplayed()
         composeRule.onNodeWithText("SAVE STATE").assertIsDisplayed()
         composeRule.onNodeWithText("LOAD STATE").assertIsDisplayed()
+        // v1.5, feature 4 — CHEATS shares its row with SETTINGS,
+        // so the menu still fits the 360dp game area whole.
+        composeRule.onNodeWithText("CHEATS").assertIsDisplayed()
         composeRule.onNodeWithText("SETTINGS").assertIsDisplayed()
         composeRule.onNodeWithText("ADJUST CONTROLS").assertIsDisplayed()
         composeRule.onNodeWithText("QUIT TO LIBRARY").assertIsDisplayed()
+    }
+
+    @Test
+    fun cheatsButtonOpensOnTap() {
+        // v1.5, feature 4 — the CHEATS half of the shared row
+        // taps through to the Cheats screen.
+        var opened = false
+        setMenu(width = 800, height = 360, onCheats = { opened = true })
+        composeRule.onNodeWithText("CHEATS")
+            .assertIsDisplayed()
+            .performClick()
+        assertEquals(true, opened)
     }
 
     @Test

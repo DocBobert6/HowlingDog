@@ -5705,8 +5705,6 @@ fun PauseMenu(
         Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "LOAD STATE", compact = true, onClick = onLoadState)
         Spacer(Modifier.height(2.dp))
-        ArcadeButton(text = "CHEATS", compact = true, onClick = onCheats)
-        Spacer(Modifier.height(2.dp))
         // Phase 10 — RetroAchievements: the achievements list for
         // this game, only when RA has one loaded.
         if (showAchievements) {
@@ -5719,7 +5717,26 @@ fun PauseMenu(
             ArcadeButton(text = "LEADERBOARDS", compact = true, onClick = onLeaderboards)
             Spacer(Modifier.height(2.dp))
         }
-        ArcadeButton(text = "SETTINGS", compact = true, onClick = onSettings)
+        // v1.5, feature 4 — cheats: CHEATS and SETTINGS share one
+        // row (half-width each) so the menu keeps its landscape
+        // fit — a seventh full-width row would push QUIT off the
+        // 360dp game area (see PauseMenuTest). Both open a
+        // sub-screen from the pause menu, so the pairing is the
+        // same kind of action.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ArcadeButton(
+                text = "CHEATS",
+                modifier = Modifier.weight(1f),
+                compact = true,
+                onClick = onCheats,
+            )
+            ArcadeButton(
+                text = "SETTINGS",
+                modifier = Modifier.weight(1f),
+                compact = true,
+                onClick = onSettings,
+            )
+        }
         Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "ADJUST CONTROLS", compact = true, onClick = onAdjustControls)
         Spacer(Modifier.height(2.dp))
