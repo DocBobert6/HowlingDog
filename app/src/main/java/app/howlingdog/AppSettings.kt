@@ -22,6 +22,11 @@ class AppSettings(private val store: OptionStore) {
         // until one is turned on in Settings.
         const val KEY_SPEED_FF = "app.speedFF"
         const val KEY_SPEED_SLOW = "app.speedSlow"
+        // v1.5, feature 2 — auto-save on quit: "on" / "off".
+        // On by default: quitting to the library saves the game
+        // to slot 1 (the quick-save slot) without being asked,
+        // so quick load brings him back to where he left off.
+        const val KEY_AUTO_SAVE = "app.autoSave"
         // Phase 10 — RetroAchievements: the account the user logs
         // in with. v1.1.2: a username and the session token the
         // password login returned — the password itself is never
@@ -115,6 +120,17 @@ class AppSettings(private val store: OptionStore) {
 
     fun setSlowMotionOn(on: Boolean) {
         store.put(KEY_SPEED_SLOW, SpeedControl.storeSlowSetting(on))
+    }
+
+    /**
+     * v1.5, feature 2 — auto-save on quit: when true, quitting
+     * to the library writes the game to slot 1 (the quick-save
+     * slot). On by default; a Settings switch turns it off.
+     */
+    fun autoSaveOnQuit(): Boolean = store.get(KEY_AUTO_SAVE) != "off"
+
+    fun setAutoSaveOnQuit(on: Boolean) {
+        store.put(KEY_AUTO_SAVE, if (on) "on" else "off")
     }
 
     /** Phase 10 — RetroAchievements: the stored username ("" when logged out). */

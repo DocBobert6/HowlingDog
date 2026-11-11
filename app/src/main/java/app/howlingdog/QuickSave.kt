@@ -27,6 +27,15 @@ object QuickSave {
     const val QUICK_SLOT = 1
 
     /**
+     * v1.5, feature 2 — the width, in pixels, of a save-state
+     * thumbnail: the frame at save time, downsampled to 160px
+     * wide (the height follows the frame's aspect, ~118px for
+     * a 304x224 Neo Geo frame). Small enough to sit in the
+     * pause menu's slot picker without pushing it over.
+     */
+    const val THUMBNAIL_WIDTH_PX = 160
+
+    /**
      * The state file for a game and slot, given the saves dir and
      * the game's main file name. Slot 1 is the legacy
      * `<mainFile>.state` file; slots 2 and 3 are
@@ -63,4 +72,29 @@ object QuickSave {
     /** The slots that hold a save for this game, in slot order. */
     fun occupiedSlots(savesDir: File, mainFile: String): List<Int> =
         (1..SLOT_COUNT).filter { slotOccupied(savesDir, mainFile, it) }
+
+    /**
+     * v1.5, feature 2 — the thumbnail for a save-state slot:
+     * the state file's path with ".png" appended, so it sits
+     * alongside the state it pictures (slot 1 is
+     * `<mainFile>.state.png`, slot 2 `<mainFile>.state2.png`).
+     * Best effort throughout: a missing or failed thumbnail
+     * never fails the save, and an old save simply has none.
+     */
+    fun thumbnailFile(savesDir: File, mainFile: String, slot: Int = QUICK_SLOT): File =
+        File(stateFile(savesDir, mainFile, slot).path + ".png")
+
+    /**
+     * v1.5, feature 2 — the thumbnails that exist for this
+     * game, as slot -> file, in slot order. A slot with a save
+     * but no thumbnail (saved before thumbnails, or the write
+     * failed) is simply absent from the map.
+     */
+    fun slotThumbnails(savesDir: File, mainFile: String): Map<Int, File> =
+        (1..SLOT_COUNT)
+            .mapNotNull { slot ->
+                val file = thumbnailFile(savesDir, mainFile, slot)
+                if (file.isFile) slot to file else null
+            }
+            .toMap()
 }

@@ -129,4 +129,52 @@ class QuickSaveTest {
             QuickSave.raStateFile(saves, "kof98.neo", 3),
         )
     }
+
+    @Test
+    fun thumbnailFileIsTheStateFilePlusPng() {
+        // v1.5, feature 2 — the thumbnail sits alongside the
+        // state it pictures: the state file's path with ".png"
+        // appended, one per slot.
+        val saves = File("/tmp/hd-test-saves")
+        assertEquals(
+            File(saves, "kof98.neo.state.png"),
+            QuickSave.thumbnailFile(saves, "kof98.neo"),
+        )
+        assertEquals(
+            File(saves, "kof98.neo.state2.png"),
+            QuickSave.thumbnailFile(saves, "kof98.neo", 2),
+        )
+        assertEquals(
+            File(saves, "kof98.neo.state3.png"),
+            QuickSave.thumbnailFile(saves, "kof98.neo", 3),
+        )
+    }
+
+    @Test
+    fun slotThumbnailsOnlyListsThumbnailsThatExist() {
+        // v1.5, feature 2 — a slot with a save but no thumbnail
+        // (saved before thumbnails, or the write failed) is
+        // simply absent: the picker shows nothing for it, and
+        // the filled dot still marks it occupied.
+        val dir = File("/tmp/hd-test-thumb-saves")
+        dir.mkdirs()
+        File(dir, "kof98.neo.state").writeBytes(byteArrayOf(1))
+        File(dir, "kof98.neo.state.png").writeBytes(byteArrayOf(2))
+        File(dir, "kof98.neo.state2").writeBytes(byteArrayOf(3))
+        File(dir, "kof98.neo.state3").writeBytes(byteArrayOf(4))
+        File(dir, "kof98.neo.state3.png").writeBytes(byteArrayOf(5))
+        assertEquals(
+            mapOf(
+                1 to File(dir, "kof98.neo.state.png"),
+                3 to File(dir, "kof98.neo.state3.png"),
+            ),
+            QuickSave.slotThumbnails(dir, "kof98.neo"),
+        )
+        File(dir, "kof98.neo.state").delete()
+        File(dir, "kof98.neo.state.png").delete()
+        File(dir, "kof98.neo.state2").delete()
+        File(dir, "kof98.neo.state3").delete()
+        File(dir, "kof98.neo.state3.png").delete()
+        dir.delete()
+    }
 }

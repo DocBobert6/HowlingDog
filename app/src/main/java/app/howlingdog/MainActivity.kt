@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.hardware.input.InputManager
 import android.net.Uri
 import android.os.Bundle
@@ -78,11 +79,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -207,6 +210,17 @@ class MainActivity : ComponentActivity() {
      * keeps running while the app is backgrounded).
      */
     private var gameGlView: GameGlView? = null
+
+    /**
+     * v1.5, feature 2 — the most recent frame Bitmap, kept so
+     * a save can capture a thumbnail of where the game was.
+     * The session double-buffers and posts the front Bitmap;
+     * while paused no frames run, so the last posted Bitmap is
+     * stable and safe to copy at save time. Cleared when a new
+     * game starts, so a save before the first frame never
+     * pictures the previous game.
+     */
+    private var lastFrame: Bitmap? = null
 
     /** A pad that disappears must never leave a stuck button. */
     private val deviceListener = object : InputManager.InputDeviceListener {
@@ -536,6 +550,8 @@ class MainActivity : ComponentActivity() {
         var slowHeld by remember { mutableStateOf(false) }
         var ffSpeed by remember { mutableStateOf(appSettings.fastForwardSpeed()) }
         var slowOn by remember { mutableStateOf(appSettings.slowMotionOn()) }
+        // v1.5, feature 2 — auto-save on quit, on by default.
+        var autoSaveOnQuit by remember { mutableStateOf(appSettings.autoSaveOnQuit()) }
         // RetroAchievements (Phase 10, v1.1.2): the username and
         // password typed in Settings. The username is stored; the
         // password lives only in this editable copy while the
@@ -953,6 +969,35 @@ class MainActivity : ComponentActivity() {
             clearPadState()
             turboState.releaseAll()
             uniBiosHoldUntil = 0L
+            // v1.5, feature 2 — auto-save on quit: the game
+            // saves itself to slot 1 (the quick-save slot) when
+            // he quits, so quick load brings him back to where
+            // he left off; slots 2 and 3 stay his keepers. On
+            // by default, with a Settings switch to turn it
+            // off. Quit is only reached from the pause menu (or
+            // the second back press from it), so the session is
+            // paused already; pause first if it somehow is not,
+            // so the serialize is safe. A failed auto-save only
+            // logs — the quit must never be blocked.
+            if (appSettings.autoSaveOnQuit()) {
+                val game = playingGame
+                val s = session
+                if (game != null && s != null) {
+                    try {
+                        if (!paused) pauseGame()
+                        val bytes = s.serializeState()
+                        if (bytes != null) {
+                            val file = stateFileFor(game, QuickSave.QUICK_SLOT)
+                            file.parentFile?.mkdirs()
+                            file.writeBytes(bytes)
+                            writeRaSidecar(game, QuickSave.QUICK_SLOT)
+                            writeThumbnail(game, QuickSave.QUICK_SLOT)
+                        }
+                    } catch (_: Exception) {
+                        // The quit goes ahead regardless.
+                    }
+                }
+            }
             session?.stop()
             session = null
             held = Held()
@@ -1124,6 +1169,47 @@ class MainActivity : ComponentActivity() {
             else RaClient.resetProgress()
         }
 
+        /**
+         * v1.5, feature 2 — write the thumbnail for a save-state
+         * slot: the last frame, downsampled to 160px wide and
+         * stored as a PNG alongside the state file. Best effort:
+         * a failed thumbnail never fails the save, and a save
+         * before the first frame (no frame yet) simply has none.
+         * Only call while the session is paused, like the state
+         * snapshot itself — then the last frame is stable.
+         */
+        fun writeThumbnail(entry: GameEntry, slot: Int) {
+            val frame = lastFrame ?: return
+            if (frame.width <= 0 || frame.height <= 0) return
+            try {
+                val thumb = QuickSave.thumbnailFile(
+                    File(context.filesDir, "saves"),
+                    entry.mainFile,
+                    slot,
+                )
+                thumb.parentFile?.mkdirs()
+                val scaled = Bitmap.createScaledBitmap(
+                    frame,
+                    QuickSave.THUMBNAIL_WIDTH_PX,
+                    (QuickSave.THUMBNAIL_WIDTH_PX * frame.height) / frame.width,
+                    true,
+                )
+                try {
+                    thumb.outputStream().use { out ->
+                        scaled.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                } finally {
+                    // createScaledBitmap may return the source
+                    // when no scaling is needed — never recycle
+                    // the frame the session still owns.
+                    if (scaled !== frame) scaled.recycle()
+                }
+            } catch (_: Exception) {
+                // The state itself is already saved; a failed
+                // thumbnail must not fail the save.
+            }
+        }
+
         fun saveState() {
             val game = playingGame ?: return
             val s = session ?: return
@@ -1137,6 +1223,7 @@ class MainActivity : ComponentActivity() {
                 file.parentFile?.mkdirs()
                 file.writeBytes(bytes)
                 writeRaSidecar(game, saveSlot)
+                writeThumbnail(game, saveSlot)
                 pauseStatus = "Saved to slot $saveSlot."
             } catch (e: Exception) {
                 pauseStatus = "Could not save: ${e.message}"
@@ -1204,6 +1291,9 @@ class MainActivity : ComponentActivity() {
                             // Phase 10 — RetroAchievements: the
                             // sidecar travels with the state.
                             writeRaSidecar(game, QuickSave.QUICK_SLOT)
+                            // v1.5, feature 2 — the thumbnail
+                            // travels with it too.
+                            writeThumbnail(game, QuickSave.QUICK_SLOT)
                             true
                         } catch (e: Exception) {
                             false
@@ -1294,7 +1384,12 @@ class MainActivity : ComponentActivity() {
                 systemDir = biosDir.absolutePath,
                 saveDir = saveDir.absolutePath,
                 gamePath = entry.mainPath(gamesDir).absolutePath,
-                onFrame = { bitmap -> gameGlView?.setFrame(bitmap) },
+                onFrame = { bitmap ->
+                    // v1.5, feature 2 — keep the last frame so a
+                    // save can capture a thumbnail of it.
+                    lastFrame = bitmap
+                    gameGlView?.setFrame(bitmap)
+                },
                 onError = { message ->
                     inputActive = false
                     status = message
@@ -1313,6 +1408,9 @@ class MainActivity : ComponentActivity() {
             // quick path uses — whatever slot the last game left
             // the pause menu on.
             saveSlot = QuickSave.QUICK_SLOT
+            // v1.5, feature 2 — no frame yet: a save before the
+            // first frame must not picture the previous game.
+            lastFrame = null
             // v1.5, feature 1 — a fresh game starts at normal
             // speed: no hold survives from the last game.
             ffHeld = false
@@ -3035,6 +3133,16 @@ class MainActivity : ComponentActivity() {
                                             it.mainFile,
                                         )
                                     } ?: emptyList(),
+                                    // v1.5, feature 2 — the slot
+                                    // thumbnails, read fresh on
+                                    // each composition like the
+                                    // occupied slots above.
+                                    slotThumbnails = playingGame?.let {
+                                        QuickSave.slotThumbnails(
+                                            File(context.filesDir, "saves"),
+                                            it.mainFile,
+                                        ).mapValues { (_, file) -> file.path }
+                                    } ?: emptyMap(),
                                     onSelectSlot = { saveSlot = it },
                                     onResume = { resumeGame() },
                                     // Phase 9, item 9 — only under
@@ -3258,6 +3366,26 @@ class MainActivity : ComponentActivity() {
                     }
                     Text(
                         "Hold the SLOW button on the game screen, or hold the right stick click (R3) on a gamepad, to run the game at half speed — for hard sections. The button only appears on the overlay while it is on. Sound is muted while it runs.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text("Save states", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Auto-save on quit", style = MaterialTheme.typography.bodyMedium)
+                        Switch(
+                            checked = autoSaveOnQuit,
+                            onCheckedChange = { on ->
+                                appSettings.setAutoSaveOnQuit(on)
+                                autoSaveOnQuit = on
+                            },
+                        )
+                    }
+                    Text(
+                        "Quitting to the library saves the game to slot 1 automatically, so a quick load brings it back to where it was left. Slots 2 and 3 are untouched. On by default.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(16.dp))
@@ -4814,6 +4942,10 @@ fun PauseMenu(
     selectedSlot: Int = QuickSave.QUICK_SLOT,
     occupiedSlots: List<Int> = emptyList(),
     onSelectSlot: (Int) -> Unit = {},
+    // v1.5, feature 2 — the thumbnails that exist for this
+    // game, as slot -> thumbnail file path. A slot with a save
+    // but no thumbnail is simply absent from the map.
+    slotThumbnails: Map<Int, String> = emptyMap(),
     onResume: () -> Unit,
     // Phase 9, item 9 — the Universe BIOS menu row, shown only
     // under Universe BIOS mode; hidden otherwise (default).
@@ -4906,6 +5038,33 @@ fun PauseMenu(
             }
         }
         Spacer(Modifier.height(2.dp))
+        // v1.5, feature 2 — the picked slot's thumbnail, when
+        // the slot holds a save with one: a small picture of
+        // where the game was. A slot with a save but no
+        // thumbnail (saved before thumbnails, or the write
+        // failed) shows nothing — the filled dot still marks
+        // it occupied. Decoded once per path, so switching
+        // slots swaps the picture.
+        val thumbPath = slotThumbnails[selectedSlot].takeIf { selectedSlot in occupiedSlots }
+        val thumbBitmap = remember(thumbPath) {
+            thumbPath?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
+        }
+        if (thumbBitmap != null) {
+            Image(
+                bitmap = thumbBitmap.asImageBitmap(),
+                contentDescription = "Save slot $selectedSlot",
+                modifier = Modifier
+                    .width(96.dp)
+                    .aspectRatio(thumbBitmap.width.toFloat() / thumbBitmap.height.toFloat())
+                    .border(
+                        1.dp,
+                        Color(EraUi.Palette.GOLD_MUTED),
+                        RoundedCornerShape(2.dp),
+                    ),
+                contentScale = ContentScale.FillWidth,
+            )
+            Spacer(Modifier.height(2.dp))
+        }
         ArcadeButton(text = "SAVE STATE", compact = true, onClick = onSaveState)
         Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "LOAD STATE", compact = true, onClick = onLoadState)

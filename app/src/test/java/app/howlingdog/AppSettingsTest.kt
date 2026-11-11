@@ -196,4 +196,14 @@ class AppSettingsTest {
         settings.setSlowMotionOn(false)
         assertFalse(settings.slowMotionOn())
     }
+
+    @Test
+    fun autoSaveOnQuitOnByDefaultAndRoundTrips() {
+        assertTrue(settingsWith().autoSaveOnQuit())
+        val settings = settingsWith()
+        settings.setAutoSaveOnQuit(false)
+        assertFalse(settings.autoSaveOnQuit())
+        settings.setAutoSaveOnQuit(true)
+        assertTrue(settings.autoSaveOnQuit())
+    }
 }
