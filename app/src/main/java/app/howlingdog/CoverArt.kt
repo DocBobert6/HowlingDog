@@ -45,19 +45,27 @@ class CoverArt(private val filesDir: File) {
      * game keeps its art, because the lookup never sees the rename.
      */
     fun identityFor(entry: GameEntry, gamesDir: File): Pair<String, String?> {
-        if (entry.mainFile.endsWith(".neo", ignoreCase = true)) {
-            val file = File(gamesDir, entry.mainFile)
-            if (file.isFile) {
-                try {
-                    val head = ByteArray(NeoHeader.HEADER_SIZE)
-                    file.inputStream().use { it.read(head) }
-                    NeoHeader.parse(head)?.let { return it.title to it.catalogue }
-                } catch (_: Exception) {
-                    // Fall through to the display name.
-                }
-            }
-        }
+        readIdentity(entry, gamesDir)?.let { return it.title to it.catalogue }
         return entry.displayName to null
+    }
+
+    /**
+     * v1.5, feature 3 — the .NEO header identity for a cart, or
+     * null for discs and unreadable headers. The metadata lookup
+     * reads the same header (year, maker, catalogue), so this is
+     * the one header-read path both use.
+     */
+    fun readIdentity(entry: GameEntry, gamesDir: File): NeoIdentity? {
+        if (!entry.mainFile.endsWith(".neo", ignoreCase = true)) return null
+        val file = File(gamesDir, entry.mainFile)
+        if (!file.isFile) return null
+        return try {
+            val head = ByteArray(NeoHeader.HEADER_SIZE)
+            file.inputStream().use { it.read(head) }
+            NeoHeader.parse(head)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /** The cached index, or fetch it (Wi-Fi only) and cache it. Null on any failure. */

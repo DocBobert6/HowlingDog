@@ -96,6 +96,38 @@ class GameLibraryTest {
     }
 
     @Test
+    fun lastPlayedPersistsAndSevenFieldLinesLoadAsNeverPlayed() {
+        // v1.5, feature 3 — the 8th store field: marking a game
+        // played survives a reload, and a line written before
+        // the field existed (7 fields, with a custom name) still
+        // loads — unplayed, with its rename intact.
+        val dir = tempDir("lib-lastplayed")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "neobombe.neo").writeText("fake")
+        File(games, "kof98.neo").writeText("fake")
+        val entry = lib.register("neobombe.neo", listOf("neobombe.neo"))
+        lib.register("kof98.neo", listOf("kof98.neo"))
+        val played = lib.setLastPlayed(entry, 1_700_000_000_000L)
+        assertEquals(1_700_000_000_000L, played.lastPlayed)
+        val loaded = library(dir).load()
+        assertEquals(1_700_000_000_000L, loaded.first { it.mainFile == "neobombe.neo" }.lastPlayed)
+        assertEquals(0L, loaded.first { it.mainFile == "kof98.neo" }.lastPlayed)
+        // A 7-field line (mode + pin + custom name, no last
+        // played) loads with its rename and as never played.
+        // The other game file is removed first, so the load does
+        // not adopt it as an orphan.
+        File(games, "neobombe.neo").delete()
+        val store = File(dir, "library.txt")
+        store.writeText("kof98.neo|kof98|1000|kof98.neo|aes|1|My Favourite\n")
+        val legacy = library(dir).load()
+        assertEquals(1, legacy.size)
+        assertEquals("My Favourite", legacy[0].customName)
+        assertEquals(0L, legacy[0].lastPlayed)
+        assertEquals(true, legacy[0].pinned)
+    }
+
+    @Test
     fun reimportReplacesInsteadOfDuplicating() {
         val dir = tempDir("lib-dedup")
         val lib = library(dir)

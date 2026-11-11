@@ -31,6 +31,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -435,6 +436,17 @@ class MainActivity : ComponentActivity() {
         // the rename dialog (prefilled with the name it shows now).
         var renameFor by remember { mutableStateOf<GameEntry?>(null) }
         var renameText by remember { mutableStateOf("") }
+        // v1.5, feature 3 — library search / sort / collections:
+        // the search text, the sort order, the collection chip
+        // picked (null = all games), the collection names in use,
+        // and the game whose collection is being picked (with the
+        // text for a new collection name).
+        var searchText by remember { mutableStateOf("") }
+        var librarySort by remember { mutableStateOf(LibrarySort.NAME) }
+        var collectionFilter by remember { mutableStateOf<String?>(null) }
+        var collections by remember { mutableStateOf<List<String>>(emptyList()) }
+        var collectionFor by remember { mutableStateOf<GameEntry?>(null) }
+        var collectionText by remember { mutableStateOf("") }
         // Phase 9, item 8 — the game whose own settings screen is
         // open (null when it is closed). `perGameTick` is bumped on
         // every per-game change so that screen recomposes from the
@@ -502,6 +514,24 @@ class MainActivity : ComponentActivity() {
                 storeFile = File(context.filesDir, "library.txt"),
                 legacyGamesDir = File(context.cacheDir, "games"),
             )
+        }
+        // v1.5, feature 3 — collections, one per game, in
+        // filesDir/collections.txt (see CollectionStore).
+        val collectionStore = remember {
+            CollectionStore(File(context.filesDir, "collections.txt"))
+        }
+        // v1.5, feature 3 — the metadata per game (year/maker
+        // from the .NEO header, genre/players from the table),
+        // read once per library load: the header read is 256
+        // bytes per cart, so it stays on the main thread. The
+        // sort and the search both read this map.
+        val metadataByGame = remember(games) {
+            games.associate { entry ->
+                entry.mainFile to LibraryView.metadataFor(
+                    entry,
+                    coverArt.readIdentity(entry, gamesDir),
+                )
+            }
         }
 
         // On-screen controls (stick, haptics, opacity, size, layout):
@@ -775,6 +805,9 @@ class MainActivity : ComponentActivity() {
                 withContext(Dispatchers.Main) {
                     games = loaded
                     bios = b
+                    // v1.5, feature 3 — the collection names in
+                    // use, for the filter chips and the picker.
+                    collections = collectionStore.collections()
                     // First-run setup: a genuinely fresh install (no
                     // system files, no games) is offered the SYSTEM
                     // SETUP screen once. The offer is consumed when
@@ -1418,6 +1451,13 @@ class MainActivity : ComponentActivity() {
             screen = Screen.Playing
             session?.start()
             inputActive = true
+            // v1.5, feature 3 — the game was started: stamp it
+            // played now, so the Recently played sort orders it
+            // first when he comes back to the library (which
+            // reloads and picks the new time up).
+            lifecycleScope.launch(Dispatchers.IO) {
+                library.setLastPlayed(entry)
+            }
             // Phase 10 — RetroAchievements: initialise the client
             // (and log in with the stored credentials) and load
             // this game's achievements. The load is async; a game
@@ -1952,6 +1992,90 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     Spacer(Modifier.height(16.dp))
+                    // v1.5, feature 3 — search, sort, collections.
+                    // The visible games are the searched, filtered,
+                    // sorted list; the portrait below keeps showing
+                    // the picked game even when the filter hides it.
+                    // Only once there are games to organise.
+                    val visibleGames: List<GameEntry> = if (games.isEmpty()) {
+                        emptyList()
+                    } else {
+                        var list = LibraryView.filterGames(games, searchText, metadataByGame)
+                        collectionFilter?.let { wanted ->
+                            list = list.filter { collectionStore.collectionFor(it.mainFile) == wanted }
+                        }
+                        LibraryView.sortGames(list, librarySort, metadataByGame)
+                    }
+                    if (games.isNotEmpty()) {
+                        OutlinedTextField(
+                            value = searchText,
+                            onValueChange = { searchText = it },
+                            singleLine = true,
+                            label = { Text("Search") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        ControlDropdownRow(
+                            "Sort",
+                            listOf(
+                                "NAME" to "Name",
+                                "YEAR_NEW" to "Newest",
+                                "YEAR_OLD" to "Oldest",
+                                "RECENT" to "Recently played",
+                                "SYSTEM" to "System",
+                            ),
+                            librarySort.name,
+                        ) { librarySort = LibrarySort.valueOf(it) }
+                        // Collection chips: All, then each collection
+                        // in use. The row scrolls sideways, so a long
+                        // list of collections never wraps the screen.
+                        if (collections.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                for (label in listOf("All") + collections) {
+                                    val picked = if (label == "All") {
+                                        collectionFilter == null
+                                    } else {
+                                        collectionFilter == label
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .height(28.dp)
+                                            .clickable {
+                                                collectionFilter = if (label == "All") null else label
+                                            }
+                                            .background(
+                                                if (picked) Color(EraUi.Palette.GOLD)
+                                                else Color(EraUi.Palette.SURFACE_RAISED),
+                                                RoundedCornerShape(2.dp),
+                                            )
+                                            .border(
+                                                1.dp,
+                                                if (picked) Color(EraUi.Palette.GOLD)
+                                                else Color(EraUi.Palette.GOLD_MUTED),
+                                                RoundedCornerShape(2.dp),
+                                            )
+                                            .padding(horizontal = 14.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            label,
+                                            color = if (picked) Color(EraUi.Palette.ON_GOLD)
+                                            else Color(EraUi.Palette.TEXT),
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
+                    }
                     if (games.isEmpty()) {
                         // Empty state: the icon, then the prompt.
                         Image(
@@ -1984,10 +2108,28 @@ class MainActivity : ComponentActivity() {
                                     perGameFor = selected
                                     screen = Screen.GameSettings
                                 },
+                                // v1.5, feature 3 — the metadata
+                                // line ("1998 · SNK · Fighting · 2
+                                // players", unknown parts omitted)
+                                // and the collection picker.
+                                metadataLine = metadataByGame[selected.mainFile]
+                                    ?.displayLine()?.takeIf { it.isNotEmpty() },
+                                collectionName = collectionStore.collectionFor(selected.mainFile),
+                                onCollection = {
+                                    collectionFor = selected
+                                    collectionText = ""
+                                },
                                 cover = covers[selected.mainFile],
                             )
                             Spacer(Modifier.height(12.dp))
                         }
+                        if (visibleGames.isEmpty()) {
+                            Text(
+                                "No games match.",
+                                color = Color(EraUi.Palette.TEXT),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        } else {
                         // The grid: plain Rows in the scrolling
                         // Column, not a lazy list — the screen
                         // itself scrolls, so every tile is composed
@@ -1996,7 +2138,7 @@ class MainActivity : ComponentActivity() {
                         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                             val cols = if (maxWidth > 600.dp) 4 else 3
                             Column {
-                                for (row in games.chunked(cols)) {
+                                for (row in visibleGames.chunked(cols)) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         for (game in row) {
                                             GameTile(
@@ -2015,6 +2157,7 @@ class MainActivity : ComponentActivity() {
                                     Spacer(Modifier.height(8.dp))
                                 }
                             }
+                        }
                         }
                     }
                     Spacer(Modifier.height(16.dp))
@@ -2095,6 +2238,78 @@ class MainActivity : ComponentActivity() {
                             TextButton(onClick = { modePickerFor = null }) {
                                 Text("Cancel")
                             }
+                        },
+                    )
+                }
+                // v1.5, feature 3 — pick a collection for the
+                // game, or type a new one. One collection per
+                // game; "No collection" takes it out again. Saving
+                // an empty name clears it, like the rename dialog.
+                val collectionGame = collectionFor
+                if (collectionGame != null) {
+                    val current = collectionStore.collectionFor(collectionGame.mainFile)
+                    AlertDialog(
+                        onDismissRequest = { collectionFor = null },
+                        title = { Text("Collection for ${collectionGame.effectiveName}") },
+                        text = {
+                            Column {
+                                for (name in collections) {
+                                    TextButton(onClick = {
+                                        val target = collectionGame
+                                        lifecycleScope.launch(Dispatchers.IO) {
+                                            collectionStore.setCollection(target.mainFile, name)
+                                            withContext(Dispatchers.Main) {
+                                                collectionFor = null
+                                                refreshLibrary()
+                                                status = "${target.effectiveName} is in $name."
+                                            }
+                                        }
+                                    }) {
+                                        Text(name + if (name == current) " ✓" else "")
+                                    }
+                                }
+                                TextButton(onClick = {
+                                    val target = collectionGame
+                                    lifecycleScope.launch(Dispatchers.IO) {
+                                        collectionStore.setCollection(target.mainFile, null)
+                                        withContext(Dispatchers.Main) {
+                                            collectionFor = null
+                                            refreshLibrary()
+                                            status = "${target.effectiveName} has no collection."
+                                        }
+                                    }
+                                }) { Text("No collection") }
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = collectionText,
+                                    onValueChange = { collectionText = it },
+                                    singleLine = true,
+                                    label = { Text("New collection…") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                val target = collectionGame
+                                val typed = collectionText
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    collectionStore.setCollection(target.mainFile, typed)
+                                    withContext(Dispatchers.Main) {
+                                        collectionFor = null
+                                        collectionText = ""
+                                        refreshLibrary()
+                                        status = if (typed.isBlank()) {
+                                            "${target.effectiveName} has no collection."
+                                        } else {
+                                            "${target.effectiveName} is in ${typed.trim()}."
+                                        }
+                                    }
+                                }
+                            }) { Text("Save") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { collectionFor = null }) { Text("Cancel") }
                         },
                     )
                 }

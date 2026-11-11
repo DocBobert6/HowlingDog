@@ -8,7 +8,7 @@ import java.io.File
  * system may clear cacheDir, and the library must survive), and the
  * index lives in [storeFile], one game per line:
  *
- *   mainFile | displayName | addedAtMillis | file1,file2,... | mode | pinned | customName
+ *   mainFile | displayName | addedAtMillis | file1,file2,... | mode | pinned | customName | lastPlayedMillis
  *
  * The mode field is the per-game system mode (or empty for the type
  * default); lines written before the mode existed have only four
@@ -22,6 +22,10 @@ import java.io.File
  * stays the filename-derived original, and cover-art matching
  * (CoverArt / NeoHeader) keeps using that original, so a renamed
  * game keeps its art. Pinned games sort to the top of the library, then by name.
+ * The lastPlayed field (v1.5, feature 3) is the epoch millis the
+ * game was last started, or 0 for never played; lines written
+ * before it existed have seven or fewer fields and still load,
+ * never played. It drives the Recently played sort.
  *
  * Filenames are sanitized (see [sanitize]: letters, digits, '.', '_',
  * '-' only), so '|' and ',' can never appear in a stored name and the
@@ -62,6 +66,12 @@ data class GameEntry(
      * [displayName], never this) still works after a rename.
      */
     val customName: String? = null,
+    /**
+     * v1.5, feature 3 — the epoch millis this game was last
+     * started, or 0 for never played. Drives the Recently
+     * played sort; a game never played sorts last there.
+     */
+    val lastPlayed: Long = 0,
 ) {
     /** The name the library shows: the custom name when set, else the original. */
     val effectiveName: String get() = customName?.takeIf { it.isNotBlank() } ?: displayName
@@ -205,6 +215,7 @@ class GameLibrary(
             mode = existing?.mode,
             pinned = existing?.pinned ?: false,
             customName = existing?.customName,
+            lastPlayed = existing?.lastPlayed ?: 0,
         )
         val all = load().filter { it.mainFile != mainFile } + entry
         save(all.sortedWith(libraryOrder))
@@ -240,6 +251,19 @@ class GameLibrary(
         val cleaned = name?.replace('|', ' ')?.replace('\n', ' ')?.replace('\r', ' ')
             ?.trim()?.take(120)?.takeIf { it.isNotEmpty() }
         val updated = entry.copy(customName = cleaned)
+        val all = load().filter { it.mainFile != entry.mainFile } + updated
+        save(all.sortedWith(libraryOrder))
+        return updated
+    }
+
+    /**
+     * v1.5, feature 3 — mark a game played now (called when a
+     * game starts); returns the updated entry. The library
+     * reload on returning to it picks the new time up, so the
+     * Recently played sort orders it first.
+     */
+    fun setLastPlayed(entry: GameEntry, atMillis: Long = System.currentTimeMillis()): GameEntry {
+        val updated = entry.copy(lastPlayed = atMillis)
         val all = load().filter { it.mainFile != entry.mainFile } + updated
         save(all.sortedWith(libraryOrder))
         return updated
@@ -374,8 +398,9 @@ class GameLibrary(
                 val parts = line.split('|')
                 // Four fields: written before per-game modes
                 // existed. Five: before pins. Six: mode + pin.
-                // Seven: mode + pin + custom name.
-                if (parts.size !in 4..7) continue
+                // Seven: mode + pin + custom name. Eight: plus
+                // last played (v1.5, feature 3).
+                if (parts.size !in 4..8) continue
                 val main = parts[0].trim()
                 val name = parts[1].trim()
                 val added = parts[2].trim().toLongOrNull() ?: continue
@@ -393,12 +418,21 @@ class GameLibrary(
                     (parts[5].trim() == "1" || parts[5].trim().equals("true", ignoreCase = true))
                 // Seventh field, written since renames existed: the
                 // custom name, or empty/absent for the original.
-                val customName = if (parts.size == 7) {
+                // Present in both 7- and 8-field lines (index 6).
+                val customName = if (parts.size >= 7) {
                     parts[6].trim().takeIf { it.isNotEmpty() }
                 } else {
                     null
                 }
-                out.add(GameEntry(main, name, files, added, mode, pinned, customName))
+                // Eighth field, written since last-played existed
+                // (v1.5, feature 3): the epoch millis the game was
+                // last started, or 0 / absent for never played.
+                val lastPlayed = if (parts.size == 8) {
+                    parts[7].trim().toLongOrNull() ?: 0
+                } else {
+                    0
+                }
+                out.add(GameEntry(main, name, files, added, mode, pinned, customName, lastPlayed))
             }
         } catch (_: Exception) {
             return emptyList()
@@ -412,7 +446,7 @@ class GameLibrary(
             val text = entries.joinToString("\n") { e ->
                 val safeName = e.displayName.replace('|', ' ').replace('\n', ' ').trim()
                 val safeCustom = e.customName?.replace('|', ' ')?.replace('\n', ' ')?.trim() ?: ""
-                "${e.mainFile}|$safeName|${e.addedAt}|${e.files.joinToString(",")}|${e.mode ?: ""}|${if (e.pinned) "1" else ""}|$safeCustom"
+                "${e.mainFile}|$safeName|${e.addedAt}|${e.files.joinToString(",")}|${e.mode ?: ""}|${if (e.pinned) "1" else ""}|$safeCustom|${e.lastPlayed}"
             }
             storeFile.writeText(if (text.isEmpty()) "" else text + "\n")
         } catch (_: Exception) {

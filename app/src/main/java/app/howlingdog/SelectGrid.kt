@@ -220,6 +220,13 @@ fun SelectedPortrait(
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
     cover: Bitmap? = null,
+    // v1.5, feature 3 — the metadata line ("1998 · SNK ·
+    // Fighting · 2 players", unknown parts omitted) and the
+    // collection this game is in (null = none), with the tap
+    // that opens the collection picker.
+    metadataLine: String? = null,
+    collectionName: String? = null,
+    onCollection: () -> Unit = {},
 ) {
     val bg = Color(EraUi.tileColorArgb(entry.displayName))
     Box(
@@ -277,6 +284,41 @@ fun SelectedPortrait(
                 color = Color(EraUi.Palette.TEXT),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
+                style = TextStyle(
+                    shadow = Shadow(
+                        color = Color.Black,
+                        offset = Offset(1f, 1f),
+                        blurRadius = 2f,
+                    ),
+                ),
+            )
+            // v1.5, feature 3 — the metadata line, when the game
+            // has any: year, maker, genre, players, unknown parts
+            // omitted. Same treatment as the system label above.
+            if (!metadataLine.isNullOrBlank()) {
+                Text(
+                    text = metadataLine,
+                    color = Color(EraUi.Palette.TEXT),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    style = TextStyle(
+                        shadow = Shadow(
+                            color = Color.Black,
+                            offset = Offset(1f, 1f),
+                            blurRadius = 2f,
+                        ),
+                    ),
+                )
+            }
+            // v1.5, feature 3 — the collection, tap to pick one.
+            // A nested clickable, like the gear chip: tapping it
+            // never starts the game.
+            Text(
+                text = "COLLECTION: ${collectionName ?: "—"}",
+                color = Color(EraUi.Palette.GOLD),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { onCollection() },
                 style = TextStyle(
                     shadow = Shadow(
                         color = Color.Black,
