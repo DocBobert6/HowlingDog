@@ -113,6 +113,8 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -151,6 +153,24 @@ import java.util.concurrent.TimeUnit
 class MainActivity : ComponentActivity() {
 
     private var session: PlayerSession? = null
+
+    /**
+     * 2.0, feature 1 — playtime: the tracker for the current
+     * game, created per game start with the game's stored total
+     * (see PlaytimeTracker — it holds the full total, so
+     * persisting is a plain overwrite). Null when no game is
+     * running. Discarded (not persisted) if the game fails to
+     * load.
+     */
+    private var playtimeTracker: PlaytimeTracker? = null
+
+    /**
+     * 2.0, feature 1 — serializes the playtime persists: pause
+     * and quit both persist, and without this a pause-persist
+     * launched just before a quit-persist could land after it
+     * and overwrite a newer total with an older one.
+     */
+    private val playtimeMutex = Mutex()
 
     // --- Gamepad state (Phase 4). The touch UI keeps its own Held
     // state in the composable; the pad keeps its held buttons and
@@ -1216,6 +1236,24 @@ class MainActivity : ComponentActivity() {
             session?.pause()
             paused = true
             pauseStatus = ""
+            // 2.0, feature 1 — playtime: the pause ends the
+            // current segment, and the total is persisted now,
+            // so a kill mid-pause loses nothing (a kill mid-game
+            // loses only the running segment). Serialized through
+            // playtimeMutex so a later quit-persist cannot be
+            // overwritten by this one.
+            val playedGame = playingGame
+            val playedTotal = playtimeTracker?.let {
+                it.pause(System.currentTimeMillis())
+                it.totalMillis
+            }
+            if (playedGame != null && playedTotal != null) {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    playtimeMutex.withLock {
+                        library.setTotalPlayMillis(playedGame, playedTotal)
+                    }
+                }
+            }
             // Phase 9, item 7 — a pause always shows the bar, so
             // SAVE / LOAD stay reachable even when it had hidden
             // (e.g. paused from the gamepad while hidden).
@@ -1233,6 +1271,8 @@ class MainActivity : ComponentActivity() {
             session?.resume()
             paused = false
             pauseStatus = ""
+            // 2.0, feature 1 — playtime: a new segment starts.
+            playtimeTracker?.resume(System.currentTimeMillis())
             inputActive = true
             // Phase 9, item 7 — a resume shows the bar, then hides
             // it again after the start delay.
@@ -1440,6 +1480,24 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            // 2.0, feature 1 — playtime: end the segment and
+            // persist the total now. If the game was paused, the
+            // pause above already persisted, and stopping an
+            // already-paused tracker is a no-op, so this never
+            // double-counts. Serialized through playtimeMutex.
+            val playedGame = playingGame
+            val playedTotal = playtimeTracker?.let {
+                it.stop(System.currentTimeMillis())
+                it.totalMillis
+            }
+            if (playedGame != null && playedTotal != null) {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    playtimeMutex.withLock {
+                        library.setTotalPlayMillis(playedGame, playedTotal)
+                    }
+                }
+            }
+            playtimeTracker = null
             session?.stop()
             session = null
             held = Held()
@@ -1597,6 +1655,9 @@ class MainActivity : ComponentActivity() {
                     status = message
                     session = null
                     playingGame = null
+                    // 2.0, feature 1 — the game failed to load,
+                    // so its tracker is discarded, not persisted.
+                    playtimeTracker = null
                     screen = Screen.Library
                 },
                 // Phase 10 — run-ahead for this game: the per-game
@@ -1620,6 +1681,13 @@ class MainActivity : ComponentActivity() {
             screen = Screen.Playing
             session?.start()
             inputActive = true
+            // 2.0, feature 1 — playtime: a fresh tracker for this
+            // game, seeded with its stored total, started now
+            // (game start). Pause ends the segment, resume starts
+            // a new one, quit stops it.
+            playtimeTracker = PlaytimeTracker(entry.totalPlayMillis).also {
+                it.start(System.currentTimeMillis())
+            }
             // v1.5, feature 4 — cheats: this game's enabled codes
             // go to the session now, so they are written after
             // every displayed frame from the first one. A game

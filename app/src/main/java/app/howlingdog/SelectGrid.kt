@@ -345,6 +345,24 @@ fun SelectedPortrait(
                     ),
                 )
             }
+            // 2.0, feature 1 — the total time played, when the
+            // game has any. Same treatment as the lines above;
+            // a never-played game shows nothing here.
+            if (entry.totalPlayMillis > 0) {
+                Text(
+                    text = "PLAYED ${formatPlaytime(entry.totalPlayMillis)}",
+                    color = Color(EraUi.Palette.TEXT),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    style = TextStyle(
+                        shadow = Shadow(
+                            color = Color.Black,
+                            offset = Offset(1f, 1f),
+                            blurRadius = 2f,
+                        ),
+                    ),
+                )
+            }
             Spacer(modifier = Modifier.weight(1f))
             // Four buttons across, sharing the width — the tight
             // variant keeps them inside the portrait at a narrow

@@ -128,6 +128,65 @@ class GameLibraryTest {
     }
 
     @Test
+    fun totalPlayMillisPersistsAndEightFieldLinesLoadAsZero() {
+        // 2.0, feature 1 — the 9th store field: setting a game's
+        // total playtime survives a reload, and a line written
+        // before the field existed (8 fields, with last played)
+        // still loads — with its last played intact and no
+        // playtime.
+        val dir = tempDir("lib-playtime")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "neobombe.neo").writeText("fake")
+        File(games, "kof98.neo").writeText("fake")
+        val entry = lib.register("neobombe.neo", listOf("neobombe.neo"))
+        lib.register("kof98.neo", listOf("kof98.neo"))
+        val updated = lib.setTotalPlayMillis(entry, 12 * 3_600_000L + 34 * 60_000L)
+        assertEquals(12 * 3_600_000L + 34 * 60_000L, updated.totalPlayMillis)
+        val loaded = library(dir).load()
+        assertEquals(12 * 3_600_000L + 34 * 60_000L, loaded.first { it.mainFile == "neobombe.neo" }.totalPlayMillis)
+        assertEquals(0L, loaded.first { it.mainFile == "kof98.neo" }.totalPlayMillis)
+        // An 8-field line (mode + pin + custom name + last
+        // played, no playtime) loads with its last played and
+        // no playtime. The other game file is removed first,
+        // so the load does not adopt it as an orphan.
+        File(games, "neobombe.neo").delete()
+        val store = File(dir, "library.txt")
+        store.writeText("kof98.neo|kof98|1000|kof98.neo|aes|1|My Favourite|1700000000000\n")
+        val legacy = library(dir).load()
+        assertEquals(1, legacy.size)
+        assertEquals(1_700_000_000_000L, legacy[0].lastPlayed)
+        assertEquals(0L, legacy[0].totalPlayMillis)
+        // A 9-field line loads its playtime.
+        store.writeText("kof98.neo|kof98|1000|kof98.neo|aes|1|My Favourite|1700000000000|4560000\n")
+        val withPlaytime = library(dir).load()
+        assertEquals(1_700_000_000_000L, withPlaytime[0].lastPlayed)
+        assertEquals(4_560_000L, withPlaytime[0].totalPlayMillis)
+    }
+
+    @Test
+    fun reimportKeepsTotalPlayMillis() {
+        val dir = tempDir("lib-playtime-reimport")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "neobombe.neo").writeText("fake")
+        val entry = lib.register("neobombe.neo", listOf("neobombe.neo"))
+        lib.setTotalPlayMillis(entry, 90_000L)
+        lib.register("neobombe.neo", listOf("neobombe.neo"))
+        assertEquals(90_000L, lib.load()[0].totalPlayMillis)
+    }
+
+    @Test
+    fun setTotalPlayMillisClampsNegativeToZero() {
+        val dir = tempDir("lib-playtime-clamp")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "neobombe.neo").writeText("fake")
+        val entry = lib.register("neobombe.neo", listOf("neobombe.neo"))
+        assertEquals(0L, lib.setTotalPlayMillis(entry, -5_000L).totalPlayMillis)
+    }
+
+    @Test
     fun reimportReplacesInsteadOfDuplicating() {
         val dir = tempDir("lib-dedup")
         val lib = library(dir)
