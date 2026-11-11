@@ -62,9 +62,10 @@ class MainActivityStartupTest {
         composeRule.onNodeWithText("HOWLINGDOG — SYSTEM SETUP").assertIsDisplayed()
         composeRule.onNodeWithText("SKIP").performClick()
         composeRule.onNodeWithText("SELECT YOUR GAME").assertIsDisplayed()
-        // Probe (merge diagnosis): scroll "Add game" into view
-        // first — it sits below the fold in the small test window
-        // when the System files card is fully loaded.
+        // The Add game row sits below the fold in the small test
+        // window when the System files card is fully loaded — and
+        // further down still when the update banner is showing —
+        // so scroll it into view first.
         composeRule.onNodeWithText("Add game").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Add folder").assertIsDisplayed()
         composeRule.onNodeWithText("Settings").assertIsDisplayed()
