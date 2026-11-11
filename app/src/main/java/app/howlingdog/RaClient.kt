@@ -7,7 +7,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -222,7 +221,10 @@ object RaClient {
             status = if (username.isNotEmpty()) "Logged in as $username." else "Logged in."
         } else {
             username = ""
-            status = if (!error.isNullOrEmpty()) "Login failed: $error" else "Login failed."
+            // A failure is never silent and never vague: the raw
+            // rcheevos error is mapped to a message that names
+            // what went wrong (see RaLoginErrors).
+            status = "Login failed: ${RaLoginErrors.describe(error)}"
         }
     }
 
@@ -241,9 +243,18 @@ object RaClient {
     /**
      * One HTTP request (GET when [postData] is null, POST
      * otherwise). Returns the response body and the HTTP status
-     * code; on any failure an empty body and status 0, so the
-     * native layer fails the call cleanly instead of hanging.
-     * The RA API's POST bodies are form-encoded.
+     * code. A non-200 answer still carries a body — the server's
+     * error — so it is read from the error stream, not
+     * discarded: the login endpoint answers a rejected login
+     * with HTTP 401 and a JSON error, and throwing that body
+     * away made every rejected login surface as a bare "No
+     * response" (v1.1.0). On a transport failure the body is
+     * empty and the status is the classified failure
+     * (RaLoginErrors: 521 unreachable, 524 timed out, 0
+     * otherwise), so the native layer fails the call with a
+     * named cause instead of hanging. The RA API's POST bodies
+     * are form-encoded. Timeouts: 10 s to connect, 15 s to read,
+     * so a login can never hang forever.
      */
     private fun httpRequest(url: String, postData: String?): Pair<ByteArray, Int> {
         val conn = try {
@@ -260,8 +271,8 @@ object RaClient {
                     )
                 }
             }
-        } catch (_: Exception) {
-            return ByteArray(0) to 0
+        } catch (e: Exception) {
+            return ByteArray(0) to RaLoginErrors.failureStatus(e)
         }
         try {
             if (postData != null) {
@@ -269,24 +280,9 @@ object RaClient {
                     out.write(postData.toByteArray(Charsets.UTF_8))
                 }
             }
-            val code = try {
-                conn.responseCode
-            } catch (_: Exception) {
-                return ByteArray(0) to 0
-            }
-            if (code != HttpURLConnection.HTTP_OK) return ByteArray(0) to code
-            val out = ByteArrayOutputStream()
-            conn.inputStream.use { input ->
-                val buf = ByteArray(8192)
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    out.write(buf, 0, n)
-                }
-            }
-            return out.toByteArray() to code
-        } catch (_: Exception) {
-            return ByteArray(0) to 0
+            return RaLoginErrors.readResponse(conn)
+        } catch (e: Exception) {
+            return ByteArray(0) to RaLoginErrors.failureStatus(e)
         } finally {
             conn.disconnect()
         }
