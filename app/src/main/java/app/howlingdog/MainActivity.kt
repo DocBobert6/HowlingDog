@@ -444,6 +444,7 @@ class MainActivity : ComponentActivity() {
         // set when the first library load finds no system files
         // and no games; it is consumed when the setup screen is
         // left, and never re-offered after it has been seen.
+        var setupPending by remember { mutableStateOf(false) }
 
         fun exitEditMode() {
             controlSettings.setStickPosition(stickPos)
