@@ -984,6 +984,11 @@ class MainActivity : ComponentActivity() {
             Haptics(context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
         }
         fun playHaptic() = haptics.perform(hapticsLevel)
+        // 2.0, feature 5 — the Coin button's thud: a heavier buzz
+        // for the coin drop, distinct from a button press at every
+        // level. Respects OFF (performCoin returns without
+        // vibrating when the level is OFF).
+        fun playCoinHaptic() = haptics.performCoin(hapticsLevel)
 
         // Re-read the control settings whenever the game screen is
         // entered, so a change made in Settings (or in the adjust
@@ -2266,6 +2271,7 @@ class MainActivity : ComponentActivity() {
                     syncTopBar = { syncTopBar() },
                     exitEditMode = { exitEditMode() },
                     playHaptic = { playHaptic() },
+                    playCoinHaptic = { playCoinHaptic() },
                     pushMask = { pushMask() },
                     pushSpeed = { pushSpeed() },
                     quickSave = { quickSave() },
@@ -3600,6 +3606,10 @@ class MainActivity : ComponentActivity() {
                 controlSettings.setHaptics(level)
                 hapticsLevel = level
             }
+            Text(
+                "How the click feels depends on the phone: a Pixel's linear actuator renders the stick's microswitch click and the Coin thud crisply, while a cheap motor renders both as a generic buzz.",
+                style = MaterialTheme.typography.bodySmall,
+            )
             // 2.0, feature 4 — the input display: a small strip
             // over the game showing the recent inputs as they
             // happen, like a fightstick display. Off by default.
@@ -4022,6 +4032,9 @@ class MainActivity : ComponentActivity() {
         syncTopBar: () -> Unit,
         exitEditMode: () -> Unit,
         playHaptic: () -> Unit,
+        // 2.0, feature 5 — the Coin button's thud, distinct from a
+        // button press.
+        playCoinHaptic: () -> Unit,
         pushMask: () -> Unit,
         pushSpeed: () -> Unit,
         quickSave: () -> Unit,
@@ -4839,7 +4852,9 @@ class MainActivity : ComponentActivity() {
                         }, modifier = Modifier.offset { place("D") }, scale = buttonsScaleEff * (buttonSizeMults["D"] ?: 1f), onHaptic = playHaptic, enabled = !editControls && !paused, color = styleD.background, labelColor = styleD.label)
                         HoldButton("Coin", { pressed ->
                             held = held.copy(coin = pressed); pushMask()
-                        }, modifier = Modifier.offset { place("Coin") }, small = true, scale = buttonsScaleEff * (buttonSizeMults["Coin"] ?: 1f), onHaptic = playHaptic, enabled = !editControls && !paused)
+                            // 2.0, feature 5 — the coin drop gets
+                            // its own thud, not a button click.
+                        }, modifier = Modifier.offset { place("Coin") }, small = true, scale = buttonsScaleEff * (buttonSizeMults["Coin"] ?: 1f), onHaptic = playCoinHaptic, enabled = !editControls && !paused)
                         HoldButton("Start", { pressed ->
                             held = held.copy(start = pressed); pushMask()
                         }, modifier = Modifier.offset { place("Start") }, small = true, scale = buttonsScaleEff * (buttonSizeMults["Start"] ?: 1f), onHaptic = playHaptic, enabled = !editControls && !paused)
@@ -5424,9 +5439,16 @@ class MainActivity : ComponentActivity() {
                         var lastMask = 0
                         fun setDirection(mask: Int) {
                             if (mask != lastMask) {
+                                val previous = lastMask
                                 lastMask = mask
                                 onDirection(mask)
-                                if (mask != 0) onDirectionChange(mask)
+                                // 2.0, feature 5 — the microswitch
+                                // click fires only when the stick
+                                // crosses an actuation threshold
+                                // (neutral -> a direction, or one
+                                // direction -> another). A release
+                                // back to neutral stays silent.
+                                if (ActuationDetector.isActuation(previous, mask)) onDirectionChange(mask)
                             }
                         }
                         fun updateKnob(position: Offset) {
@@ -5627,10 +5649,15 @@ class MainActivity : ComponentActivity() {
                         var lastMask = 0
                         fun setDirection(mask: Int) {
                             if (mask != lastMask) {
+                                val previous = lastMask
                                 lastMask = mask
                                 heldMask = mask
                                 onDirection(mask)
-                                if (mask != 0) onDirectionChange(mask)
+                                // 2.0, feature 5 — the microswitch
+                                // click fires only when the D-pad
+                                // crosses an actuation threshold,
+                                // as for the stick above.
+                                if (ActuationDetector.isActuation(previous, mask)) onDirectionChange(mask)
                             }
                         }
                         // One tracker per scope, same as the stick
