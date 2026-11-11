@@ -312,21 +312,25 @@ fun SelectedPortrait(
             }
             // v1.5, feature 3 — the collection, tap to pick one.
             // A nested clickable, like the gear chip: tapping it
-            // never starts the game.
-            Text(
-                text = "COLLECTION: ${collectionName ?: "—"}",
-                color = Color(EraUi.Palette.GOLD),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable { onCollection() },
-                style = TextStyle(
-                    shadow = Shadow(
-                        color = Color.Black,
-                        offset = Offset(1f, 1f),
-                        blurRadius = 2f,
+            // never starts the game. 2.0.1, audit fix 5 — shown
+            // only when a collection is actually assigned; a game
+            // with none shows no collection line at all.
+            if (collectionName != null) {
+                Text(
+                    text = "COLLECTION: $collectionName",
+                    color = Color(EraUi.Palette.GOLD),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onCollection() },
+                    style = TextStyle(
+                        shadow = Shadow(
+                            color = Color.Black,
+                            offset = Offset(1f, 1f),
+                            blurRadius = 2f,
+                        ),
                     ),
-                ),
-            )
+                )
+            }
             // Phase 9, item 1 — the picked game says it is pinned
             // here too, under the system label, so the pin is
             // visible without going back to the grid.
