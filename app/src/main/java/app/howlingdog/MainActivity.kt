@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.hardware.input.InputManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.os.Vibrator
 import android.provider.OpenableColumns
 import android.view.InputDevice
@@ -51,6 +52,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -90,6 +92,8 @@ import kotlin.math.sqrt
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -149,6 +153,8 @@ class MainActivity : ComponentActivity() {
     /** Set by the UI; called by the L1+R1 quick-save and L2+R2 quick-load hotkeys. */
     private var onQuickSaveHotkey: (() -> Unit)? = null
     private var onQuickLoadHotkey: (() -> Unit)? = null
+    /** Set by the UI; called when the app backgrounds (Activity ON_PAUSE). */
+    private var onAppBackgrounded: (() -> Unit)? = null
     /**
      * Shoulder buttons held for the quick-save/load combos (L1/R1/
      * L2/R2). Tracked separately from padButtonsHeld: they are not
@@ -189,6 +195,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         (getSystemService(INPUT_SERVICE) as InputManager)
             .registerInputDeviceListener(deviceListener, null)
+        // App backgrounded (home, recents, screen off, call): the
+        // UI releases every held input, so a turbo button held when
+        // the app goes away can never keep firing while it is
+        // backgrounded — a gamepad key-up may never arrive, and the
+        // touch stream alone is not enough to trust.
+        lifecycle.addObserver(LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) onAppBackgrounded?.invoke()
+        })
         setContent {
             HowlingDogTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -415,6 +429,11 @@ class MainActivity : ComponentActivity() {
         var controlSize by remember { mutableStateOf(controlSettings.size()) }
         // The on-screen left control (stick or 8-way D-pad).
         var leftControl by remember { mutableStateOf(controlSettings.leftControl()) }
+        // Turbo/autofire (Phase 9, item 6): the per-button toggles,
+        // persisted in ControlSettings, default off for every button.
+        var turboMask by remember { mutableStateOf(controlSettings.turboMask()) }
+        // The pulse state machine (each turbo button's press start time).
+        val turboState = remember { TurboState() }
         var showBoot by remember { mutableStateOf(appSettings.showBoot()) }
         // CRT display settings (shader chain, curvature): the same
         // SharedPreferences file, own "display.*" keys.
@@ -478,6 +497,7 @@ class MainActivity : ComponentActivity() {
                 overlayOpacity = controlSettings.opacity()
                 controlSize = controlSettings.size()
                 leftControl = controlSettings.leftControl()
+                turboMask = controlSettings.turboMask()
                 stickPos = controlSettings.stickPosition()
                 buttonsPos = controlSettings.buttonsPosition()
                 stickScale = controlSettings.stickScale()
@@ -615,18 +635,43 @@ class MainActivity : ComponentActivity() {
         }
 
         fun pushMask() {
-            session?.setInput(
-                InputMask.build(
-                    up = held.up, down = held.down, left = held.left, right = held.right,
-                    a = held.a, b = held.b, c = held.c, d = held.d,
-                    start = held.start, coin = held.coin,
-                ) or padMask,
-            )
+            // The shared input point: the touch mask and the gamepad
+            // mask are ORed here, and the turbo pulse is applied to
+            // the result — so one wiring covers both. The phase comes
+            // from the wall clock inside TurboState, so a late tick
+            // cannot drift the rate.
+            val raw = InputMask.build(
+                up = held.up, down = held.down, left = held.left, right = held.right,
+                a = held.a, b = held.b, c = held.c, d = held.d,
+                start = held.start, coin = held.coin,
+            ) or padMask
+            session?.setInput(turboState.apply(raw, turboMask, SystemClock.uptimeMillis()))
+        }
+
+        // Turbo/autofire (Phase 9, item 6): while a turbo button is
+        // physically held, re-push the mask every half-period so the
+        // pulse toggles. Keyed on turboActive: the loop starts when
+        // a turbo button goes down and cancels the moment it is
+        // released (or the game pauses, or edit mode opens), so the
+        // pulse can never outlive the hold. The release itself
+        // already pushes the released mask, so the last push is
+        // always all-off.
+        val turboActive = screen == Screen.Playing && !paused && !editControls &&
+            turboMask != 0 &&
+            (InputMask.build(a = held.a, b = held.b, c = held.c, d = held.d) or padMask) and
+                turboMask != 0
+        LaunchedEffect(turboActive) {
+            if (!turboActive) return@LaunchedEffect
+            while (true) {
+                delay(TurboInput.HALF_PERIOD_MS)
+                pushMask()
+            }
         }
 
         fun quitToLibrary() {
             inputActive = false
             clearPadState()
+            turboState.releaseAll()
             session?.stop()
             session = null
             held = Held()
@@ -660,6 +705,17 @@ class MainActivity : ComponentActivity() {
             // combo, so one held across the pause cannot fire a
             // combo the moment the game resumes.
             padQuickHeld.clear()
+            // A pause releases every held input: the pause overlay
+            // swallows touches, so a finger lifted while paused
+            // would never reach its button's release — and a turbo
+            // button left "held" would keep firing after resume.
+            // Clearing the held state here (and the turbo phase
+            // with it) means a resume always starts from nothing
+            // held, and the core sees all buttons released before
+            // the pause lands.
+            held = Held()
+            turboState.releaseAll()
+            pushMask()
             session?.pause()
             paused = true
             pauseStatus = ""
@@ -886,11 +942,23 @@ class MainActivity : ComponentActivity() {
             onPauseHotkey = { pauseGame() }
             onQuickSaveHotkey = { quickSave() }
             onQuickLoadHotkey = { quickLoad() }
+            // App backgrounded: release every held input, like a
+            // pause. The touch stream is cancelled by the system,
+            // but a gamepad key-up may never arrive — without this
+            // a turbo button held when the app backgrounds would
+            // keep firing while the app is away.
+            onAppBackgrounded = {
+                held = Held()
+                clearPadState()
+                turboState.releaseAll()
+                pushMask()
+            }
             onDispose {
                 onPadMask = null
                 onPauseHotkey = null
                 onQuickSaveHotkey = null
                 onQuickLoadHotkey = null
+                onAppBackgrounded = null
             }
         }
 
@@ -2190,6 +2258,27 @@ class MainActivity : ComponentActivity() {
                     }
                     Text(
                         "The D-pad is eight-way, like the stick — its corners are diagonals. It never switches to four-way.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text("Turbo (autofire)", style = MaterialTheme.typography.bodyMedium)
+                    for (id in ControlSettings.TURBO_BUTTON_IDS) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Turbo $id", style = MaterialTheme.typography.bodyMedium)
+                            Switch(
+                                checked = turboMask and TurboInput.bitFor(id) != 0,
+                                onCheckedChange = { on ->
+                                    controlSettings.setTurboEnabled(id, on)
+                                    turboMask = controlSettings.turboMask()
+                                },
+                            )
+                        }
+                    }
+                    Text(
+                        "While held, a turbo button presses and releases about 12 times a second — for shooters and run-and-guns. Off by default. Applies to the on-screen buttons and the gamepad.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Row(

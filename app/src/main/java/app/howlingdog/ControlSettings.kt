@@ -50,6 +50,9 @@ class ControlSettings(private val store: OptionStore) {
             theme layout's default offset for that button. */
         const val KEY_BUTTON_OFFSET_PREFIX = "controls.buttonOffset."
         const val MAX_BUTTON_OFFSET_DP = 500f
+        /** Per-button turbo (autofire) toggles, "controls.turbo.<id>" = "on"/"off", default off. */
+        const val KEY_TURBO_PREFIX = "controls.turbo."
+        val TURBO_BUTTON_IDS: List<String> = listOf("A", "B", "C", "D")
 
         val BUTTON_IDS: List<String> = listOf("A", "B", "C", "D", "Coin", "Start")
 
@@ -115,6 +118,24 @@ class ControlSettings(private val store: OptionStore) {
 
     fun setLeftControl(control: LeftControl) {
         store.put(KEY_LEFT_CONTROL, control.name.lowercase())
+    }
+
+    /** True when this button's turbo toggle is on (default off; unknown ids are never turbo). */
+    fun turboEnabled(id: String): Boolean =
+        id in TURBO_BUTTON_IDS && store.get(KEY_TURBO_PREFIX + id) == "on"
+
+    fun setTurboEnabled(id: String, on: Boolean) {
+        if (id !in TURBO_BUTTON_IDS) return
+        store.put(KEY_TURBO_PREFIX + id, if (on) "on" else "off")
+    }
+
+    /** The joypad mask of the buttons with turbo on (0 when none). */
+    fun turboMask(): Int {
+        var mask = 0
+        for (id in TURBO_BUTTON_IDS) {
+            if (turboEnabled(id)) mask = mask or TurboInput.bitFor(id)
+        }
+        return mask
     }
 
     fun stickPosition(): ControlPosition = readPosition(KEY_STICK_POS, DEFAULT_STICK_POS)

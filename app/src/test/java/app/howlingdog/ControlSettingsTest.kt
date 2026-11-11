@@ -193,6 +193,47 @@ class ControlSettingsTest {
     }
 
     @Test
+    fun turboDefaultsToOffForEveryButton() {
+        val s = ControlSettings(MapStore())
+        for (id in ControlSettings.TURBO_BUTTON_IDS) {
+            assertEquals(false, s.turboEnabled(id))
+        }
+        assertEquals(0, s.turboMask())
+    }
+
+    @Test
+    fun turboRoundTripsPerButton() {
+        val s = ControlSettings(MapStore())
+        s.setTurboEnabled("A", true)
+        s.setTurboEnabled("C", true)
+        assertEquals(true, s.turboEnabled("A"))
+        assertEquals(false, s.turboEnabled("B"))
+        assertEquals(true, s.turboEnabled("C"))
+        assertEquals(false, s.turboEnabled("D"))
+        assertEquals(InputMask.neoA() or InputMask.neoC(), s.turboMask())
+        s.setTurboEnabled("A", false)
+        assertEquals(false, s.turboEnabled("A"))
+        assertEquals(InputMask.neoC(), s.turboMask())
+    }
+
+    @Test
+    fun turboIgnoresUnknownButtonsAndBadValues() {
+        val store = MapStore()
+        store.put(ControlSettings.KEY_TURBO_PREFIX + "A", "yes")
+        store.put(ControlSettings.KEY_TURBO_PREFIX + "B", "ON")
+        val s = ControlSettings(store)
+        assertEquals(false, s.turboEnabled("A"))
+        assertEquals(false, s.turboEnabled("B"))
+        assertEquals(false, s.turboEnabled("Coin"))
+        assertEquals(false, s.turboEnabled("Start"))
+        assertEquals(0, s.turboMask())
+        // Setting an unknown button stores nothing.
+        s.setTurboEnabled("Coin", true)
+        assertEquals(false, s.turboEnabled("Coin"))
+        assertEquals(0, s.turboMask())
+    }
+
+    @Test
     fun sizesAreOrderedSmallMediumLarge() {
         assertTrue(ControlSize.SMALL.scale < ControlSize.MEDIUM.scale)
         assertTrue(ControlSize.MEDIUM.scale < ControlSize.LARGE.scale)
