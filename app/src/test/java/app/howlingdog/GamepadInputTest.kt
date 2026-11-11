@@ -116,6 +116,24 @@ class GamepadInputTest {
     }
 
     @Test
+    fun speedButtonsAreTheStickClicksOnly() {
+        // L3 = fast-forward, R3 = slow motion. They are not game
+        // inputs, not quick-combo buttons, and not remappable —
+        // the hold never reaches the game and never conflicts
+        // with the shoulder combos or START+SELECT (pause).
+        assertTrue(GamepadInput.isSpeedButton(KeyEvent.KEYCODE_BUTTON_THUMBL))
+        assertTrue(GamepadInput.isSpeedButton(KeyEvent.KEYCODE_BUTTON_THUMBR))
+        assertFalse(GamepadInput.isSpeedButton(KeyEvent.KEYCODE_BUTTON_A))
+        assertFalse(GamepadInput.isSpeedButton(KeyEvent.KEYCODE_BUTTON_L1))
+        assertFalse(GamepadInput.isSpeedButton(KeyEvent.KEYCODE_BUTTON_R2))
+        assertFalse(GamepadInput.isSpeedButton(KeyEvent.KEYCODE_BUTTON_START))
+        assertFalse(GamepadInput.isGamepadButton(KeyEvent.KEYCODE_BUTTON_THUMBL))
+        assertFalse(GamepadInput.isGamepadButton(KeyEvent.KEYCODE_BUTTON_THUMBR))
+        assertFalse(GamepadInput.isQuickComboButton(KeyEvent.KEYCODE_BUTTON_THUMBL))
+        assertFalse(GamepadInput.isQuickComboButton(KeyEvent.KEYCODE_BUTTON_THUMBR))
+    }
+
+    @Test
     fun padMaskCombinesWithTouchMask() {
         // The activity ORs the pad mask with the touch mask; the two
         // never share a bit for the same physical input.

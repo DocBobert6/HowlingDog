@@ -15,6 +15,13 @@ class AppSettings(private val store: OptionStore) {
         const val KEY_DISMISSED_UPDATE = "app.dismissedUpdate" // tag of the update the user dismissed ("v1.1.0")
         const val KEY_LAST_UPDATE_CHECK = "app.lastUpdateCheck" // epoch ms, as a string
         const val KEY_RUNAHEAD = "app.runahead" // "off" / "1" / "2" frames ahead
+        // v1.5, feature 1 — fast-forward / slow motion. The speed
+        // a hold runs at: "off" / "2" / "4" for fast-forward,
+        // "off" / "on" for slow motion (0.5x). Both off by
+        // default, so no speed button appears on the overlay
+        // until one is turned on in Settings.
+        const val KEY_SPEED_FF = "app.speedFF"
+        const val KEY_SPEED_SLOW = "app.speedSlow"
         // Phase 10 — RetroAchievements: the account the user logs
         // in with. v1.1.2: a username and the session token the
         // password login returned — the password itself is never
@@ -86,6 +93,28 @@ class AppSettings(private val store: OptionStore) {
 
     fun setRunaheadFrames(frames: Int) {
         store.put(KEY_RUNAHEAD, Runahead.store(frames))
+    }
+
+    /**
+     * v1.5, feature 1 — the fast-forward speed a hold runs at
+     * (0.0 = off, 2.0 or 4.0). Off by default: the FF button
+     * only appears on the overlay once a speed is picked.
+     */
+    fun fastForwardSpeed(): Double = SpeedControl.parseFfSetting(store.get(KEY_SPEED_FF))
+
+    fun setFastForwardSpeed(factor: Double) {
+        store.put(KEY_SPEED_FF, SpeedControl.storeFfSetting(factor))
+    }
+
+    /**
+     * v1.5, feature 1 — slow motion on/off (0.5x while held).
+     * Off by default: the SLOW button only appears on the
+     * overlay once it is turned on.
+     */
+    fun slowMotionOn(): Boolean = SpeedControl.parseSlowSetting(store.get(KEY_SPEED_SLOW))
+
+    fun setSlowMotionOn(on: Boolean) {
+        store.put(KEY_SPEED_SLOW, SpeedControl.storeSlowSetting(on))
     }
 
     /** Phase 10 — RetroAchievements: the stored username ("" when logged out). */

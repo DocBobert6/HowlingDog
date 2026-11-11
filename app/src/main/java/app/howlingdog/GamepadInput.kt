@@ -54,6 +54,19 @@ object GamepadInput {
     }
 
     /**
+     * v1.5, feature 1 — true for a stick-click button used by
+     * the speed controls: L3 = fast-forward, R3 = slow motion.
+     * Not a Neo Geo input and not a quick-combo button, so the
+     * hold never reaches the game and never conflicts with the
+     * shoulder combos or START+SELECT (pause).
+     */
+    fun isSpeedButton(keyCode: Int): Boolean = when (keyCode) {
+        KeyEvent.KEYCODE_BUTTON_THUMBL,
+        KeyEvent.KEYCODE_BUTTON_THUMBR -> true
+        else -> false
+    }
+
+    /**
      * Quick-save combo: both shoulder bumpers held together (L1+R1).
      * Quick-load combo: both triggers held together (L2+R2). The
      * shoulder buttons are not Neo Geo inputs, so the combos never

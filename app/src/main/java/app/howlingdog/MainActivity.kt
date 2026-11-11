@@ -163,6 +163,17 @@ class MainActivity : ComponentActivity() {
     /** Set by the UI; called by the L1+R1 quick-save and L2+R2 quick-load hotkeys. */
     private var onQuickSaveHotkey: (() -> Unit)? = null
     private var onQuickLoadHotkey: (() -> Unit)? = null
+    /**
+     * v1.5, feature 1 — stick clicks held for the speed
+     * controls: L3 = fast-forward, R3 = slow motion. Tracked
+     * apart from padButtonsHeld, like the shoulders: they are
+     * not Neo Geo inputs, so they must never reach the game
+     * mask, and they are dropped when the game pauses.
+     */
+    private var padFfHeld = false
+    private var padSlowHeld = false
+    /** Set by the UI; called when a speed button goes down or up, so the session speed is recomputed. */
+    private var onPadSpeed: (() -> Unit)? = null
     /** Set by the remap screen while it is waiting for a button
         (v1.3.0, part 1): called with the pressed keycode, and
         returns true when the press was captured (so it never
@@ -202,10 +213,13 @@ class MainActivity : ComponentActivity() {
         override fun onInputDeviceAdded(deviceId: Int) {}
         override fun onInputDeviceChanged(deviceId: Int) {}
         override fun onInputDeviceRemoved(deviceId: Int) {
-            if (padButtonsHeld.isNotEmpty() || padAxesMask != 0) {
+            if (padButtonsHeld.isNotEmpty() || padAxesMask != 0 || padFfHeld || padSlowHeld) {
                 padButtonsHeld.clear()
                 padAxesMask = 0
+                padFfHeld = false
+                padSlowHeld = false
                 pushPadMask()
+                onPadSpeed?.invoke()
             }
         }
     }
@@ -261,7 +275,10 @@ class MainActivity : ComponentActivity() {
         padButtonsHeld.clear()
         padAxesMask = 0
         padQuickHeld.clear()
+        padFfHeld = false
+        padSlowHeld = false
         pushPadMask()
+        onPadSpeed?.invoke()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -296,6 +313,18 @@ class MainActivity : ComponentActivity() {
             }
             return true
         }
+        // v1.5, feature 1 — speed buttons (stick clicks): L3 =
+        // fast-forward, R3 = slow motion. Not Neo Geo inputs and
+        // not quick-combo buttons, so they are tracked apart from
+        // the joypad mask and never reach the game. Whether the
+        // hold does anything depends on the Settings speeds (the
+        // onPadSpeed callback reads them); a press with the
+        // feature off is swallowed and does nothing.
+        if (GamepadInput.isSpeedButton(keyCode)) {
+            if (keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL) padFfHeld = true else padSlowHeld = true
+            onPadSpeed?.invoke()
+            return true
+        }
         if (!GamepadInput.isGamepadButton(keyCode)) return super.onKeyDown(keyCode, event)
         // START+SELECT together pauses (the emulator-menu hotkey).
         // Start on its own stays the in-game Start button, and the
@@ -321,6 +350,11 @@ class MainActivity : ComponentActivity() {
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (!inputActive) return super.onKeyUp(keyCode, event)
         if (padQuickHeld.remove(keyCode)) {
+            return true
+        }
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL || keyCode == KeyEvent.KEYCODE_BUTTON_THUMBR) {
+            if (keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL) padFfHeld = false else padSlowHeld = false
+            onPadSpeed?.invoke()
             return true
         }
         if (padButtonsHeld.remove(keyCode)) {
@@ -491,6 +525,17 @@ class MainActivity : ComponentActivity() {
         // Run-ahead (Phase 10): 0 = off, 1 or 2 frames ahead.
         // Off by default; takes effect the next time a game starts.
         var runaheadFrames by remember { mutableStateOf(appSettings.runaheadFrames()) }
+        // v1.5, feature 1 — fast-forward / slow motion: the
+        // on-screen hold buttons' state, and the speeds from
+        // Settings. Both speeds are off by default, so no speed
+        // button appears on the overlay until one is turned on.
+        // The gamepad stick clicks (L3/R3) live in the Activity
+        // fields (padFfHeld / padSlowHeld) and are read by
+        // pushSpeed() alongside these.
+        var ffHeld by remember { mutableStateOf(false) }
+        var slowHeld by remember { mutableStateOf(false) }
+        var ffSpeed by remember { mutableStateOf(appSettings.fastForwardSpeed()) }
+        var slowOn by remember { mutableStateOf(appSettings.slowMotionOn()) }
         // RetroAchievements (Phase 10, v1.1.2): the username and
         // password typed in Settings. The username is stored; the
         // password lives only in this editable copy while the
@@ -848,6 +893,28 @@ class MainActivity : ComponentActivity() {
             session?.setInput(turboState.apply(raw, turboMask, SystemClock.uptimeMillis()))
         }
 
+        /**
+         * v1.5, feature 1 — push the current speed into the
+         * session: the on-screen hold buttons (ffHeld/slowHeld)
+         * OR the gamepad stick clicks (padFfHeld/padSlowHeld),
+         * at the speeds from Settings. Called whenever a hold
+         * starts or ends, and when the game pauses or quits (the
+         * holds are cleared there, so the session returns to
+         * normal speed). A null session (no game running) is a
+         * no-op — the flags still reset, so a fresh game starts
+         * at normal speed.
+         */
+        fun pushSpeed() {
+            session?.setSpeed(
+                SpeedControl.factor(
+                    ffHeld || padFfHeld,
+                    slowHeld || padSlowHeld,
+                    ffSpeed,
+                    slowOn,
+                ),
+            )
+        }
+
         // Turbo/autofire (Phase 9, item 6): while a turbo button is
         // physically held, re-push the mask every half-period so the
         // pulse toggles. Keyed on turboActive: the loop starts when
@@ -928,6 +995,15 @@ class MainActivity : ComponentActivity() {
             // combo, so one held across the pause cannot fire a
             // combo the moment the game resumes.
             padQuickHeld.clear()
+            // v1.5, feature 1 — a pause drops the speed holds
+            // too, so a fast-forward or slow-motion hold cannot
+            // survive into the resume: the session returns to
+            // normal speed, and a new hold starts it again.
+            padFfHeld = false
+            padSlowHeld = false
+            ffHeld = false
+            slowHeld = false
+            pushSpeed()
             // A pause releases every held input: the pause overlay
             // swallows touches, so a finger lifted while paused
             // would never reach its button's release — and a turbo
@@ -1237,6 +1313,10 @@ class MainActivity : ComponentActivity() {
             // quick path uses — whatever slot the last game left
             // the pause menu on.
             saveSlot = QuickSave.QUICK_SLOT
+            // v1.5, feature 1 — a fresh game starts at normal
+            // speed: no hold survives from the last game.
+            ffHeld = false
+            slowHeld = false
             screen = Screen.Playing
             session?.start()
             inputActive = true
@@ -1317,6 +1397,9 @@ class MainActivity : ComponentActivity() {
             onPauseHotkey = { pauseGame() }
             onQuickSaveHotkey = { quickSave() }
             onQuickLoadHotkey = { quickLoad() }
+            // v1.5, feature 1 — a speed button (L3/R3) went down
+            // or up: recompute the session speed from the holds.
+            onPadSpeed = { pushSpeed() }
             // App backgrounded: release every held input, like a
             // pause. The touch stream is cancelled by the system,
             // but a gamepad key-up may never arrive — without this
@@ -1333,6 +1416,7 @@ class MainActivity : ComponentActivity() {
                 onPauseHotkey = null
                 onQuickSaveHotkey = null
                 onQuickLoadHotkey = null
+                onPadSpeed = null
                 onAppBackgrounded = null
             }
         }
@@ -2883,6 +2967,45 @@ class MainActivity : ComponentActivity() {
                                     .padding(horizontal = 12.dp, vertical = 6.dp),
                             )
                         }
+                        // v1.5, feature 1 — speed hold buttons: FF
+                        // and SLOW, hold to run. They are NOT part
+                        // of the overlay by default: each appears
+                        // only when its speed is enabled in Settings
+                        // (both off by default), so the overlay
+                        // stays clean until he turns one on.
+                        // Top-right of the game area, clear of the
+                        // stick (bottom-left) and the buttons
+                        // (bottom-right); hidden while paused or
+                        // adjusting controls, like the notes above.
+                        if (!paused && !editControls && (ffSpeed > SpeedControl.NORMAL || slowOn)) {
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 8.dp, end = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                if (slowOn) {
+                                    HoldButton(
+                                        label = "SLOW",
+                                        small = true,
+                                        onHoldChange = { held ->
+                                            slowHeld = held
+                                            pushSpeed()
+                                        },
+                                    )
+                                }
+                                if (ffSpeed > SpeedControl.NORMAL) {
+                                    HoldButton(
+                                        label = "FF",
+                                        small = true,
+                                        onHoldChange = { held ->
+                                            ffHeld = held
+                                            pushSpeed()
+                                        },
+                                    )
+                                }
+                            }
+                        }
                         // Pause overlay: covers the game and the
                         // controls (drawn last, so it is on top) and
                         // swallows touches, so no button can be
@@ -3107,6 +3230,34 @@ class MainActivity : ComponentActivity() {
                     }
                     Text(
                         "Runs the game one or two frames ahead of the display, so a press shows up sooner. Off by default. Takes effect the next time a game starts.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text("Speed", style = MaterialTheme.typography.titleSmall)
+                    ControlDropdownRow(
+                        "Fast-forward",
+                        listOf("off" to "Off", "2" to "2x", "4" to "4x"),
+                        SpeedControl.storeFfSetting(ffSpeed),
+                    ) { value ->
+                        val speed = SpeedControl.parseFfSetting(value)
+                        appSettings.setFastForwardSpeed(speed)
+                        ffSpeed = speed
+                    }
+                    Text(
+                        "Hold the FF button on the game screen, or hold the left stick click (L3) on a gamepad, to run the game faster — for skipping loading screens and long intros. The button only appears on the overlay while a speed is picked. Sound is muted while it runs.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    ControlDropdownRow(
+                        "Slow motion",
+                        listOf("off" to "Off", "on" to "0.5x"),
+                        SpeedControl.storeSlowSetting(slowOn),
+                    ) { value ->
+                        val on = SpeedControl.parseSlowSetting(value)
+                        appSettings.setSlowMotionOn(on)
+                        slowOn = on
+                    }
+                    Text(
+                        "Hold the SLOW button on the game screen, or hold the right stick click (R3) on a gamepad, to run the game at half speed — for hard sections. The button only appears on the overlay while it is on. Sound is muted while it runs.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(16.dp))

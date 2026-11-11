@@ -174,4 +174,26 @@ class AppSettingsTest {
             ).raStoredLogin(),
         )
     }
+
+    @Test
+    fun fastForwardOffByDefaultAndRoundTrips() {
+        assertEquals(0.0, settingsWith().fastForwardSpeed(), 0.0)
+        val settings = settingsWith()
+        settings.setFastForwardSpeed(2.0)
+        assertEquals(2.0, settings.fastForwardSpeed(), 0.0)
+        settings.setFastForwardSpeed(4.0)
+        assertEquals(4.0, settings.fastForwardSpeed(), 0.0)
+        settings.setFastForwardSpeed(0.0)
+        assertEquals(0.0, settings.fastForwardSpeed(), 0.0)
+    }
+
+    @Test
+    fun slowMotionOffByDefaultAndRoundTrips() {
+        assertFalse(settingsWith().slowMotionOn())
+        val settings = settingsWith()
+        settings.setSlowMotionOn(true)
+        assertTrue(settings.slowMotionOn())
+        settings.setSlowMotionOn(false)
+        assertFalse(settings.slowMotionOn())
+    }
 }

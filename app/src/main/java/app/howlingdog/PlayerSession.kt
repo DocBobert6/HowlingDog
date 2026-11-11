@@ -91,6 +91,23 @@ class PlayerSession(
         if (running) Bridge.nativeSetInput(mask)
     }
 
+    /**
+     * v1.5, feature 1 — the frame-pace multiplier (1.0 =
+     * normal). Set by the UI; the emu loop reads it every frame
+     * for the sleep, and the audio loop reads it to mute while
+     * the speed is not normal. Only the offered speeds are kept
+     * — anything else is normal speed.
+     */
+    @Volatile
+    private var speedFactor = SpeedControl.NORMAL
+
+    fun setSpeed(factor: Double) {
+        speedFactor = when (factor) {
+            SpeedControl.FF_2X, SpeedControl.FF_4X, SpeedControl.SLOW_HALF -> factor
+            else -> SpeedControl.NORMAL
+        }
+    }
+
     /** Pause the game: the emu loop idles (no retro_run) and the audio is silenced. The game stays loaded. */
     fun pause() {
         if (!running || paused) return
@@ -320,7 +337,10 @@ class PlayerSession(
                 }
             }
             val elapsed = System.nanoTime() - t0
-            val remaining = frameNs - elapsed
+            // v1.5, feature 1 — the sleep is the frame time
+            // divided by the speed: half the sleep at 2x, a
+            // quarter at 4x, double at half speed.
+            val remaining = SpeedControl.frameSleepNs(frameNs, speedFactor) - elapsed
             if (remaining > 0) {
                 try {
                     Thread.sleep(remaining / 1_000_000, (remaining % 1_000_000).toInt())
@@ -374,6 +394,21 @@ class PlayerSession(
                 // nothing to drain.
                 try {
                     Thread.sleep(50)
+                } catch (e: InterruptedException) {
+                    break
+                }
+                continue
+            }
+            // v1.5, feature 1 — muted while fast-forwarding or
+            // in slow motion: drain the ring so it never backs
+            // up, but write nothing. At 2x/4x the core produces
+            // two to four times the audio, which would screech,
+            // and at 0.5x the track would starve. Sound returns
+            // the moment the speed returns to normal.
+            if (SpeedControl.audioMuted(speedFactor)) {
+                Bridge.nativeReadAudio(samples, 4096)
+                try {
+                    Thread.sleep(5)
                 } catch (e: InterruptedException) {
                     break
                 }
