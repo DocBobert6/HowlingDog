@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -83,12 +84,13 @@ fun ArcadeButton(
     }
 }
 
-/** One portrait tile in the select grid. Tap selects; it never starts the game. [cover] is the fetched box art, or null for the typographic tile. */
+/** One portrait tile in the select grid. Tap selects; it never starts the game. Long-press pins or unpins it — a pinned game sits at the top of the grid and wears a gold PIN badge. [cover] is the fetched box art, or null for the typographic tile. */
 @Composable
 fun GameTile(
     entry: GameEntry,
     selected: Boolean,
     onSelect: () -> Unit,
+    onTogglePin: () -> Unit,
     modifier: Modifier = Modifier,
     cover: Bitmap? = null,
 ) {
@@ -101,7 +103,7 @@ fun GameTile(
                 width = if (selected) 4.dp else 2.dp,
                 color = if (selected) Color(EraUi.Palette.GOLD) else Color(EraUi.Palette.GOLD_MUTED),
             )
-            .clickable { onSelect() },
+            .combinedClickable(onClick = onSelect, onLongClick = onTogglePin),
         contentAlignment = Alignment.Center,
     ) {
         if (cover != null) {
@@ -143,6 +145,26 @@ fun GameTile(
                     .align(Alignment.BottomCenter)
                     .padding(6.dp),
             )
+        }
+        // Phase 9, item 1 — a pinned game wears a small gold PIN
+        // badge in the tile's top corner, so it reads as a
+        // favourite at a glance. It sits over the art or the
+        // monogram alike; the name (when drawn) is at the bottom.
+        if (entry.pinned) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(4.dp)
+                    .background(Color(EraUi.Palette.GOLD)),
+            ) {
+                Text(
+                    text = "PIN",
+                    color = Color(EraUi.Palette.ON_GOLD),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                )
+            }
         }
     }
 }
@@ -221,6 +243,24 @@ fun SelectedPortrait(
                     ),
                 ),
             )
+            // Phase 9, item 1 — the picked game says it is pinned
+            // here too, under the system label, so the pin is
+            // visible without going back to the grid.
+            if (entry.pinned) {
+                Text(
+                    text = "★ PINNED",
+                    color = Color(EraUi.Palette.GOLD),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    style = TextStyle(
+                        shadow = Shadow(
+                            color = Color.Black,
+                            offset = Offset(1f, 1f),
+                            blurRadius = 2f,
+                        ),
+                    ),
+                )
+            }
             Spacer(modifier = Modifier.weight(1f))
             Row {
                 ArcadeButton(text = "▶ START", onClick = onPlay, primary = true)

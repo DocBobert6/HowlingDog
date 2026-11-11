@@ -555,6 +555,25 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Phase 9, item 1 — long-press a tile pins or unpins the
+        // game. The game is selected too, so the big portrait shows
+        // the pin at once; the library reload re-sorts it to the
+        // top (or back to its name position).
+        fun togglePin(entry: GameEntry) {
+            selectedMainFile = entry.mainFile
+            lifecycleScope.launch(Dispatchers.IO) {
+                library.setPinned(entry, !entry.pinned)
+                withContext(Dispatchers.Main) {
+                    refreshLibrary()
+                    status = if (entry.pinned) {
+                        "Unpinned ${entry.displayName}."
+                    } else {
+                        "Pinned ${entry.displayName}."
+                    }
+                }
+            }
+        }
+
         LaunchedEffect(Unit) { refreshLibrary() }
 
         // Cover art: fetch the filename index once (Wi-Fi only,
@@ -1244,6 +1263,7 @@ class MainActivity : ComponentActivity() {
                                                 entry = game,
                                                 selected = game.mainFile == selected?.mainFile,
                                                 onSelect = { selectedMainFile = game.mainFile },
+                                                onTogglePin = { togglePin(game) },
                                                 modifier = Modifier.weight(1f),
                                                 cover = covers[game.mainFile],
                                             )

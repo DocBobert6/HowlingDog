@@ -322,4 +322,95 @@ class GameLibraryTest {
         lib.setMode(loaded[0], "cd")
         assertEquals("cd", library(dir).load()[0].effectiveMode)
     }
+
+    // --- pin favourites (Phase 9, item 1) ---
+
+    @Test
+    fun pinPersistsAndSortsPinnedFirst() {
+        val dir = tempDir("lib-pin")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "aaa.neo").writeText("fake")
+        File(games, "mmm.neo").writeText("fake")
+        File(games, "zzz.neo").writeText("fake")
+        lib.register("aaa.neo", listOf("aaa.neo"))
+        lib.register("mmm.neo", listOf("mmm.neo"))
+        val zzz = lib.register("zzz.neo", listOf("zzz.neo"))
+        // Name order before any pin.
+        assertEquals(listOf("aaa", "mmm", "zzz"), lib.load().map { it.displayName })
+        // Pinning the alphabetically-last game pulls it to the top.
+        val pinned = lib.setPinned(zzz, true)
+        assertTrue(pinned.pinned)
+        assertEquals(listOf("zzz", "aaa", "mmm"), lib.load().map { it.displayName })
+        // A fresh instance reads the pin back from the store.
+        assertTrue(library(dir).load()[0].pinned)
+        assertEquals("zzz", library(dir).load()[0].displayName)
+    }
+
+    @Test
+    fun pinnedGamesSortByNameAmongThemselves() {
+        val dir = tempDir("lib-pin-order")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "aaa.neo").writeText("fake")
+        File(games, "mmm.neo").writeText("fake")
+        File(games, "zzz.neo").writeText("fake")
+        val aaa = lib.register("aaa.neo", listOf("aaa.neo"))
+        lib.register("mmm.neo", listOf("mmm.neo"))
+        val zzz = lib.register("zzz.neo", listOf("zzz.neo"))
+        // Pin zzz first, then aaa: both pinned, name order within.
+        lib.setPinned(zzz, true)
+        lib.setPinned(aaa, true)
+        assertEquals(listOf("aaa", "zzz", "mmm"), lib.load().map { it.displayName })
+    }
+
+    @Test
+    fun unpinRestoresNameOrder() {
+        val dir = tempDir("lib-unpin")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "aaa.neo").writeText("fake")
+        File(games, "zzz.neo").writeText("fake")
+        lib.register("aaa.neo", listOf("aaa.neo"))
+        val zzz = lib.register("zzz.neo", listOf("zzz.neo"))
+        lib.setPinned(zzz, true)
+        assertEquals(listOf("zzz", "aaa"), lib.load().map { it.displayName })
+        val unpinned = lib.setPinned(lib.load()[0], false)
+        assertFalse(unpinned.pinned)
+        assertEquals(listOf("aaa", "zzz"), lib.load().map { it.displayName })
+    }
+
+    @Test
+    fun reimportKeepsPinned() {
+        val dir = tempDir("lib-pin-reimport")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "neobombe.neo").writeText("fake")
+        val entry = lib.register("neobombe.neo", listOf("neobombe.neo"))
+        lib.setPinned(entry, true)
+        lib.register("neobombe.neo", listOf("neobombe.neo"))
+        assertTrue(lib.load()[0].pinned)
+    }
+
+    @Test
+    fun legacyLinesLoadUnpinnedAndSixthFieldLoadsPinned() {
+        val dir = tempDir("lib-pin-legacy")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "aaa.neo").writeText("fake")
+        File(games, "mmm.neo").writeText("fake")
+        File(games, "zzz.neo").writeText("fake")
+        // Four fields (before modes) and five fields (before pins)
+        // both load unpinned; a six-field line with "1" loads pinned.
+        File(dir, "library.txt").writeText(
+            "aaa.neo|aaa|100|aaa.neo\n" +
+                "mmm.neo|mmm|200|mmm.neo|\n" +
+                "zzz.neo|zzz|300|zzz.neo||1\n",
+        )
+        val loaded = lib.load()
+        assertEquals(listOf("zzz", "aaa", "mmm"), loaded.map { it.displayName })
+        assertTrue(loaded[0].pinned)
+        assertFalse(loaded[1].pinned)
+        assertFalse(loaded[2].pinned)
+    }
 }

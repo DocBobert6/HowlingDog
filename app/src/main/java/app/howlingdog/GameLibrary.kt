@@ -8,11 +8,14 @@ import java.io.File
  * system may clear cacheDir, and the library must survive), and the
  * index lives in [storeFile], one game per line:
  *
- *   mainFile | displayName | addedAtMillis | file1,file2,... | mode
+ *   mainFile | displayName | addedAtMillis | file1,file2,... | mode | pinned
  *
  * The mode field is the per-game system mode (or empty for the type
  * default); lines written before the mode existed have only four
- * fields and still load, with the mode unset.
+ * fields and still load, with the mode unset. The pinned field is
+ * "1" for a favourite, empty otherwise; lines written before pins
+ * existed have four or five fields and still load, unpinned.
+ * Pinned games sort to the top of the library, then by name.
  *
  * Filenames are sanitized (see [sanitize]: letters, digits, '.', '_',
  * '-' only), so '|' and ',' can never appear in a stored name and the
@@ -44,6 +47,8 @@ data class GameEntry(
     val addedAt: Long,
     /** Per-game system mode ("aes", "mvs", "cd", "cdz"), or null for the type default. */
     val mode: String? = null,
+    /** Favourite: pinned games sit at the top of the library grid. */
+    val pinned: Boolean = false,
 ) {
     /** The file the core loads: the main file's path under [gamesDir]. */
     fun mainPath(gamesDir: File): File = File(gamesDir, mainFile)
@@ -123,6 +128,12 @@ fun parseCueBinFiles(cueText: String): List<String> {
     return seen.toList()
 }
 
+/** The library order: pinned favourites first, then by display name, then by when added. */
+val libraryOrder: Comparator<GameEntry> =
+    compareByDescending<GameEntry> { it.pinned }
+        .thenBy { it.displayName.lowercase() }
+        .thenBy { it.addedAt }
+
 class GameLibrary(
     private val gamesDir: File,
     private val biosDir: File,
@@ -154,14 +165,12 @@ class GameLibrary(
                     addedAt = System.currentTimeMillis(),
                 )
             }
-        val all = (kept + adopted).sortedWith(
-            compareBy({ it.displayName.lowercase() }, { it.addedAt }),
-        )
+        val all = (kept + adopted).sortedWith(libraryOrder)
         if (all.size != stored.size || adopted.isNotEmpty()) save(all)
         return all
     }
 
-    /** Add or replace a game (deduplicate by main file name). Files must already be in [gamesDir]. A re-import keeps the game's stored mode. */
+    /** Add or replace a game (deduplicate by main file name). Files must already be in [gamesDir]. A re-import keeps the game's stored mode and pin. */
     fun register(mainFile: String, files: List<String>): GameEntry {
         val existing = load().find { it.mainFile == mainFile }
         val entry = GameEntry(
@@ -170,9 +179,10 @@ class GameLibrary(
             files = files,
             addedAt = System.currentTimeMillis(),
             mode = existing?.mode,
+            pinned = existing?.pinned ?: false,
         )
         val all = load().filter { it.mainFile != mainFile } + entry
-        save(all.sortedWith(compareBy({ it.displayName.lowercase() }, { it.addedAt })))
+        save(all.sortedWith(libraryOrder))
         return entry
     }
 
@@ -181,7 +191,15 @@ class GameLibrary(
         require(mode == null || mode in KNOWN_MODES) { "unknown mode: $mode" }
         val updated = entry.copy(mode = mode)
         val all = load().filter { it.mainFile != entry.mainFile } + updated
-        save(all.sortedWith(compareBy({ it.displayName.lowercase() }, { it.addedAt })))
+        save(all.sortedWith(libraryOrder))
+        return updated
+    }
+
+    /** Pin or unpin a game; returns the updated entry. Pinned games sort to the top of the library. */
+    fun setPinned(entry: GameEntry, pinned: Boolean): GameEntry {
+        val updated = entry.copy(pinned = pinned)
+        val all = load().filter { it.mainFile != entry.mainFile } + updated
+        save(all.sortedWith(libraryOrder))
         return updated
     }
 
@@ -310,20 +328,25 @@ class GameLibrary(
             for (line in storeFile.readLines()) {
                 if (line.isBlank()) continue
                 val parts = line.split('|')
-                // Four fields: written before per-game modes existed.
-                if (parts.size != 4 && parts.size != 5) continue
+                // Four fields: written before per-game modes
+                // existed. Five: before pins. Six: mode + pin.
+                if (parts.size !in 4..6) continue
                 val main = parts[0].trim()
                 val name = parts[1].trim()
                 val added = parts[2].trim().toLongOrNull() ?: continue
                 val files = parts[3].split(',').map { it.trim() }.filter { it.isNotEmpty() }
                 if (main.isEmpty() || name.isEmpty() || files.isEmpty()) continue
                 if (files[0] != main) continue
-                val mode = if (parts.size == 5) {
+                val mode = if (parts.size >= 5) {
                     parts[4].trim().ifEmpty { null }?.takeIf { it in KNOWN_MODES }
                 } else {
                     null
                 }
-                out.add(GameEntry(main, name, files, added, mode))
+                // Sixth field, written since pins existed: "1" is
+                // pinned; anything else (including absent) is not.
+                val pinned = parts.size == 6 &&
+                    (parts[5].trim() == "1" || parts[5].trim().equals("true", ignoreCase = true))
+                out.add(GameEntry(main, name, files, added, mode, pinned))
             }
         } catch (_: Exception) {
             return emptyList()
@@ -336,7 +359,7 @@ class GameLibrary(
             storeFile.parentFile?.mkdirs()
             val text = entries.joinToString("\n") { e ->
                 val safeName = e.displayName.replace('|', ' ').replace('\n', ' ').trim()
-                "${e.mainFile}|$safeName|${e.addedAt}|${e.files.joinToString(",")}|${e.mode ?: ""}"
+                "${e.mainFile}|$safeName|${e.addedAt}|${e.files.joinToString(",")}|${e.mode ?: ""}|${if (e.pinned) "1" else ""}"
             }
             storeFile.writeText(if (text.isEmpty()) "" else text + "\n")
         } catch (_: Exception) {
