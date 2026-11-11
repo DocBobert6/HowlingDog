@@ -3498,6 +3498,10 @@ class MainActivity : ComponentActivity() {
     ) {
         var held by remember { mutableStateOf(false) }
         val size = (if (small) 48.dp else 56.dp) * scale
+        // The touch area, in px, for the out-of-bounds check: a
+        // press that starts outside the button must never claim
+        // the hold, and a hold ends when the finger slides out.
+        val touchPx = with(LocalDensity.current) { size.toPx() }
         // The overlay's opacity comes from the container's alpha, so
         // the button is drawn at full alpha here (the old fixed 0.6
         // is gone — the default opacity setting is 0.6, so the look
@@ -3521,11 +3525,21 @@ class MainActivity : ComponentActivity() {
                         while (true) {
                             val event = awaitPointerEvent()
                             for (change in event.changes) {
+                                // Out of bounds = outside the
+                                // button's touch square. There is
+                                // no isOutOfBounds on
+                                // PointerInputChange in this Compose
+                                // version, so it is computed from
+                                // the position and the touch size.
+                                val out = change.position.x < 0f ||
+                                    change.position.x > touchPx ||
+                                    change.position.y < 0f ||
+                                    change.position.y > touchPx
                                 when (tracker.onChange(
                                     change.id.value,
                                     change.pressed,
                                     change.previousPressed,
-                                    change.isOutOfBounds,
+                                    out,
                                 )) {
                                     DragAction.CLAIM -> {
                                         held = true
@@ -3724,11 +3738,21 @@ class MainActivity : ComponentActivity() {
                             while (true) {
                                 val event = awaitPointerEvent()
                                 for (change in event.changes) {
+                                    // Out of bounds = outside the
+                                    // touch square (touchPx). There
+                                    // is no isOutOfBounds on
+                                    // PointerInputChange in this
+                                    // Compose version, so it is
+                                    // computed from the position.
+                                    val out = change.position.x < 0f ||
+                                        change.position.x > touchPx ||
+                                        change.position.y < 0f ||
+                                        change.position.y > touchPx
                                     when (tracker.onChange(
                                         change.id.value,
                                         change.pressed,
                                         change.previousPressed,
-                                        change.isOutOfBounds,
+                                        out,
                                     )) {
                                         DragAction.CLAIM,
                                         DragAction.UPDATE -> updateKnob(change.position)
@@ -3883,11 +3907,21 @@ class MainActivity : ComponentActivity() {
                             while (true) {
                                 val event = awaitPointerEvent()
                                 for (change in event.changes) {
+                                    // Out of bounds = outside the
+                                    // touch square (touchPx). There
+                                    // is no isOutOfBounds on
+                                    // PointerInputChange in this
+                                    // Compose version, so it is
+                                    // computed from the position.
+                                    val out = change.position.x < 0f ||
+                                        change.position.x > touchPx ||
+                                        change.position.y < 0f ||
+                                        change.position.y > touchPx
                                     when (tracker.onChange(
                                         change.id.value,
                                         change.pressed,
                                         change.previousPressed,
-                                        change.isOutOfBounds,
+                                        out,
                                     )) {
                                         DragAction.CLAIM,
                                         DragAction.UPDATE -> setDirection(
