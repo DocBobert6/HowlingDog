@@ -53,12 +53,6 @@ import androidx.compose.ui.unit.sp
  * Reached from the library ("Arcade Manager" button) and from
  * Settings. Back returns to where it was opened from.
  */
-data class ArcadeManagerEntry(
-    val mainFile: String,
-    val displayName: String,
-    val playtimeMillis: Long,
-    val counts: ArcadeCounts,
-)
 
 @Composable
 fun ArcadeManagerScreen(

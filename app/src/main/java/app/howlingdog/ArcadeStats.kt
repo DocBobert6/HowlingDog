@@ -98,10 +98,52 @@ data class ArcadeCounts(
     }
 }
 
+/**
+ * One row in the Arcade Manager: a game, its display name, its
+ * playtime, and its counts. The display name is resolved by
+ * [ArcadeStats.buildArcadeEntries]: the library entry's
+ * [GameEntry.effectiveName], or the file stem for a game no
+ * longer in the library.
+ */
+data class ArcadeManagerEntry(
+    val mainFile: String,
+    val displayName: String,
+    val playtimeMillis: Long,
+    val counts: ArcadeCounts,
+)
+
 object ArcadeStats {
 
     /** What one virtual coin drop is worth, in cents. */
     const val COIN_VALUE_CENTS = 25L
+
+    /**
+     * 2.0.1, audit fix 3 — build the Arcade Manager's rows from
+     * every game with stats or playtime: library games by their
+     * display name, and games no longer in the library by their
+     * file stem (the same fallback the memory card manager uses
+     * for unknown games). A game with neither presses nor
+     * playtime gets no row. Rows are most-pressed first.
+     */
+    fun buildArcadeEntries(
+        games: List<GameEntry>,
+        stored: Map<String, ArcadeCounts>,
+    ): List<ArcadeManagerEntry> {
+        val known = games.associateBy { it.mainFile }
+        val mainFiles = (games.map { it.mainFile } + stored.keys).distinct()
+        return mainFiles
+            .map { mainFile ->
+                val game = known[mainFile]
+                ArcadeManagerEntry(
+                    mainFile = mainFile,
+                    displayName = game?.effectiveName ?: displayNameFor(mainFile),
+                    playtimeMillis = game?.totalPlayMillis ?: 0L,
+                    counts = stored[mainFile] ?: ArcadeCounts(),
+                )
+            }
+            .filter { it.counts.totalPresses > 0 || it.playtimeMillis > 0 }
+            .sortedByDescending { it.counts.totalPresses }
+    }
 
     /** The eight direction buckets, in the order the heatmap draws them. */
     val DIRECTION_NAMES: List<String> = listOf(

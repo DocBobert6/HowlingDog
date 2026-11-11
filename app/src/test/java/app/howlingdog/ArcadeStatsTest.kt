@@ -172,4 +172,84 @@ class ArcadeStatsTest {
         assertEquals(0L, counts.buttonCount("Select"))
         assertFalse(counts.isEmpty())
     }
+
+    @Test
+    fun entriesUseTheLibraryDisplayName() {
+        val games = listOf(
+            GameEntry(
+                mainFile = "blazstar.neo",
+                displayName = "blazstar",
+                files = listOf("blazstar.neo"),
+                addedAt = 0L,
+                customName = "Blazing Star",
+            ),
+            GameEntry(
+                mainFile = "kof98.neo",
+                displayName = "kof98",
+                files = listOf("kof98.neo"),
+                addedAt = 0L,
+            ),
+        )
+        val stored = mapOf(
+            "blazstar.neo" to ArcadeCounts(a = 5),
+            "kof98.neo" to ArcadeCounts(a = 3),
+        )
+        val entries = ArcadeStats.buildArcadeEntries(games, stored)
+        assertEquals(2, entries.size)
+        // The renamed game shows its custom name, the other its
+        // filename-derived display name — never the file stem
+        // when the game is in the library.
+        assertEquals("Blazing Star", entries[0].displayName)
+        assertEquals("kof98", entries[1].displayName)
+        assertEquals(5L, entries[0].counts.totalPresses)
+    }
+
+    @Test
+    fun entriesIncludeGamesThatLeftTheLibraryByFileStem() {
+        val games = listOf(
+            GameEntry(
+                mainFile = "kof98.neo",
+                displayName = "kof98",
+                files = listOf("kof98.neo"),
+                addedAt = 0L,
+            ),
+        )
+        val stored = mapOf(
+            "kof98.neo" to ArcadeCounts(a = 3),
+            "blazstar.neo" to ArcadeCounts(a = 9),
+        )
+        val entries = ArcadeStats.buildArcadeEntries(games, stored)
+        assertEquals(2, entries.size)
+        // The game that left the library still appears, by its
+        // file stem — the same fallback the memory card manager
+        // uses for unknown games.
+        assertEquals("blazstar", entries[0].displayName)
+        assertEquals(9L, entries[0].counts.totalPresses)
+        assertEquals("kof98", entries[1].displayName)
+    }
+
+    @Test
+    fun entriesLeaveOutGamesWithNoPressesOrPlaytime() {
+        val games = listOf(
+            GameEntry(
+                mainFile = "unplayed.neo",
+                displayName = "unplayed",
+                files = listOf("unplayed.neo"),
+                addedAt = 0L,
+            ),
+            GameEntry(
+                mainFile = "played.neo",
+                displayName = "played",
+                files = listOf("played.neo"),
+                addedAt = 0L,
+                totalPlayMillis = 60_000L,
+            ),
+        )
+        val entries = ArcadeStats.buildArcadeEntries(games, emptyMap())
+        // Playtime alone earns a row; no presses and no playtime
+        // earns none.
+        assertEquals(1, entries.size)
+        assertEquals("played", entries[0].displayName)
+        assertEquals(60_000L, entries[0].playtimeMillis)
+    }
 }

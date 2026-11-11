@@ -383,7 +383,10 @@ class MainActivity : ComponentActivity() {
      * 2.0, feature 6 — rebuild the Arcade Manager's entries and
      * totals from the arcade-stats file and the library, so the
      * screen always shows the counts as they are. Called when
-     * the screen is opened. Games with neither playtime nor
+     * the screen is opened. The rows come from
+     * [ArcadeStats.buildArcadeEntries]: library games by their
+     * display name, and games with stats that left the library
+     * by their file stem. Games with neither playtime nor
      * counts are left out; the rest sort by presses, most first.
      * The totals cover every game in the library (playtime) and
      * every stored count (coins, including games no longer in
@@ -392,17 +395,7 @@ class MainActivity : ComponentActivity() {
     private fun refreshArcadeManager() {
         val stored = arcadeStatsStore.loadAll()
         val games = gamesState.value
-        arcadeEntriesState.value = games
-            .map { game ->
-                ArcadeManagerEntry(
-                    mainFile = game.mainFile,
-                    displayName = game.effectiveName,
-                    playtimeMillis = game.totalPlayMillis,
-                    counts = stored[game.mainFile] ?: ArcadeCounts(),
-                )
-            }
-            .filter { it.counts.totalPresses > 0 || it.playtimeMillis > 0 }
-            .sortedByDescending { it.counts.totalPresses }
+        arcadeEntriesState.value = ArcadeStats.buildArcadeEntries(games, stored)
         arcadeTotalCoinsState.value = stored.values.sumOf { it.coin }
         arcadeTotalPlaytimeState.value = games.sumOf { it.totalPlayMillis }
     }
