@@ -340,6 +340,11 @@ class MainActivity : ComponentActivity() {
         var settingsFrom by remember { mutableStateOf(Screen.Library) }
         var paused by remember { mutableStateOf(false) }
         var pauseStatus by remember { mutableStateOf("") }
+        // Phase 9, item 3 — the save-state slot the pause menu's
+        // Save / Load acts on (1..QuickSave.SLOT_COUNT). Slot 1 is
+        // the legacy slot the quick path uses too; a new game starts
+        // on slot 1 (reset in startGame).
+        var saveSlot by remember { mutableStateOf(QuickSave.QUICK_SLOT) }
         // Quick save/load status: a brief note on the game screen
         // ("Saved." / "Loaded." / "No save yet."), cleared after a
         // couple of seconds. The pause menu keeps its own status.
@@ -668,9 +673,16 @@ class MainActivity : ComponentActivity() {
             inputActive = true
         }
 
-        /** One save slot per game, in the saves folder (shared by the pause menu and quick save/load). */
-        fun stateFileFor(entry: GameEntry): File =
-            QuickSave.stateFile(File(context.filesDir, "saves"), entry.mainFile)
+        /**
+         * The save-state file for a game and slot, in the saves
+         * folder. Slot 1 is the legacy `<mainFile>.state` file,
+         * shared by the pause menu and quick save/load; slots 2
+         * and 3 are `<mainFile>.state2` / `.state3` (see
+         * QuickSave). The one-argument form is the quick path's
+         * slot 1.
+         */
+        fun stateFileFor(entry: GameEntry, slot: Int = QuickSave.QUICK_SLOT): File =
+            QuickSave.stateFile(File(context.filesDir, "saves"), entry.mainFile, slot)
 
         fun saveState() {
             val game = playingGame ?: return
@@ -681,10 +693,10 @@ class MainActivity : ComponentActivity() {
                 return
             }
             try {
-                val file = stateFileFor(game)
+                val file = stateFileFor(game, saveSlot)
                 file.parentFile?.mkdirs()
                 file.writeBytes(bytes)
-                pauseStatus = "Saved."
+                pauseStatus = "Saved to slot $saveSlot."
             } catch (e: Exception) {
                 pauseStatus = "Could not save: ${e.message}"
             }
@@ -693,9 +705,9 @@ class MainActivity : ComponentActivity() {
         fun loadState() {
             val game = playingGame ?: return
             val s = session ?: return
-            val file = stateFileFor(game)
+            val file = stateFileFor(game, saveSlot)
             if (!file.isFile) {
-                pauseStatus = "No save yet for this game."
+                pauseStatus = "No save in slot $saveSlot yet."
                 return
             }
             val bytes = try {
@@ -705,7 +717,7 @@ class MainActivity : ComponentActivity() {
                 return
             }
             if (s.unserializeState(bytes)) {
-                pauseStatus = "Loaded."
+                pauseStatus = "Loaded from slot $saveSlot."
                 resumeGame()
             } else {
                 pauseStatus = "That save doesn't match this game setup."
@@ -715,9 +727,10 @@ class MainActivity : ComponentActivity() {
         /**
          * Quick save/load: save and load the per-game state slot
          * instantly, without opening the pause menu. The slot is
-         * the SAME file the pause menu uses (stateFileFor), so the
-         * two paths always see the same state; there is no second
-         * slot.
+         * slot 1 — the SAME file the pause menu uses when slot 1
+         * is picked (stateFileFor's default) — so the two paths
+         * always see the same state on that slot; slots 2 and 3
+         * belong to the pause menu's slot picker only.
          *
          * The game is paused only for the snapshot itself, and
          * resumes right after, so gameplay is interrupted for a
@@ -839,6 +852,10 @@ class MainActivity : ComponentActivity() {
                 },
             )
             playingGame = entry
+            // A new game starts on slot 1 — the legacy slot the
+            // quick path uses — whatever slot the last game left
+            // the pause menu on.
+            saveSlot = QuickSave.QUICK_SLOT
             screen = Screen.Playing
             session?.start()
             inputActive = true
@@ -1995,6 +2012,19 @@ class MainActivity : ComponentActivity() {
                                 PauseMenu(
                                     timeLeft = pauseTimeLeft,
                                     status = pauseStatus,
+                                    // The picker reads the saves
+                                    // folder fresh on each
+                                    // composition, so a slot saved
+                                    // in this pause shows occupied
+                                    // at once.
+                                    selectedSlot = saveSlot,
+                                    occupiedSlots = playingGame?.let {
+                                        QuickSave.occupiedSlots(
+                                            File(context.filesDir, "saves"),
+                                            it.mainFile,
+                                        )
+                                    } ?: emptyList(),
+                                    onSelectSlot = { saveSlot = it },
                                     onResume = { resumeGame() },
                                     onSaveState = { saveState() },
                                     onLoadState = { loadState() },
@@ -3029,6 +3059,12 @@ private fun SetupRow(
 fun PauseMenu(
     timeLeft: Int,
     status: String = "",
+    // Phase 9, item 3 — the save-state slot picker: the picked
+    // slot is what SAVE STATE / LOAD STATE below act on, and a
+    // filled dot marks a slot that holds a save.
+    selectedSlot: Int = QuickSave.QUICK_SLOT,
+    occupiedSlots: List<Int> = emptyList(),
+    onSelectSlot: (Int) -> Unit = {},
     onResume: () -> Unit,
     onSaveState: () -> Unit,
     onLoadState: () -> Unit,
@@ -3061,6 +3097,44 @@ fun PauseMenu(
         )
         Spacer(Modifier.height(4.dp))
         ArcadeButton(text = "RESUME", primary = true, compact = true, onClick = onResume)
+        Spacer(Modifier.height(4.dp))
+        // Save-state slot picker: three small chips, one per
+        // slot — a filled dot means the slot holds a save, an
+        // open dot means it is empty, and the picked slot is
+        // gold. Chips, not full buttons: three compact buttons
+        // would push the menu past the ~355dp landscape game
+        // area and the menu would scroll (see PauseMenuTest).
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (slot in 1..QuickSave.SLOT_COUNT) {
+                val picked = slot == selectedSlot
+                Box(
+                    modifier = Modifier
+                        .height(32.dp)
+                        .clickable { onSelectSlot(slot) }
+                        .background(
+                            if (picked) Color(EraUi.Palette.GOLD)
+                            else Color(EraUi.Palette.SURFACE_RAISED),
+                            RoundedCornerShape(2.dp),
+                        )
+                        .border(
+                            1.dp,
+                            if (picked) Color(EraUi.Palette.GOLD)
+                            else Color(EraUi.Palette.GOLD_MUTED),
+                            RoundedCornerShape(2.dp),
+                        )
+                        .padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "SLOT $slot ${if (slot in occupiedSlots) "●" else "○"}",
+                        color = if (picked) Color(EraUi.Palette.ON_GOLD)
+                        else Color(EraUi.Palette.TEXT),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(4.dp))
         ArcadeButton(text = "SAVE STATE", compact = true, onClick = onSaveState)
         Spacer(Modifier.height(4.dp))

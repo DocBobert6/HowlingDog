@@ -4,21 +4,23 @@ import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 /**
- * Pure-JVM unit tests for the quick save/load slot: the quick path
- * uses the same per-game file the pause menu uses (one slot per
- * game, no second slot), and a quick load with no save file does
- * nothing.
+ * Pure-JVM unit tests for the save-state slots: three slots per
+ * game, slot 1 the legacy `<mainFile>.state` file the quick path
+ * uses, slots 2 and 3 `<mainFile>.state2` / `.state3`, and the
+ * occupancy check the pause menu's slot picker shows.
  */
 class QuickSaveTest {
 
     @Test
     fun stateFileIsThePauseMenuSlot() {
-        // The slot is "<mainFile>.state" in the saves folder — the
-        // same path the pause menu's save/load uses, so the two
-        // paths always see the same state.
+        // Slot 1 is "<mainFile>.state" in the saves folder — the
+        // same path the pause menu's save/load used before slots
+        // existed, and the path the quick save/load still uses, so
+        // the two paths always see the same state on slot 1.
         val saves = File("/tmp/hd-test-saves")
         assertEquals(
             File(saves, "kof98.neo.state"),
@@ -46,6 +48,65 @@ class QuickSaveTest {
         present.delete()
         assertFalse(QuickSave.loadAvailable(present))
         asDir.delete()
+        dir.delete()
+    }
+
+    @Test
+    fun slotFilesFollowTheScheme() {
+        val saves = File("/tmp/hd-test-saves-slots")
+        assertEquals(File(saves, "kof98.neo.state"), QuickSave.stateFile(saves, "kof98.neo", 1))
+        assertEquals(File(saves, "kof98.neo.state2"), QuickSave.stateFile(saves, "kof98.neo", 2))
+        assertEquals(File(saves, "kof98.neo.state3"), QuickSave.stateFile(saves, "kof98.neo", 3))
+    }
+
+    @Test
+    fun slotOneIsTheLegacyFile() {
+        // The default slot is slot 1, and slot 1's file is exactly
+        // the legacy one-slot file — a save made before slots
+        // existed is slot 1's save, untouched.
+        val saves = File("/tmp/hd-test-saves-slots")
+        assertEquals(
+            QuickSave.stateFile(saves, "kof98.neo"),
+            QuickSave.stateFile(saves, "kof98.neo", QuickSave.QUICK_SLOT),
+        )
+        assertEquals(1, QuickSave.QUICK_SLOT)
+        assertEquals(3, QuickSave.SLOT_COUNT)
+    }
+
+    @Test
+    fun slotsOutsideOneToThreeAreRejected() {
+        val saves = File("/tmp/hd-test-saves-slots")
+        for (bad in listOf(0, -1, 4, 99)) {
+            try {
+                QuickSave.stateFile(saves, "kof98.neo", bad)
+                fail("slot $bad should be rejected")
+            } catch (e: IllegalArgumentException) {
+                // Expected.
+            }
+        }
+    }
+
+    @Test
+    fun occupiedSlotsListsOnlySlotsWithFiles() {
+        val dir = File("/tmp/hd-test-saves-occupied")
+        dir.mkdirs()
+        assertEquals(emptyList<Int>(), QuickSave.occupiedSlots(dir, "kof98.neo"))
+        assertFalse(QuickSave.slotOccupied(dir, "kof98.neo", 1))
+        File(dir, "kof98.neo.state").writeBytes(byteArrayOf(1))
+        assertEquals(listOf(1), QuickSave.occupiedSlots(dir, "kof98.neo"))
+        assertTrue(QuickSave.slotOccupied(dir, "kof98.neo", 1))
+        assertFalse(QuickSave.slotOccupied(dir, "kof98.neo", 2))
+        File(dir, "kof98.neo.state3").writeBytes(byteArrayOf(2))
+        assertEquals(listOf(1, 3), QuickSave.occupiedSlots(dir, "kof98.neo"))
+        assertTrue(QuickSave.slotOccupied(dir, "kof98.neo", 3))
+        // A directory with a slot name is not an occupied slot.
+        File(dir, "kof98.neo.state2").mkdirs()
+        assertEquals(listOf(1, 3), QuickSave.occupiedSlots(dir, "kof98.neo"))
+        assertFalse(QuickSave.slotOccupied(dir, "kof98.neo", 2))
+        File(dir, "kof98.neo.state").delete()
+        File(dir, "kof98.neo.state3").delete()
+        File(dir, "kof98.neo.state2").delete()
+        assertEquals(emptyList<Int>(), QuickSave.occupiedSlots(dir, "kof98.neo"))
         dir.delete()
     }
 }

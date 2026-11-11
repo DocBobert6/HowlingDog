@@ -6,8 +6,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,11 +34,20 @@ class PauseMenuTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun setMenu(width: Int, height: Int) {
+    private fun setMenu(
+        width: Int,
+        height: Int,
+        selectedSlot: Int = QuickSave.QUICK_SLOT,
+        occupiedSlots: List<Int> = emptyList(),
+        onSelectSlot: (Int) -> Unit = {},
+    ) {
         composeRule.setContent {
             Box(Modifier.size(width.dp, height.dp)) {
                 PauseMenu(
                     timeLeft = 9,
+                    selectedSlot = selectedSlot,
+                    occupiedSlots = occupiedSlots,
+                    onSelectSlot = onSelectSlot,
                     onResume = {},
                     onSaveState = {},
                     onLoadState = {},
@@ -70,5 +81,30 @@ class PauseMenuTest {
         composeRule.onNodeWithText("QUIT TO LIBRARY")
             .performScrollTo()
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun slotPickerShowsOccupiedAndEmptySlots() {
+        // Phase 9, item 3: a filled dot marks a slot that holds
+        // a save, an open dot an empty one. Asserting the chips
+        // displayed at 360dp also guards the landscape fit —
+        // the picker must not push the menu past the game area.
+        setMenu(width = 800, height = 360, occupiedSlots = listOf(1, 3))
+        composeRule.onNodeWithText("SLOT 1 ●").assertIsDisplayed()
+        composeRule.onNodeWithText("SLOT 2 ○").assertIsDisplayed()
+        composeRule.onNodeWithText("SLOT 3 ●").assertIsDisplayed()
+    }
+
+    @Test
+    fun tappingASlotChipSelectsIt() {
+        var picked = -1
+        setMenu(
+            width = 800,
+            height = 360,
+            occupiedSlots = listOf(1),
+            onSelectSlot = { picked = it },
+        )
+        composeRule.onNodeWithText("SLOT 2 ○").performClick()
+        assertEquals(2, picked)
     }
 }

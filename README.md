@@ -48,8 +48,10 @@ system, each matched to the display that system was played on.
   switched off in Settings.
 - **Quick save/load** — on-screen SAVE and LOAD buttons beside
   Pause, and L1+R1 together to quick-save / L2+R2 together to
-  quick-load on a gamepad. One save-state slot per game, shared
-  with the pause menu.
+  quick-load on a gamepad. Three save-state slots per game: the
+  quick path always uses slot 1, and the pause menu lets you pick
+  a slot (a filled dot marks a slot that holds a save) before
+  SAVE STATE / LOAD STATE.
 - **Gamepad support** — physical-position mapping (bottom face =
   Neo A, right = B, left = C, top = D; Start = Neo Start, Select =
   Neo Coin), D-pad and left stick steer, START+SELECT pauses.
