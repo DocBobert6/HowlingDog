@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -46,10 +47,12 @@ import androidx.compose.ui.unit.sp
  * (libretro thumbnails, fetched at runtime on Wi-Fi and cached —
  * never bundled); otherwise it is the typographic portrait — a
  * bold background colour (stable per game name, see EraUi) with a
- * big monogram and the game's name. The art sits inside the same
- * chunky maroon-and-gold frame; the frame and the grid never
- * change. A game is a game: tiles show no media type and the grid
- * never sorts by media.
+ * big monogram and the game's name. An art tile carries the name
+ * too, as a small label in its bottom-right corner on a dark
+ * maroon scrim. The art sits inside the same chunky
+ * maroon-and-gold frame; the frame and the grid never change. A
+ * game is a game: tiles show no media type and the grid never
+ * sorts by media.
  */
 
 /** A chunky square-cornered arcade button. Primary is gold on maroon, the rest are dark maroon with a gold border. */
@@ -84,7 +87,7 @@ fun ArcadeButton(
     }
 }
 
-/** One portrait tile in the select grid. Tap selects; it never starts the game. Long-press pins or unpins it — a pinned game sits at the top of the grid and wears a gold PIN badge. [cover] is the fetched box art, or null for the typographic tile. */
+/** One portrait tile in the select grid. Tap selects; it never starts the game. Long-press pins or unpins it — a pinned game sits at the top of the grid and wears a gold PIN badge. [cover] is the fetched box art, or null for the typographic tile. The name is always drawn inside the tile: on an art tile it is a small label in the bottom-right corner on a dark maroon scrim (Phase 9, item 2), so it never clashes with the art's own title; the typographic tile keeps its centred name at the bottom. */
 @Composable
 fun GameTile(
     entry: GameEntry,
@@ -121,10 +124,18 @@ fun GameTile(
                 fontWeight = FontWeight.Black,
             )
         }
-        // Audit fix (c): the name is only drawn when there is no
-        // art — the box art already carries the title, so printing
-        // the filename stem over it clashed with it. The typographic
-        // tile (cover == null) keeps its name as before.
+        // Phase 9, item 2 — the name is drawn on every tile,
+        // inside the art square. The typographic tile (cover ==
+        // null) keeps its centred name at the bottom, as before.
+        // On an art tile the name is a small label tucked into the
+        // bottom-right corner on a dark maroon scrim, so it stays
+        // readable over the art without clashing with the art's own
+        // title (audit fix (c) removed the old centred overlay for
+        // that clash; the corner placement avoids it). The
+        // full-width Row only positions the label — the scrim hugs
+        // the text, so a short name stays a small chip, and a long
+        // name ellipsises inside the tile instead of overflowing
+        // it.
         if (cover == null) {
             Text(
                 text = entry.displayName,
@@ -145,6 +156,31 @@ fun GameTile(
                     .align(Alignment.BottomCenter)
                     .padding(6.dp),
             )
+        } else {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .fillMaxWidth()
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Box(
+                    modifier = Modifier.background(
+                        Color(EraUi.Palette.SURFACE).copy(alpha = 0.85f),
+                    ),
+                ) {
+                    Text(
+                        text = entry.displayName,
+                        color = Color(EraUi.Palette.TEXT),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                    )
+                }
+            }
         }
         // Phase 9, item 1 — a pinned game wears a small gold PIN
         // badge in the tile's top corner, so it reads as a
