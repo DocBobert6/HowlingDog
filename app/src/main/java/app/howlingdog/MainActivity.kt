@@ -3694,10 +3694,16 @@ class MainActivity : ComponentActivity() {
             }
             Spacer(Modifier.height(16.dp))
             Text("CRT display", style = MaterialTheme.typography.titleSmall)
+            // 2.0.1, audit fix 1 — the row shows the EFFECTIVE
+            // state: when Edge smoothing is on, the CRT is off
+            // (resolveDisplayMode: the edge wins), even though
+            // the stored CRT preference is still on. The stored
+            // value is untouched, so turning Edge smoothing back
+            // off restores the CRT automatically.
             ControlDropdownRow(
                 "CRT shader",
                 listOf("on" to "On", "off" to "Off"),
-                if (crtShaderOn) "on" else "off",
+                if (resolveDisplayMode(crtShaderOn, edgeMode) == DisplayMode.CRT) "on" else "off",
             ) { value ->
                 val on = value == "on"
                 shaderSettings.setShaderMaster(on)
@@ -3707,6 +3713,12 @@ class MainActivity : ComponentActivity() {
                 "Each system uses its own chain, tuned to the display it was played on — AES Hearth, Arcade Neon, Neo Geo CD Comet, Neo Geo CDZ Zenith. Takes effect the next time a game starts.",
                 style = MaterialTheme.typography.bodySmall,
             )
+            if (edgeMode != EdgeMode.OFF) {
+                Text(
+                    "Edge smoothing is on, so the CRT shader is off.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             // 2.0, feature 7 — the edge-smoothing display mode.
             // Off by default. When it is on, the CRT shader above
             // turns off (they fight visually) — the edge shader is
