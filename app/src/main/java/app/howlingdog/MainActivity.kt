@@ -324,6 +324,17 @@ class MainActivity : ComponentActivity() {
         gameGlView?.onResume()
     }
 
+    /**
+     * 2.0, feature 3 — re-read the memory card from the saves
+     * folder, so the MemoryCard screen always shows the card as
+     * it is. Called when the screen is opened and after every
+     * delete.
+     */
+    private fun refreshMemoryCard() {
+        memoryCardEntriesState.value =
+            MemoryCard.listEntries(File(filesDir, "saves"), gamesState.value)
+    }
+
     /** Recompute the gamepad mask from the held buttons and axes, and hand it to the UI. */
     private fun pushPadMask() {
         var mask = padAxesMask
@@ -595,7 +606,7 @@ class MainActivity : ComponentActivity() {
         return super.onGenericMotionEvent(event)
     }
 
-    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings, Achievements, Leaderboards, GamepadRemap, Cheats }
+    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings, Achievements, Leaderboards, GamepadRemap, Cheats, MemoryCard }
 
     private data class Held(
         val up: Boolean = false,
@@ -675,6 +686,10 @@ class MainActivity : ComponentActivity() {
     private val statusState by lazy { mutableStateOf("") }
     private val playingGameState by lazy { mutableStateOf<GameEntry?>(null) }
     private val confirmRemoveState by lazy { mutableStateOf<GameEntry?>(null) }
+    // 2.0, feature 3 — the memory card entries the MemoryCard
+    // screen shows, re-read from the saves folder whenever the
+    // screen is opened or a save is deleted.
+    private val memoryCardEntriesState by lazy { mutableStateOf<List<MemoryCard.Entry>>(emptyList()) }
     private val modePickerForState by lazy { mutableStateOf<GameEntry?>(null) }
     private val renameForState by lazy { mutableStateOf<GameEntry?>(null) }
     private val renameTextState by lazy { mutableStateOf("") }
@@ -766,6 +781,9 @@ class MainActivity : ComponentActivity() {
         // store (its rows read the overrides directly).
         var perGameFor by perGameForState
         var perGameTick by perGameTickState
+        // 2.0, feature 3 — the memory card entries the MemoryCard
+        // screen shows.
+        var memoryCardEntries by memoryCardEntriesState
         var settingsFrom by settingsFromState
         var paused by pausedState
         var pauseStatus by pauseStatusState
@@ -2072,7 +2090,7 @@ class MainActivity : ComponentActivity() {
         // Settings: back returns to where Settings was opened
         // from (the library, or the game). A game's own settings
         // screen (Phase 9, item 8) returns to the library.
-        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings || screen == Screen.Achievements || screen == Screen.Leaderboards || screen == Screen.GamepadRemap || screen == Screen.Cheats) {
+        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings || screen == Screen.Achievements || screen == Screen.Leaderboards || screen == Screen.GamepadRemap || screen == Screen.Cheats || screen == Screen.MemoryCard) {
             when (screen) {
                 Screen.Playing -> when {
                     editControls -> exitEditMode()
@@ -2085,6 +2103,7 @@ class MainActivity : ComponentActivity() {
                 Screen.Achievements -> screen = Screen.Playing
                 Screen.Leaderboards -> screen = Screen.Playing
                 Screen.Cheats -> screen = Screen.Playing
+                Screen.MemoryCard -> screen = Screen.Settings
                 Screen.GamepadRemap -> {
                     remapCapturing = null
                     screen = Screen.Settings
@@ -2662,6 +2681,24 @@ class MainActivity : ComponentActivity() {
                 // in the APK, plus the GPL-3.0 frontend note and the
                 // SNK disclaimer. Back returns to Settings.
                 LicencesScreen(onBack = { screen = Screen.Settings })
+            }
+            Screen.MemoryCard -> {
+                // 2.0, feature 3 — the memory card manager: the
+                // saves on the virtual Neo Geo memory card, with
+                // delete. A delete re-lists the card, so the screen
+                // always shows it as it is. Back returns to Settings.
+                MemoryCardScreen(
+                    entries = memoryCardEntries,
+                    onDeleteFile = { name ->
+                        MemoryCard.deleteFile(File(context.filesDir, "saves"), name)
+                        refreshMemoryCard()
+                    },
+                    onDeleteGame = { mainFile ->
+                        MemoryCard.deleteGame(File(context.filesDir, "saves"), mainFile)
+                        refreshMemoryCard()
+                    },
+                    onBack = { screen = Screen.Settings },
+                )
             }
         }
     }
@@ -3808,6 +3845,21 @@ class MainActivity : ComponentActivity() {
                 // fresh install (audit 2).
                 Button(onClick = { screen = Screen.Setup }) { Text("Setup guide") }
             }
+            // 2.0, feature 3 — the memory card manager: the saves
+            // on the virtual Neo Geo memory card, with delete for
+            // stale saves. The entries are re-read when the screen
+            // opens, so it always shows the card as it is.
+            Spacer(Modifier.height(16.dp))
+            Text("Memory card", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Which games have saves on the virtual Neo Geo memory card, and how big each save is. Delete a game's saves here to free the card.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = {
+                refreshMemoryCard()
+                screen = Screen.MemoryCard
+            }) { Text("Memory card") }
             // Phase 9, item 10 — in-app updater: a manual
             // check on demand, plus the download when one
             // is available. A manual check clears any
