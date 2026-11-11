@@ -67,6 +67,11 @@ class ControlSettings(private val store: OptionStore) {
         const val MAX_BUTTON_OFFSET_DP = 500f
         /** Per-button turbo (autofire) toggles, "controls.turbo.<id>" = "on"/"off", default off. */
         const val KEY_TURBO_PREFIX = "controls.turbo."
+        /** Gamepad button remapping (v1.3.0, part 1):
+            "controls.gamepad.<neoId>" = the Android keycode NAME
+            ("BUTTON_A", "BUTTON_X", "BUTTON_START", ...). Absent
+            means the default for that Neo input. */
+        const val KEY_GAMEPAD_PREFIX = "controls.gamepad."
         val TURBO_BUTTON_IDS: List<String> = listOf("A", "B", "C", "D")
 
         val BUTTON_IDS: List<String> = listOf("A", "B", "C", "D", "Coin", "Start")
@@ -174,6 +179,37 @@ class ControlSettings(private val store: OptionStore) {
             if (turboEnabled(id)) mask = mask or TurboInput.bitFor(id)
         }
         return mask
+    }
+
+    /** The gamepad button mapping (Neo id -> Android keycode). Every
+        Neo input is present, defaulting to today's mapping for any
+        input never remapped. */
+    fun gamepadMapping(): Map<String, Int> =
+        GamepadMapping.NEO_IDS.associateWith { gamepadKeycode(it) }
+
+    /** The physical keycode assigned to a Neo input, or its default. */
+    fun gamepadKeycode(neoId: String): Int {
+        val stored = GamepadMapping.keyCodeForName(store.get(KEY_GAMEPAD_PREFIX + neoId))
+        return stored ?: GamepadMapping.DEFAULT[neoId] ?: 0
+    }
+
+    /** Store one Neo input's physical button. */
+    fun setGamepadKeycode(neoId: String, keyCode: Int) {
+        if (neoId !in GamepadMapping.NEO_IDS) return
+        if (!GamepadMapping.isRemappable(keyCode)) return
+        store.put(KEY_GAMEPAD_PREFIX + neoId, GamepadMapping.keyCodeName(keyCode))
+    }
+
+    /** Store a whole mapping (an assign swaps two entries, so both are written). */
+    fun setGamepadMapping(mapping: Map<String, Int>) {
+        for (neoId in GamepadMapping.NEO_IDS) {
+            setGamepadKeycode(neoId, GamepadMapping.keyCodeFor(neoId, mapping))
+        }
+    }
+
+    /** Drop every remapping (all six inputs return to the defaults). */
+    fun resetGamepadMapping() {
+        for (neoId in GamepadMapping.NEO_IDS) store.put(KEY_GAMEPAD_PREFIX + neoId, "")
     }
 
     fun stickPosition(): ControlPosition = readPosition(KEY_STICK_POS, DEFAULT_STICK_POS)

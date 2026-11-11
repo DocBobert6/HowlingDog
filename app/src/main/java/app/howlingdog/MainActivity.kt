@@ -163,6 +163,15 @@ class MainActivity : ComponentActivity() {
     /** Set by the UI; called by the L1+R1 quick-save and L2+R2 quick-load hotkeys. */
     private var onQuickSaveHotkey: (() -> Unit)? = null
     private var onQuickLoadHotkey: (() -> Unit)? = null
+    /** Set by the remap screen while it is waiting for a button
+        (v1.3.0, part 1): called with the pressed keycode, and
+        returns true when the press was captured (so it never
+        reaches the game). Null when not capturing. */
+    private var captureKeyHandler: ((Int) -> Boolean)? = null
+    /** The gamepad button mapping, mirrored from the UI (v1.3.0,
+        part 1): the Activity's key handlers read it, the UI writes
+        it whenever the mapping changes. */
+    private var gamepadMappingField: Map<String, Int> = GamepadMapping.DEFAULT
     /** Set by the UI; called when the app backgrounds (Activity ON_PAUSE). */
     private var onAppBackgrounded: (() -> Unit)? = null
     /**
@@ -243,7 +252,7 @@ class MainActivity : ComponentActivity() {
     /** Recompute the gamepad mask from the held buttons and axes, and hand it to the UI. */
     private fun pushPadMask() {
         var mask = padAxesMask
-        for (code in padButtonsHeld) mask = mask or GamepadInput.maskForButton(code)
+        for (code in padButtonsHeld) mask = mask or GamepadInput.maskForButton(code, gamepadMappingField)
         onPadMask?.invoke(mask)
     }
 
@@ -256,6 +265,17 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        // Remapping capture (v1.3.0, part 1): while the remap
+        // screen is waiting for a button, a recognised gamepad
+        // button press is captured here, before the game-input
+        // path (which needs inputActive). A captured press never
+        // reaches the game. Any other key (volume, and so on)
+        // never reaches the handler, so it falls through below.
+        if (GamepadInput.isGamepadButton(keyCode) || GamepadInput.isQuickComboButton(keyCode)) {
+            captureKeyHandler?.let { handler ->
+                if (handler(keyCode)) return true
+            }
+        }
         if (!inputActive || event.repeatCount != 0) return super.onKeyDown(keyCode, event)
         // Quick-save/load shoulder combos (L1+R1 / L2+R2): these
         // buttons are not game inputs, so they are tracked apart
@@ -279,16 +299,17 @@ class MainActivity : ComponentActivity() {
         if (!GamepadInput.isGamepadButton(keyCode)) return super.onKeyDown(keyCode, event)
         // START+SELECT together pauses (the emulator-menu hotkey).
         // Start on its own stays the in-game Start button, and the
-        // touch Pause button stays the primary pause control.
-        if (keyCode == KeyEvent.KEYCODE_BUTTON_START &&
-            KeyEvent.KEYCODE_BUTTON_SELECT in padButtonsHeld
-        ) {
+        // touch Pause button stays the primary pause control. The
+        // pair follows the remapping (v1.3.0, part 1): pause is the
+        // two physical buttons assigned to Neo Start and Neo Coin,
+        // held together — not necessarily the pad's Start/Select.
+        val startKey = GamepadMapping.keyCodeFor("Start", gamepadMappingField)
+        val coinKey = GamepadMapping.keyCodeFor("Coin", gamepadMappingField)
+        if (keyCode == startKey && coinKey in padButtonsHeld) {
             onPauseHotkey?.invoke()
             return true
         }
-        if (keyCode == KeyEvent.KEYCODE_BUTTON_SELECT &&
-            KeyEvent.KEYCODE_BUTTON_START in padButtonsHeld
-        ) {
+        if (keyCode == coinKey && startKey in padButtonsHeld) {
             onPauseHotkey?.invoke()
             return true
         }
@@ -324,7 +345,7 @@ class MainActivity : ComponentActivity() {
         return super.onGenericMotionEvent(event)
     }
 
-    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings, Achievements, Leaderboards }
+    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings, Achievements, Leaderboards, GamepadRemap }
 
     private data class Held(
         val up: Boolean = false,
@@ -454,6 +475,16 @@ class MainActivity : ComponentActivity() {
         var controlSize by remember { mutableStateOf(controlSettings.size()) }
         // The on-screen left control (stick or 8-way D-pad).
         var leftControl by remember { mutableStateOf(controlSettings.leftControl()) }
+        // Gamepad button remapping (v1.3.0, part 1): Neo id ->
+        // physical keycode, a permutation of the six remappable
+        // buttons. The game reads it through GamepadInput.
+        var gamepadMapping by remember { mutableStateOf(controlSettings.gamepadMapping()) }
+        // The remap screen's capture: the Neo id waiting for a
+        // button press, or null when not capturing.
+        var remapCapturing by remember { mutableStateOf<String?>(null) }
+        // A one-line hint on the remap screen (what to press, or
+        // why a press was not a remappable button).
+        var remapHint by remember { mutableStateOf("") }
         // Turbo/autofire (Phase 9, item 6): the per-button toggles,
         // persisted in ControlSettings, default off for every button.
         var turboMask by remember { mutableStateOf(controlSettings.turboMask()) }
@@ -1235,6 +1266,48 @@ class MainActivity : ComponentActivity() {
             startGame(game)
         }
 
+        // Mirror the gamepad mapping into the Activity field, so
+        // the key handlers (which run outside composition) read
+        // the current mapping (v1.3.0, part 1).
+        LaunchedEffect(gamepadMapping) {
+            gamepadMappingField = gamepadMapping
+        }
+
+        // Remapping capture (v1.3.0, part 1): while the remap
+        // screen is waiting for a button, the Activity's onKeyDown
+        // hands the press here. A remappable button is assigned
+        // (swapping with the input that had it) and capturing ends;
+        // a shoulder or the D-pad is consumed with a hint and
+        // capturing continues.
+        DisposableEffect(remapCapturing) {
+            val capturing = remapCapturing
+            if (capturing != null) {
+                captureKeyHandler = { keyCode ->
+                    if (!GamepadMapping.isRemappable(keyCode)) {
+                        remapHint = when {
+                            GamepadInput.isQuickComboButton(keyCode) ->
+                                "The shoulders stay as quick save and quick load — pick a face button."
+                            keyCode == KeyEvent.KEYCODE_DPAD_UP ||
+                                keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
+                                keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
+                                keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ->
+                                "The D-pad steers — pick a face button."
+                            else -> "That button is not one of the six — pick a face button."
+                        }
+                        true
+                    } else {
+                        val newMapping = GamepadMapping.assign(gamepadMapping, capturing, keyCode)
+                        controlSettings.setGamepadMapping(newMapping)
+                        gamepadMapping = newMapping
+                        remapCapturing = null
+                        remapHint = ""
+                        true
+                    }
+                }
+            }
+            onDispose { captureKeyHandler = null }
+        }
+
         // Wire the gamepad callbacks: the activity's key/motion
         // handlers call these, and they read the composable state
         // through the remembered State objects, so the captured
@@ -1444,7 +1517,7 @@ class MainActivity : ComponentActivity() {
         // Settings: back returns to where Settings was opened
         // from (the library, or the game). A game's own settings
         // screen (Phase 9, item 8) returns to the library.
-        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings || screen == Screen.Achievements || screen == Screen.Leaderboards) {
+        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings || screen == Screen.Achievements || screen == Screen.Leaderboards || screen == Screen.GamepadRemap) {
             when (screen) {
                 Screen.Playing -> when {
                     editControls -> exitEditMode()
@@ -1456,6 +1529,10 @@ class MainActivity : ComponentActivity() {
                 Screen.Setup -> leaveSetup()
                 Screen.Achievements -> screen = Screen.Playing
                 Screen.Leaderboards -> screen = Screen.Playing
+                Screen.GamepadRemap -> {
+                    remapCapturing = null
+                    screen = Screen.Settings
+                }
                 Screen.GameSettings -> {
                     perGameFor = null
                     screen = Screen.Library
@@ -3000,6 +3077,24 @@ class MainActivity : ComponentActivity() {
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(16.dp))
+                    Text("Gamepad", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Button mapping", style = MaterialTheme.typography.bodyMedium)
+                        Button(onClick = {
+                            remapCapturing = null
+                            remapHint = ""
+                            screen = Screen.GamepadRemap
+                        }) { Text("Remap") }
+                    }
+                    Text(
+                        "Move the Neo Geo buttons to whichever gamepad buttons you like. The six face and menu buttons swap with each other; the shoulders stay as quick save and quick load, and the D-pad and stick keep steering.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(16.dp))
                     Text("Latency", style = MaterialTheme.typography.titleSmall)
                     ControlDropdownRow(
                         "Run-ahead",
@@ -3253,6 +3348,76 @@ class MainActivity : ComponentActivity() {
                     }
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { screen = settingsFrom }) { Text("Back") }
+                }
+            }
+            Screen.GamepadRemap -> {
+                // Gamepad button remapping (v1.3.0, part 1): a
+                // capture-and-assign screen. Tap a Neo Geo button,
+                // then press a gamepad button to assign it; the two
+                // swap, so every input stays reachable. The shoulders
+                // stay as quick save/load and the D-pad and stick
+                // keep steering, so they are never offered here.
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("Gamepad button mapping", style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        "Tap a Neo Geo button, then press a gamepad button to assign it. The two swap, so every button stays reachable. The shoulders (L1/R1/L2/R2) stay as quick save and quick load, and the D-pad and stick keep steering.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    for (neoId in GamepadMapping.NEO_IDS) {
+                        val capturing = remapCapturing == neoId
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    remapCapturing = neoId
+                                    remapHint = "Press a gamepad button for Neo $neoId…"
+                                },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Neo $neoId",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (capturing) Color(EraUi.Palette.GOLD)
+                                else Color.Unspecified,
+                            )
+                            Text(
+                                if (capturing) "Press a button…"
+                                else GamepadMapping.displayName(
+                                    GamepadMapping.keyCodeFor(neoId, gamepadMapping),
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (capturing) Color(EraUi.Palette.GOLD)
+                                else Color.Unspecified,
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    if (remapHint.isNotEmpty()) {
+                        Text(remapHint, style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Button(onClick = {
+                            controlSettings.resetGamepadMapping()
+                            gamepadMapping = controlSettings.gamepadMapping()
+                            remapCapturing = null
+                            remapHint = ""
+                        }) { Text("Reset to defaults") }
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = {
+                            remapCapturing = null
+                            screen = Screen.Settings
+                        }) { Text("Done") }
+                    }
                 }
             }
             Screen.Achievements -> {

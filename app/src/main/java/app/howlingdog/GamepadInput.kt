@@ -24,22 +24,21 @@ object GamepadInput {
     /** Dead zone for the stick and hat axes: inside it, no direction. */
     const val DEAD_ZONE = 0.5f
 
-    /** The mask bit for one gamepad button, or 0 when unmapped. */
-    fun maskForButton(keyCode: Int): Int {
+    /** The mask bit for one gamepad button, or 0 when unmapped. The
+        face buttons follow [mapping] (the remapping, v1.3.0 part 1);
+        the D-pad always steers and is not remappable. The default
+        mapping is today's physical-position mapping, so a call with
+        no mapping behaves exactly as before. */
+    fun maskForButton(keyCode: Int, mapping: Map<String, Int> = GamepadMapping.DEFAULT): Int {
         val bit = when (keyCode) {
-            KeyEvent.KEYCODE_BUTTON_A -> InputMask.JOY_B // Neo A
-            KeyEvent.KEYCODE_BUTTON_B -> InputMask.JOY_A // Neo B
-            KeyEvent.KEYCODE_BUTTON_X -> InputMask.JOY_Y // Neo C
-            KeyEvent.KEYCODE_BUTTON_Y -> InputMask.JOY_X // Neo D
-            KeyEvent.KEYCODE_BUTTON_START -> InputMask.JOY_START
-            KeyEvent.KEYCODE_BUTTON_SELECT -> InputMask.JOY_SELECT
             KeyEvent.KEYCODE_DPAD_UP -> InputMask.JOY_UP
             KeyEvent.KEYCODE_DPAD_DOWN -> InputMask.JOY_DOWN
             KeyEvent.KEYCODE_DPAD_LEFT -> InputMask.JOY_LEFT
             KeyEvent.KEYCODE_DPAD_RIGHT -> InputMask.JOY_RIGHT
             else -> -1
         }
-        return if (bit >= 0) 1 shl bit else 0
+        if (bit >= 0) return 1 shl bit
+        return GamepadMapping.maskForKeyCode(keyCode, mapping)
     }
 
     /** True when this key is a gamepad button we map. */

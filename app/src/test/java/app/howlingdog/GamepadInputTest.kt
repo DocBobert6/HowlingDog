@@ -125,4 +125,33 @@ class GamepadInputTest {
         val padB = GamepadInput.maskForButton(KeyEvent.KEYCODE_BUTTON_B)
         assertEquals(touch or InputMask.neoB(), touch or padB)
     }
+
+    @Test
+    fun remappedButtonReachesTheGame() {
+        // Swap Neo A and Neo C (v1.3.0, part 1): the left face
+        // button (pad X) now fires Neo A, and the bottom face
+        // button (pad A) fires Neo C. The D-pad is unaffected by
+        // the mapping, and the default mapping is unchanged.
+        val swapped = GamepadMapping.assign(
+            GamepadMapping.DEFAULT,
+            "A",
+            KeyEvent.KEYCODE_BUTTON_X,
+        )
+        assertEquals(
+            InputMask.neoA(),
+            GamepadInput.maskForButton(KeyEvent.KEYCODE_BUTTON_X, swapped),
+        )
+        assertEquals(
+            InputMask.neoC(),
+            GamepadInput.maskForButton(KeyEvent.KEYCODE_BUTTON_A, swapped),
+        )
+        assertEquals(
+            1 shl InputMask.JOY_UP,
+            GamepadInput.maskForButton(KeyEvent.KEYCODE_DPAD_UP, swapped),
+        )
+        assertEquals(
+            InputMask.neoA(),
+            GamepadInput.maskForButton(KeyEvent.KEYCODE_BUTTON_A),
+        )
+    }
 }

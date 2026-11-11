@@ -1,5 +1,6 @@
 package app.howlingdog
 
+import android.view.KeyEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -346,5 +347,37 @@ class ControlSettingsTest {
         assertEquals(1.0f, s.buttonSizeMult("A"), 0.001f)
         assertTrue(s.buttonSizeMults().isEmpty())
         assertEquals(1.0f, s.dpadScale(), 0.001f)
+    }
+
+    @Test
+    fun gamepadKeycodeRoundTrip() {
+        val s = ControlSettings(MapStore())
+        // Defaults first: exactly today's mapping.
+        assertEquals(KeyEvent.KEYCODE_BUTTON_A, s.gamepadKeycode("A"))
+        assertEquals(KeyEvent.KEYCODE_BUTTON_SELECT, s.gamepadKeycode("Coin"))
+        // A swap is stored by name and read back.
+        s.setGamepadMapping(
+            GamepadMapping.assign(GamepadMapping.DEFAULT, "A", KeyEvent.KEYCODE_BUTTON_X),
+        )
+        assertEquals(KeyEvent.KEYCODE_BUTTON_X, s.gamepadKeycode("A"))
+        assertEquals(KeyEvent.KEYCODE_BUTTON_A, s.gamepadKeycode("C"))
+        assertEquals(KeyEvent.KEYCODE_BUTTON_X, s.gamepadMapping().getValue("A"))
+        assertEquals(KeyEvent.KEYCODE_BUTTON_A, s.gamepadMapping().getValue("C"))
+    }
+
+    @Test
+    fun gamepadMappingResetRestoresDefaults() {
+        val s = ControlSettings(MapStore())
+        s.setGamepadKeycode("A", KeyEvent.KEYCODE_BUTTON_Y)
+        s.resetGamepadMapping()
+        assertEquals(GamepadMapping.DEFAULT, s.gamepadMapping())
+    }
+
+    @Test
+    fun gamepadKeycodeIgnoresUnknownIdsAndShoulders() {
+        val s = ControlSettings(MapStore())
+        s.setGamepadKeycode("Z", KeyEvent.KEYCODE_BUTTON_X)
+        s.setGamepadKeycode("A", KeyEvent.KEYCODE_BUTTON_L1)
+        assertEquals(KeyEvent.KEYCODE_BUTTON_A, s.gamepadKeycode("A"))
     }
 }
