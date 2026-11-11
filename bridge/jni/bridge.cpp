@@ -1245,4 +1245,13 @@ Java_app_howlingdog_Bridge_nativeRaHttpResponse(JNIEnv *env, jobject /* thiz */,
     free(buf);
 }
 
+// v1.5, feature 4 — cheats: write one byte to the game's work
+// RAM. Called from the emu thread after every displayed frame.
+// False when no game is loaded or the address is outside the
+// work RAM — a bad code is a no-op, never a crash.
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeCheatWrite(JNIEnv * /* env */, jobject /* thiz */, jint address, jint value) {
+    return ra_cheat_write((uint32_t)address, (uint8_t)value) ? JNI_TRUE : JNI_FALSE;
+}
+
 } // extern "C"

@@ -119,6 +119,22 @@ uint32_t ra_console_id_for_path(const char* path);
 uint32_t ra_read_memory_mapped(uint32_t console_id, uint32_t address, uint8_t* buffer, uint32_t num_bytes,
                                const uint8_t* ram, size_t ram_size);
 
+/* Cheats (v1.5, feature 4). A cheat writes one byte to the 68k
+ * work RAM (0x100000-0x10FFFF) after every displayed frame.
+ * ra_cheat_offset translates a cheat address to the SYSTEM_RAM
+ * buffer offset for a console — the same map as
+ * ra_read_memory_mapped (carts read the work RAM from offset 0,
+ * discs from the PRAM at 0x100000) — or (size_t)-1 when the
+ * address is outside the work RAM, the console is unknown, or
+ * the offset would run past the RAM. Pure and host-testable.
+ * ra_cheat_write writes the byte through the memory provider
+ * (registered by ra_init): 1 on success, 0 when no game is
+ * loaded, the provider is missing, or the address is invalid.
+ * It works whether or not the user is logged in to RA — the
+ * provider is registered at init, before any login. */
+size_t ra_cheat_offset(uint32_t console_id, uint32_t address, size_t ram_size);
+int ra_cheat_write(uint32_t address, uint8_t value);
+
 /* Lifecycle. Returns 0 on success. The callbacks are the
  * bridge's JNI implementations (or stubs in the host test). */
 int ra_init(ra_memory_provider_fn memory_provider, void* memory_ctx,

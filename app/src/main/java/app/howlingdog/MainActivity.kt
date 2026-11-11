@@ -395,7 +395,7 @@ class MainActivity : ComponentActivity() {
         return super.onGenericMotionEvent(event)
     }
 
-    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings, Achievements, Leaderboards, GamepadRemap }
+    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings, Achievements, Leaderboards, GamepadRemap, Cheats }
 
     private data class Held(
         val up: Boolean = false,
@@ -463,6 +463,11 @@ class MainActivity : ComponentActivity() {
             ),
         )
     }
+    // v1.5, feature 4 — cheats: the per-game cheat store, one
+    // file per game in filesDir/cheats. The Cheats screen and
+    // startGame both read it; the session only holds the current
+    // enabled codes (see PlayerSession.setCheats).
+    private val cheatStore by lazy { CheatStore(File(filesDir, "cheats")) }
     private val topBar by lazy { TopBarVisibility() }
     private val screenState by lazy { mutableStateOf(if (appSettings.showBoot()) Screen.Boot else Screen.Library) }
     private val gamesState by lazy { mutableStateOf<List<GameEntry>>(emptyList()) }
@@ -1496,6 +1501,16 @@ class MainActivity : ComponentActivity() {
             screen = Screen.Playing
             session?.start()
             inputActive = true
+            // v1.5, feature 4 — cheats: this game's enabled codes
+            // go to the session now, so they are written after
+            // every displayed frame from the first one. A game
+            // with no codes (or none enabled) sends an empty
+            // list, which is a no-op in the session.
+            session?.setCheats(
+                cheatStore.load(entry.mainFile)
+                    .filter { it.enabled }
+                    .map { it.code },
+            )
             // v1.5, feature 3 — the game was started: stamp it
             // played now, so the Recently played sort orders it
             // first when he comes back to the library (which
@@ -1784,7 +1799,7 @@ class MainActivity : ComponentActivity() {
         // Settings: back returns to where Settings was opened
         // from (the library, or the game). A game's own settings
         // screen (Phase 9, item 8) returns to the library.
-        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings || screen == Screen.Achievements || screen == Screen.Leaderboards || screen == Screen.GamepadRemap) {
+        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings || screen == Screen.Achievements || screen == Screen.Leaderboards || screen == Screen.GamepadRemap || screen == Screen.Cheats) {
             when (screen) {
                 Screen.Playing -> when {
                     editControls -> exitEditMode()
@@ -1796,6 +1811,7 @@ class MainActivity : ComponentActivity() {
                 Screen.Setup -> leaveSetup()
                 Screen.Achievements -> screen = Screen.Playing
                 Screen.Leaderboards -> screen = Screen.Playing
+                Screen.Cheats -> screen = Screen.Playing
                 Screen.GamepadRemap -> {
                     remapCapturing = null
                     screen = Screen.Settings
@@ -2231,6 +2247,9 @@ class MainActivity : ComponentActivity() {
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { screen = Screen.Playing }) { Text("Back") }
                 }
+            }
+            Screen.Cheats -> {
+                CheatsScreen()
             }
             Screen.GameSettings -> {
                 // Phase 9, item 8 — this game's own settings: the
@@ -2953,6 +2972,174 @@ class MainActivity : ComponentActivity() {
                 },
                 dismissButton = {
                     TextButton(onClick = { renameFor = null }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
+    }
+
+    // v1.5, feature 4 — cheats: the current game's codes, reached
+    // from the pause menu; the game stays paused underneath (the
+    // session is not resumed until the player goes back). A code is
+    // 8 hex digits, `AAAAAAVV`: the first 6 are the 68k work-RAM
+    // address (0x100000–0x10FFFF), the last 2 are the byte value.
+    // Enabled codes are written to the game's RAM after every
+    // displayed frame; disabled ones are kept but do nothing. No
+    // bundled cheat database: the user types codes in, and they
+    // persist per game in filesDir/cheats. There are no cheat
+    // controls on the on-screen overlay (v1.5 standing rule).
+    @Composable
+    private fun CheatsScreen() {
+        var screen by screenState
+        var playingGame by playingGameState
+        val game = playingGame
+        // The stored cheats for this game, loaded when the game
+        // changes. This list is the screen's working copy; every
+        // change saves to the store and pushes the enabled codes
+        // to the session, so a toggle takes effect on the next
+        // frame without waiting for anything.
+        var cheats by remember(game?.mainFile) {
+            mutableStateOf(game?.let { cheatStore.load(it.mainFile) } ?: emptyList())
+        }
+        var showAddDialog by remember { mutableStateOf(false) }
+        var addCodeText by remember { mutableStateOf("") }
+        var addNameText by remember { mutableStateOf("") }
+        var addError by remember { mutableStateOf<String?>(null) }
+
+        fun pushAndSave(next: List<StoredCheat>) {
+            cheats = next
+            val g = game ?: return
+            cheatStore.save(g.mainFile, next)
+            session?.setCheats(next.filter { it.enabled }.map { it.code })
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+        ) {
+            Text(
+                if (game != null) "${game.effectiveName} — Cheats" else "Cheats",
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Codes write one byte to the game's work RAM after every frame. " +
+                    "A code is 8 hex digits: the first 6 are the address, the last 2 are the value " +
+                    "(example: 10D0E909 writes 0x09 to 0x10D0E9).",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(12.dp))
+            if (game == null) {
+                Text(
+                    "No game loaded.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else if (cheats.isEmpty()) {
+                Text(
+                    "No cheats for this game yet. Add one below.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                for ((index, stored) in cheats.withIndex()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stored.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                stored.code.format(),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Switch(
+                            checked = stored.enabled,
+                            onCheckedChange = { on ->
+                                val next = cheats.toMutableList()
+                                next[index] = stored.copy(enabled = on)
+                                pushAndSave(next)
+                            },
+                        )
+                        TextButton(onClick = {
+                            val next = cheats.toMutableList()
+                            next.removeAt(index)
+                            pushAndSave(next)
+                        }) { Text("Delete") }
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = {
+                addCodeText = ""
+                addNameText = ""
+                addError = null
+                showAddDialog = true
+            }) { Text("ADD CODE") }
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = { screen = Screen.Playing }) { Text("Back") }
+        }
+        if (showAddDialog) {
+            AlertDialog(
+                onDismissRequest = { showAddDialog = false },
+                title = { Text("Add code") },
+                text = {
+                    Column {
+                        Text(
+                            "8 hex digits: the first 6 are the work-RAM address " +
+                                "(100000–10FFFF), the last 2 are the byte value.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = addCodeText,
+                            onValueChange = { addCodeText = it },
+                            label = { Text("Code") },
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = addNameText,
+                            onValueChange = { addNameText = it },
+                            label = { Text("Name (optional)") },
+                            singleLine = true,
+                        )
+                        if (addError != null) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                addError ?: "",
+                                color = Color(EraUi.Palette.WARNING),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val parsed = CheatCode.parse(addCodeText)
+                        if (parsed == null) {
+                            addError = "Enter 8 hex digits, address 100000–10FFFF."
+                            return@TextButton
+                        }
+                        val name = addNameText.trim().ifEmpty { parsed.format() }
+                        pushAndSave(cheats + StoredCheat(parsed, name, true))
+                        showAddDialog = false
+                        addCodeText = ""
+                        addNameText = ""
+                        addError = null
+                    }) { Text("Add") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddDialog = false }) {
                         Text("Cancel")
                     }
                 },
@@ -4479,6 +4666,7 @@ class MainActivity : ComponentActivity() {
                             onUniBiosMenu = { openUniBiosMenu() },
                             onSaveState = { saveState() },
                             onLoadState = { loadState() },
+                            onCheats = { screen = Screen.Cheats },
                             // Phase 10 — RetroAchievements:
                             // the achievements list, only
                             // when RA has a game loaded. The
@@ -5396,6 +5584,11 @@ fun PauseMenu(
     onUniBiosMenu: () -> Unit = {},
     onSaveState: () -> Unit,
     onLoadState: () -> Unit,
+    // v1.5, feature 4 — cheats: the current game's codes. Always
+    // shown (a game with no codes yet just opens an empty list
+    // with ADD CODE); the codes themselves never appear on the
+    // on-screen overlay.
+    onCheats: () -> Unit = {},
     // Phase 10 — RetroAchievements: the achievements list,
     // shown only when RA has a game loaded for this game.
     showAchievements: Boolean = false,
@@ -5511,6 +5704,8 @@ fun PauseMenu(
         ArcadeButton(text = "SAVE STATE", compact = true, onClick = onSaveState)
         Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "LOAD STATE", compact = true, onClick = onLoadState)
+        Spacer(Modifier.height(2.dp))
+        ArcadeButton(text = "CHEATS", compact = true, onClick = onCheats)
         Spacer(Modifier.height(2.dp))
         // Phase 10 — RetroAchievements: the achievements list for
         // this game, only when RA has one loaded.

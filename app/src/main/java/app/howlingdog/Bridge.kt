@@ -118,6 +118,15 @@ object Bridge {
     external fun nativeRaHttpResponse(requestId: Int, body: ByteArray, httpStatus: Int)
 
     /**
+     * v1.5, feature 4 — cheats: write one byte to the game's
+     * work RAM (address 0x100000–0x10FFFF, value 0–255). Called
+     * from the emu thread after every displayed frame. False
+     * when no game is loaded or the address is outside the work
+     * RAM — a bad code is a no-op, never a crash.
+     */
+    external fun nativeCheatWrite(address: Int, value: Int): Boolean
+
+    /**
      * The Kotlin-side handlers for the RA callbacks the native
      * layer calls (looked up by GetMethodID in nativeRaInit, so
      * the function names and signatures below must match

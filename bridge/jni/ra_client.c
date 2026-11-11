@@ -165,6 +165,55 @@ static uint32_t ra_read_memory(uint32_t address, uint8_t* buffer, uint32_t num_b
 }
 
 /* ------------------------------------------------------------------ */
+/* Cheats (v1.5, feature 4)                                           */
+/* ------------------------------------------------------------------ */
+
+size_t ra_cheat_offset(uint32_t console_id, uint32_t address, size_t ram_size) {
+    size_t base;
+    size_t offset;
+    /* The cheat address is a 68k work-RAM address. */
+    if (address < 0x100000 || address > 0x10FFFF)
+        return (size_t)-1;
+    /* The same map as ra_read_memory_mapped: carts read the work
+     * RAM from offset 0, discs from the PRAM at 0x100000. */
+    if (console_id == RA_CONSOLE_NEO_GEO_CD)
+        base = 0x100000;
+    else if (console_id == RA_CONSOLE_ARCADE)
+        base = 0;
+    else
+        return (size_t)-1;
+    offset = base + (size_t)(address - 0x100000);
+    if (offset >= ram_size)
+        return (size_t)-1;
+    return offset;
+}
+
+int ra_cheat_write(uint32_t address, uint8_t value) {
+    const uint8_t* ram_const = NULL;
+    size_t ram_size = 0;
+    size_t offset;
+    if (!g_memory_provider)
+        return 0;
+    /* No game loaded (or an unknown console): nothing to write
+     * to — a cheat must never touch RAM it cannot place. */
+    if (g_console_id != RA_CONSOLE_ARCADE && g_console_id != RA_CONSOLE_NEO_GEO_CD)
+        return 0;
+    g_memory_provider(&ram_const, &ram_size, g_memory_ctx);
+    if (!ram_const || ram_size == 0)
+        return 0;
+    offset = ra_cheat_offset(g_console_id, address, ram_size);
+    if (offset == (size_t)-1)
+        return 0;
+    /* The provider's buffer is the core's live RAM: the const is
+     * the provider's signature, not the memory's nature — the
+     * core writes to it every frame, and so does this, once per
+     * displayed frame. Called from the emu thread between
+     * frames, so no retro_run is in progress. */
+    ((uint8_t*)ram_const)[offset] = value;
+    return 1;
+}
+
+/* ------------------------------------------------------------------ */
 /* Server calls (async HTTP)                                          */
 /* ------------------------------------------------------------------ */
 

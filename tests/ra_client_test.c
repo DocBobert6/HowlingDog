@@ -775,6 +775,64 @@ static void test_chd_reader(void) {
 /* The full flow through the wrapper with the mock server and
  * mock RAM: login -> load game -> frame (unlock) -> serialize
  * -> reset -> deserialize -> achievements list. */
+static void test_cheat_write(void) {
+    uint8_t ram[0x200000];
+    memset(ram, 0, sizeof(ram));
+
+    /* The offset map: carts read the work RAM from offset 0,
+     * discs from the PRAM at 0x100000. The cheat address is a
+     * 68k work-RAM address (0x100000-0x10FFFF). */
+    CHECK(ra_cheat_offset(RA_CONSOLE_ARCADE, 0x10D0E9, sizeof(ram)) == 0xD0E9);
+    CHECK(ra_cheat_offset(RA_CONSOLE_NEO_GEO_CD, 0x10D0E9, sizeof(ram)) == 0x10D0E9);
+    CHECK(ra_cheat_offset(RA_CONSOLE_ARCADE, 0x100000, sizeof(ram)) == 0);
+    CHECK(ra_cheat_offset(RA_CONSOLE_NEO_GEO_CD, 0x10FFFF, sizeof(ram)) == 0x10FFFF);
+    /* Outside the work RAM: invalid. */
+    CHECK(ra_cheat_offset(RA_CONSOLE_ARCADE, 0x0FFFFF, sizeof(ram)) == (size_t)-1);
+    CHECK(ra_cheat_offset(RA_CONSOLE_ARCADE, 0x110000, sizeof(ram)) == (size_t)-1);
+    CHECK(ra_cheat_offset(RA_CONSOLE_ARCADE, 0x000000, sizeof(ram)) == (size_t)-1);
+    /* Unknown console: invalid. */
+    CHECK(ra_cheat_offset(0, 0x10D0E9, sizeof(ram)) == (size_t)-1);
+    /* RAM too small for the disc offset: invalid (a cart-sized
+     * buffer must never satisfy a disc write). */
+    CHECK(ra_cheat_offset(RA_CONSOLE_NEO_GEO_CD, 0x10D0E9, 0x10000) == (size_t)-1);
+    CHECK(ra_cheat_offset(RA_CONSOLE_ARCADE, 0x10D0E9, 0) == (size_t)-1);
+
+    /* The write path, through the provider: no game loaded yet,
+     * so nothing is written. */
+    memset(g_mock_ram, 0, sizeof(g_mock_ram));
+    CHECK(ra_init(mock_memory_provider, NULL, mock_server_call, NULL, mock_event, NULL) == 0);
+    CHECK(!ra_cheat_write(0x10D0E9, 0x09));
+    CHECK(g_mock_ram[0xD0E9] == 0x00);
+
+    /* Load the fake .neo game (a cart): the write lands in the
+     * work RAM at offset 0xD0E9. Loading a game needs a login
+     * (rcheevos reports "Login required" without one), so log in
+     * first — the mock answers synchronously, as in the full-flow
+     * test. The cheat write itself does not need the login (the
+     * memory provider is registered at init); the login is only
+     * the test's way to get a game loaded. */
+    CHECK(ra_login_with_token("User", "ApiToken", mock_result, NULL) == 0);
+    CHECK(g_last_result == 0);
+    build_fake_neo();
+    g_last_result = -999;
+    CHECK(ra_load_game(RA_CONSOLE_ARCADE, kNeoPath, mock_result, NULL) == 0);
+    CHECK(g_last_result == 0);
+    CHECK(ra_cheat_write(0x10D0E9, 0x09));
+    CHECK(g_mock_ram[0xD0E9] == 0x09);
+    /* The disc offset is untouched: a cart write never lands in
+     * the PRAM's work-RAM region. */
+    CHECK(g_mock_ram[0x10D0E9] == 0x00);
+    /* Out-of-range writes are no-ops and change nothing. */
+    CHECK(!ra_cheat_write(0x0FFFFF, 0x09));
+    CHECK(!ra_cheat_write(0x110000, 0x09));
+    CHECK(g_mock_ram[0xD0E9] == 0x09);
+    /* Unload: no game, no write. */
+    ra_unload_game();
+    CHECK(!ra_cheat_write(0x10D0E9, 0x09));
+    ra_shutdown();
+    remove(kNeoPath);
+}
+
 static void test_full_flow(void) {
     char* json;
     uint8_t* progress = NULL;
@@ -981,6 +1039,7 @@ static void test_leaderboards_no_game(void) {
 int main(void) {
     test_console_id_for_path();
     test_read_memory_mapped();
+    test_cheat_write();
     test_neo_hash();
     test_cdreader();
     test_chd_reader();

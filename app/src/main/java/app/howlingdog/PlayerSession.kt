@@ -108,6 +108,20 @@ class PlayerSession(
         }
     }
 
+    /**
+     * v1.5, feature 4 — the enabled cheats, applied after every
+     * displayed frame. The UI owns the list (it reads the
+     * per-game store); the session only holds the current copy.
+     * Volatile, so a toggle on the main thread takes effect on
+     * the next frame without waiting for anything.
+     */
+    @Volatile
+    private var cheats: List<CheatCode> = emptyList()
+
+    fun setCheats(codes: List<CheatCode>) {
+        cheats = codes
+    }
+
     /** Pause the game: the emu loop idles (no retro_run) and the audio is silenced. The game stays loaded. */
     fun pause() {
         if (!running || paused) return
@@ -312,6 +326,19 @@ class PlayerSession(
                     Bridge.nativeRunFrame()
             } finally {
                 inFrame = false
+            }
+            // v1.5, feature 4 — cheats: write each enabled code
+            // after the displayed frame, before the next one
+            // runs. Post-frame is the most robust with run-ahead:
+            // the write sits outside the restore, so a
+            // re-simulation never undoes it — and the next
+            // frame's state save captures the written value, so
+            // it survives the restore too. The game reads the
+            // value on the next frame. A failed write (no game,
+            // bad address) is a no-op — the native side
+            // bounds-checks, so a bad code can never crash.
+            for (cheat in cheats) {
+                Bridge.nativeCheatWrite(cheat.address, cheat.value)
             }
             // Phase 10 — RetroAchievements: one evaluation per
             // displayed frame, after the frame run. With run-ahead
