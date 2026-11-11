@@ -542,23 +542,14 @@ class MainActivity : ComponentActivity() {
         var bios by biosState
         var status by statusState
         var playingGame by playingGameState
-        var confirmRemove by confirmRemoveState
-        var modePickerFor by modePickerForState
         // Phase 9, item 4 — the game being renamed, and the text in
         // the rename dialog (prefilled with the name it shows now).
-        var renameFor by renameForState
-        var renameText by renameTextState
         // v1.5, feature 3 — library search / sort / collections:
         // the search text, the sort order, the collection chip
         // picked (null = all games), the collection names in use,
         // and the game whose collection is being picked (with the
         // text for a new collection name).
-        var searchText by searchTextState
-        var librarySort by librarySortState
-        var collectionFilter by collectionFilterState
         var collections by collectionsState
-        var collectionFor by collectionForState
-        var collectionText by collectionTextState
         // Phase 9, item 8 — the game whose own settings screen is
         // open (null when it is closed). `perGameTick` is bumped on
         // every per-game change so that screen recomposes from the
@@ -667,15 +658,10 @@ class MainActivity : ComponentActivity() {
         // password lives only in this editable copy while the
         // screen is open and is never stored anywhere — the login
         // keeps the session token instead.
-        var raUsernameText by raUsernameTextState
-        var raPasswordText by raPasswordTextState
         // The pulse state machine (each turbo button's press start time).
         val turboState = remember { TurboState() }
-        var showBoot by showBootState
         // CRT display settings (shader chain, curvature): the same
         // SharedPreferences file, own "display.*" keys.
-        var crtShaderOn by crtShaderOnState
-        var curvatureOn by curvatureOnState
         // Phase 9, item 8 — per-game configuration profiles: a
         // game's own overrides for region, a few core options, the
         // CRT shader / curvature, and the left control. Same
@@ -701,7 +687,6 @@ class MainActivity : ComponentActivity() {
         // behaviour): on, dragging a button moves the whole
         // cluster; off, it moves that button alone. A session
         // toggle, not persisted — Mariner's `grouped` is the same.
-        var moveTogether by moveTogetherState
         // Adjust-layout edit mode: entered from the pause screen
         // (the game has to be running to see where the controls
         // sit). While editing, the game stays paused, the pause
@@ -733,7 +718,6 @@ class MainActivity : ComponentActivity() {
         // a Compose state so dismissing it recomposes the banner
         // away at once; the store is the source of truth across
         // restarts.
-        var dismissedUpdate by dismissedUpdateState
 
         fun exitEditMode() {
             controlSettings.setStickPosition(stickPos)
