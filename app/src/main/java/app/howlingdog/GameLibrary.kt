@@ -71,6 +71,12 @@ fun modeLabel(mode: String): String = when (mode) {
 fun modesFor(entry: GameEntry): List<String> =
     if (entry.isDisc) listOf("cd", "cdz") else listOf("aes", "mvs")
 
+/** The four system files, by name — the only zips the BIOS picker copies in (audit fix F2). */
+val KNOWN_BIOS_FILES: Set<String> = setOf("aes.zip", "neogeo.zip", "neocd.zip", "neocdz.zip")
+
+/** True when [name] is one of the four system files (case-insensitive) — the BIOS picker's filter. */
+fun isKnownBiosFile(name: String): Boolean = name.lowercase() in KNOWN_BIOS_FILES
+
 /** The system modes a stored mode value may hold. */
 val KNOWN_MODES: Set<String> = setOf("aes", "mvs", "cd", "cdz")
 

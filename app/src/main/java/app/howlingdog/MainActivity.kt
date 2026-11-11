@@ -916,8 +916,11 @@ class MainActivity : ComponentActivity() {
                 var count = 0
                 try {
                     val tree = DocumentFile.fromTreeUri(context, uri)
+                    // Audit fix F2: copy ONLY the four known system
+                    // files — a folder holding other zips must not
+                    // have them copied into app-private storage too.
                     val zips = tree?.listFiles()
-                        ?.filter { it.isFile && it.name?.lowercase()?.endsWith(".zip") == true }
+                        ?.filter { it.isFile && isKnownBiosFile(it.name ?: "") }
                         ?: emptyList()
                     for (zip in zips) {
                         val name = zip.name ?: continue
@@ -937,7 +940,10 @@ class MainActivity : ComponentActivity() {
                             // status line must not repeat it.
                             "BIOS folder set."
                         } else {
-                            "No .zip files in that folder. Pick the folder holding the BIOS files."
+                            // Audit fix F2: name the four files that
+                            // were expected, so the user knows what
+                            // the folder was supposed to hold.
+                            "No system files in that folder. Pick the folder holding aes.zip, neogeo.zip, neocd.zip and neocdz.zip."
                         }
                     }
                 } catch (e: Exception) {

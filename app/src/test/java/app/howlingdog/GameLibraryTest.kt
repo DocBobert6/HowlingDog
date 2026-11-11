@@ -205,6 +205,24 @@ class GameLibraryTest {
         assertFalse(lib.biosReadyFor(cart, status.copy(home = false)))
     }
 
+    @Test
+    fun knownBiosFilesOnly() {
+        // Audit fix F2: the BIOS picker copies only these four.
+        assertEquals(4, KNOWN_BIOS_FILES.size)
+        assertTrue(isKnownBiosFile("aes.zip"))
+        assertTrue(isKnownBiosFile("neogeo.zip"))
+        assertTrue(isKnownBiosFile("neocd.zip"))
+        assertTrue(isKnownBiosFile("neocdz.zip"))
+        // Case-insensitive: a MAME set may carry upper-case names.
+        assertTrue(isKnownBiosFile("AES.ZIP"))
+        assertTrue(isKnownBiosFile("NeoGeo.Zip"))
+        // Anything else is not a system file, even if it is a zip.
+        assertFalse(isKnownBiosFile("irrmaze.zip"))
+        assertFalse(isKnownBiosFile("mame.zip"))
+        assertFalse(isKnownBiosFile("aes.bin"))
+        assertFalse(isKnownBiosFile(""))
+    }
+
     // --- per-game mode ---
 
     @Test
