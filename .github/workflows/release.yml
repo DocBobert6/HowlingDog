@@ -79,6 +79,30 @@ jobs:
           gcc -I bridge/jni -Wall -Wextra -o /tmp/runahead_test tests/runahead_test.c bridge/jni/runahead.c
           /tmp/runahead_test
 
+      - name: Run RetroAchievements unit test (host)
+        run: |
+          set -euo pipefail
+          # Phase 10: the RetroAchievements wrapper is pure C
+          # (bridge/jni/ra_client.c + vendored rcheevos) — see
+          # android.yml for why it is tested on the host.
+          RC_SRC="deps/rcheevos/src"
+          gcc -I bridge/jni -I deps/rcheevos/include -I "$RC_SRC" \
+            -DRC_CLIENT_SUPPORTS_HASH -D_GNU_SOURCE -std=c99 -Wall -Wextra \
+            -o /tmp/ra_client_test tests/ra_client_test.c bridge/jni/ra_client.c \
+            "$RC_SRC/rc_client.c" "$RC_SRC/rc_compat.c" "$RC_SRC/rc_util.c" "$RC_SRC/rc_version.c" \
+            "$RC_SRC/rcheevos/alloc.c" "$RC_SRC/rcheevos/condition.c" "$RC_SRC/rcheevos/condset.c" \
+            "$RC_SRC/rcheevos/consoleinfo.c" "$RC_SRC/rcheevos/format.c" "$RC_SRC/rcheevos/lboard.c" \
+            "$RC_SRC/rcheevos/memref.c" "$RC_SRC/rcheevos/operand.c" "$RC_SRC/rcheevos/rc_validate.c" \
+            "$RC_SRC/rcheevos/richpresence.c" "$RC_SRC/rcheevos/runtime.c" "$RC_SRC/rcheevos/runtime_progress.c" \
+            "$RC_SRC/rcheevos/trigger.c" "$RC_SRC/rcheevos/value.c" \
+            "$RC_SRC/rhash/aes.c" "$RC_SRC/rhash/cdreader.c" "$RC_SRC/rhash/hash.c" \
+            "$RC_SRC/rhash/hash_disc.c" "$RC_SRC/rhash/hash_encrypted.c" "$RC_SRC/rhash/hash_rom.c" \
+            "$RC_SRC/rhash/hash_zip.c" "$RC_SRC/rhash/md5.c" \
+            "$RC_SRC/rapi/rc_api_common.c" "$RC_SRC/rapi/rc_api_editor.c" "$RC_SRC/rapi/rc_api_info.c" \
+            "$RC_SRC/rapi/rc_api_runtime.c" "$RC_SRC/rapi/rc_api_user.c" \
+            -lm
+          /tmp/ra_client_test
+
       - name: Build bridge (arm64-v8a only)
         run: |
           set -euo pipefail

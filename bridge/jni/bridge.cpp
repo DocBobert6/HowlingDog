@@ -42,6 +42,7 @@
 
 #include "libretro.h"
 #include "runahead.h"
+#include "ra_client.h"
 
 // HowlingDog extension defined in libretro/libretro.c and exported
 // via libretro/link.T: flush the in-memory save data (NVRAM /
@@ -112,6 +113,132 @@ static int g_runahead_frames = 0;
 // bridge_audio_batch drops the batch instead of queueing it, so
 // the discarded ahead frames never reach the speakers.
 static volatile bool g_audio_suppress = false;
+
+// ---------------------------------------------------------------------------
+// RetroAchievements (Phase 10)
+// ---------------------------------------------------------------------------
+//
+// The RA client (ra_client.c) is pure C; this section is the JNI
+// glue between it and the Kotlin side (Bridge / RaClient). The
+// client is created once (nativeRaInit) and lives for the app's
+// lifetime — the login persists across games, so it is NOT shut
+// down in nativeDeinit; only the loaded game is unloaded, in
+// nativeUnloadGame.
+//
+// Callbacks from native into Kotlin (all methods on the Bridge
+// object, cached at nativeRaInit):
+//   raHttpRequest(requestId, url, postData) — perform the HTTP
+//     request asynchronously; deliver the result with
+//     nativeRaHttpResponse.
+//   raEventUnlocked(id, title, description, points) — an
+//     achievement unlocked; the Kotlin side shows the popup.
+//   raLoginResult(success, error) — the login finished.
+//   raLoadGameResult(success, error) — the game load finished.
+//
+// The callbacks run on the emu thread (unlock events, from
+// do_frame) or the app's HTTP thread (login/load results, from
+// the server response). Both are JVM-attached threads, but the
+// helper attaches defensively if GetEnv reports detached.
+
+static JavaVM *g_ra_vm = NULL;
+static jobject g_ra_bridge = NULL; // global ref to the Bridge object
+static jmethodID g_ra_http_request_method = NULL;
+static jmethodID g_ra_event_unlocked_method = NULL;
+static jmethodID g_ra_login_result_method = NULL;
+static jmethodID g_ra_load_game_result_method = NULL;
+
+static JNIEnv *ra_get_env() {
+    JNIEnv *env = NULL;
+    if (!g_ra_vm)
+        return NULL;
+    if (g_ra_vm->GetEnv((void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+        if (g_ra_vm->AttachCurrentThread(&env, NULL) != JNI_OK)
+            return NULL;
+    }
+    return env;
+}
+
+static void ra_call_http_request(int request_id, const char *url, const char *post_data) {
+    JNIEnv *env = ra_get_env();
+    jstring jurl;
+    jstring jpost;
+    if (!env || !g_ra_bridge || !g_ra_http_request_method)
+        return;
+    jurl = env->NewStringUTF(url ? url : "");
+    jpost = post_data ? env->NewStringUTF(post_data) : NULL;
+    env->CallVoidMethod(g_ra_bridge, g_ra_http_request_method, (jint)request_id, jurl, jpost);
+    if (jurl)
+        env->DeleteLocalRef(jurl);
+    if (jpost)
+        env->DeleteLocalRef(jpost);
+    if (env->ExceptionCheck())
+        env->ExceptionClear();
+}
+
+static void ra_call_event_unlocked(uint32_t id, const char *title, const char *description, uint32_t points) {
+    JNIEnv *env = ra_get_env();
+    jstring jtitle;
+    jstring jdesc;
+    if (!env || !g_ra_bridge || !g_ra_event_unlocked_method)
+        return;
+    jtitle = env->NewStringUTF(title ? title : "");
+    jdesc = env->NewStringUTF(description ? description : "");
+    env->CallVoidMethod(g_ra_bridge, g_ra_event_unlocked_method, (jint)id, jtitle, jdesc, (jint)points);
+    if (jtitle)
+        env->DeleteLocalRef(jtitle);
+    if (jdesc)
+        env->DeleteLocalRef(jdesc);
+    if (env->ExceptionCheck())
+        env->ExceptionClear();
+}
+
+static void ra_call_result(jmethodID method, int result, const char *error_message) {
+    JNIEnv *env = ra_get_env();
+    jstring jerror;
+    if (!env || !g_ra_bridge || !method)
+        return;
+    jerror = error_message ? env->NewStringUTF(error_message) : NULL;
+    env->CallVoidMethod(g_ra_bridge, method, result == 0 ? JNI_TRUE : JNI_FALSE, jerror);
+    if (jerror)
+        env->DeleteLocalRef(jerror);
+    if (env->ExceptionCheck())
+        env->ExceptionClear();
+}
+
+// The core's SYSTEM_RAM, through the libretro API. After the
+// Phase 10 port-layer fix this is the 2 MB PRAM in CD mode and
+// the 64 KB work RAM in cart mode (see libretro/libretro.c).
+static void bridge_ra_memory_provider(const uint8_t **data, size_t *size, void *ctx) {
+    void *ptr;
+    size_t sz;
+    (void)ctx;
+    ptr = retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+    sz = retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
+    *data = (const uint8_t *)ptr;
+    *size = ptr ? sz : 0;
+}
+
+static void bridge_ra_server_call(int request_id, const char *url, const char *post_data, void *ctx) {
+    (void)ctx;
+    ra_call_http_request(request_id, url, post_data);
+}
+
+static void bridge_ra_event(int type, uint32_t achievement_id, const char *title, const char *description, uint32_t points, void *ctx) {
+    (void)ctx;
+    if (type == RA_EVENT_ACHIEVEMENT_TRIGGERED)
+        ra_call_event_unlocked(achievement_id, title, description, points);
+    /* GAME_COMPLETED has no popup in v1.1.0. */
+}
+
+static void bridge_ra_login_result(int result, const char *error_message, void *ctx) {
+    (void)ctx;
+    ra_call_result(g_ra_login_result_method, result, error_message);
+}
+
+static void bridge_ra_load_game_result(int result, const char *error_message, void *ctx) {
+    (void)ctx;
+    ra_call_result(g_ra_load_game_result_method, result, error_message);
+}
 
 // AV info captured at load.
 static int g_av_width = 0;
@@ -739,6 +866,10 @@ Java_app_howlingdog_Bridge_nativeUnloadGame(JNIEnv * /* env */,
         retro_unload_game();
         g_loaded = false;
     }
+    // Phase 10 (RetroAchievements): the game's achievements go
+    // with it; the login stays (the client lives for the app's
+    // lifetime).
+    ra_unload_game();
     runahead_shutdown(&g_runahead);
     g_audio_suppress = false;
     pthread_mutex_lock(&g_audio_mutex);
@@ -773,6 +904,213 @@ Java_app_howlingdog_Bridge_nativeLastError(JNIEnv *env, jobject /* thiz */) {
     jstring out = env->NewStringUTF(g_last_error);
     pthread_mutex_unlock(&g_error_mutex);
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// RetroAchievements (Phase 10) — JNI entry points.
+// ---------------------------------------------------------------------------
+
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeRaInit(JNIEnv *env, jobject thiz) {
+    jclass bridge_class;
+    if (ra_is_ready())
+        return JNI_TRUE;
+    if (env->GetJavaVM(&g_ra_vm) != JNI_OK)
+        return JNI_FALSE;
+    if (!g_ra_bridge) {
+        g_ra_bridge = env->NewGlobalRef(thiz);
+        if (!g_ra_bridge)
+            return JNI_FALSE;
+        bridge_class = env->GetObjectClass(thiz);
+        g_ra_http_request_method = env->GetMethodID(bridge_class, "raHttpRequest", "(ILjava/lang/String;Ljava/lang/String;)V");
+        g_ra_event_unlocked_method = env->GetMethodID(bridge_class, "raEventUnlocked", "(ILjava/lang/String;Ljava/lang/String;I)V");
+        g_ra_login_result_method = env->GetMethodID(bridge_class, "raLoginResult", "(ZLjava/lang/String;)V");
+        g_ra_load_game_result_method = env->GetMethodID(bridge_class, "raLoadGameResult", "(ZLjava/lang/String;)V");
+        env->DeleteLocalRef(bridge_class);
+        if (!g_ra_http_request_method || !g_ra_event_unlocked_method ||
+            !g_ra_login_result_method || !g_ra_load_game_result_method) {
+            LOGE("nativeRaInit: a Kotlin RA callback is missing");
+            return JNI_FALSE;
+        }
+    }
+    if (ra_init(bridge_ra_memory_provider, NULL, bridge_ra_server_call, NULL, bridge_ra_event, NULL) != 0)
+        return JNI_FALSE;
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeRaLogin(JNIEnv *env, jobject /* thiz */, jstring username, jstring api_key) {
+    const char *user;
+    const char *key;
+    int rc;
+    if (!ra_is_ready() || !username || !api_key)
+        return JNI_FALSE;
+    user = env->GetStringUTFChars(username, NULL);
+    key = env->GetStringUTFChars(api_key, NULL);
+    if (!user || !key) {
+        if (user)
+            env->ReleaseStringUTFChars(username, user);
+        if (key)
+            env->ReleaseStringUTFChars(api_key, key);
+        return JNI_FALSE;
+    }
+    // The username and key are copied into the request by
+    // rcheevos before this returns, so releasing them here is
+    // safe.
+    rc = ra_login(user, key, bridge_ra_login_result, NULL);
+    env->ReleaseStringUTFChars(username, user);
+    env->ReleaseStringUTFChars(api_key, key);
+    return rc == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_app_howlingdog_Bridge_nativeRaLogout(JNIEnv * /* env */, jobject /* thiz */) {
+    ra_logout();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeRaIsLoggedIn(JNIEnv * /* env */, jobject /* thiz */) {
+    return ra_is_logged_in() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_app_howlingdog_Bridge_nativeRaLoggedInUsername(JNIEnv *env, jobject /* thiz */) {
+    const char *user = ra_logged_in_username();
+    return user ? env->NewStringUTF(user) : NULL;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeRaLoadGame(JNIEnv *env, jobject /* thiz */, jstring path) {
+    const char *cpath;
+    uint32_t console_id;
+    int rc;
+    if (!ra_is_ready() || !path)
+        return JNI_FALSE;
+    cpath = env->GetStringUTFChars(path, NULL);
+    if (!cpath)
+        return JNI_FALSE;
+    console_id = ra_console_id_for_path(cpath);
+    if (console_id == 0) {
+        // Not a RetroAchievements game for this frontend
+        // (or an unsupported extension) — RA stays inactive.
+        env->ReleaseStringUTFChars(path, cpath);
+        return JNI_FALSE;
+    }
+    // The path is only used synchronously (to hash the file),
+    // so releasing it here is safe.
+    rc = ra_load_game(console_id, cpath, bridge_ra_load_game_result, NULL);
+    env->ReleaseStringUTFChars(path, cpath);
+    return rc == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_app_howlingdog_Bridge_nativeRaUnloadGame(JNIEnv * /* env */, jobject /* thiz */) {
+    ra_unload_game();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeRaIsGameLoaded(JNIEnv * /* env */, jobject /* thiz */) {
+    return ra_is_game_loaded() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_app_howlingdog_Bridge_nativeRaGameTitle(JNIEnv *env, jobject /* thiz */) {
+    const char *title = ra_game_title();
+    return title ? env->NewStringUTF(title) : NULL;
+}
+
+JNIEXPORT void JNICALL
+Java_app_howlingdog_Bridge_nativeRaDoFrame(JNIEnv * /* env */, jobject /* thiz */) {
+    ra_do_frame();
+}
+
+JNIEXPORT void JNICALL
+Java_app_howlingdog_Bridge_nativeRaReset(JNIEnv * /* env */, jobject /* thiz */) {
+    ra_reset();
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_app_howlingdog_Bridge_nativeRaSerializeProgress(JNIEnv *env, jobject /* thiz */) {
+    size_t size = ra_progress_size();
+    uint8_t *buf;
+    jbyteArray out;
+    if (size == 0)
+        return NULL;
+    buf = (uint8_t *)malloc(size);
+    if (!buf)
+        return NULL;
+    if (ra_serialize_progress(buf, size) != 0) {
+        free(buf);
+        return NULL;
+    }
+    out = env->NewByteArray((jsize)size);
+    if (out)
+        env->SetByteArrayRegion(out, 0, (jsize)size, (const jbyte *)buf);
+    free(buf);
+    return out;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeRaDeserializeProgress(JNIEnv *env, jobject /* thiz */, jbyteArray data) {
+    jsize len;
+    uint8_t *buf;
+    int rc;
+    if (!data)
+        return JNI_FALSE;
+    len = env->GetArrayLength(data);
+    if (len <= 0)
+        return JNI_FALSE;
+    buf = (uint8_t *)malloc((size_t)len);
+    if (!buf)
+        return JNI_FALSE;
+    env->GetByteArrayRegion(data, 0, len, (jbyte *)buf);
+    rc = ra_deserialize_progress(buf, (size_t)len);
+    free(buf);
+    return rc == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+// The achievements list as UTF-8 JSON (a byte array, not a
+// string, so non-ASCII titles survive the JNI crossing intact).
+JNIEXPORT jbyteArray JNICALL
+Java_app_howlingdog_Bridge_nativeRaGetAchievements(JNIEnv *env, jobject /* thiz */) {
+    char *json = ra_get_achievements_json();
+    size_t len;
+    jbyteArray out;
+    if (!json)
+        return NULL;
+    len = strlen(json);
+    out = env->NewByteArray((jsize)len);
+    if (out)
+        env->SetByteArrayRegion(out, 0, (jsize)len, (const jbyte *)json);
+    free(json);
+    return out;
+}
+
+// The HTTP response body arrives as UTF-8 bytes (a byte array,
+// not a string, so the JSON parses exactly as the server sent
+// it). A null body is an empty response.
+JNIEXPORT void JNICALL
+Java_app_howlingdog_Bridge_nativeRaHttpResponse(JNIEnv *env, jobject /* thiz */, jint request_id, jbyteArray body, jint http_status) {
+    jsize len;
+    uint8_t *buf;
+    if (!body) {
+        ra_http_response((int)request_id, "", 0, (int)http_status);
+        return;
+    }
+    len = env->GetArrayLength(body);
+    if (len <= 0) {
+        ra_http_response((int)request_id, "", 0, (int)http_status);
+        return;
+    }
+    buf = (uint8_t *)malloc((size_t)len + 1);
+    if (!buf) {
+        ra_http_response((int)request_id, "", 0, 500);
+        return;
+    }
+    env->GetByteArrayRegion(body, 0, len, (jbyte *)buf);
+    buf[len] = '\0';
+    ra_http_response((int)request_id, (const char *)buf, (size_t)len, (int)http_status);
+    free(buf);
 }
 
 } // extern "C"

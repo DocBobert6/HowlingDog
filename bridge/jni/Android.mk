@@ -22,9 +22,22 @@ include $(PREBUILT_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := howlingdog-bridge
-LOCAL_SRC_FILES := bridge.cpp runahead.c
+LOCAL_SRC_FILES := bridge.cpp runahead.c ra_client.c
 LOCAL_SHARED_LIBRARIES := retro-prebuilt
-LOCAL_C_INCLUDES := $(ROOT_DIR)/libretro
-LOCAL_CFLAGS := -DANDROID -D__LIBRETRO__
+LOCAL_STATIC_LIBRARIES := rcheevos
+LOCAL_C_INCLUDES := $(ROOT_DIR)/libretro $(ROOT_DIR)/deps/rcheevos/include
+# RC_CLIENT_SUPPORTS_HASH must also be defined here: bridge.cpp
+# and ra_client.c include rc_client.h, and the identify-and-load
+# API is guarded by it (see deps/rcheevos/Android.mk).
+LOCAL_CFLAGS := -DANDROID -D__LIBRETRO__ -DRC_CLIENT_SUPPORTS_HASH
 LOCAL_LDLIBS := -llog -landroid
 include $(BUILD_SHARED_LIBRARY)
+
+# RetroAchievements (Phase 10): the vendored rcheevos client
+# library, built as a static library and linked into the bridge.
+# This include is LAST on purpose: the rcheevos Android.mk sets
+# LOCAL_PATH to its own directory, and the bridge module above
+# resolves its sources against the LOCAL_PATH set at the top of
+# this file. ndk-build resolves the LOCAL_STATIC_LIBRARIES
+# reference by name after parsing, so the order is safe.
+include $(ROOT_DIR)/deps/rcheevos/Android.mk

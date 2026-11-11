@@ -109,6 +109,36 @@ jobs:
           gcc -I bridge/jni -Wall -Wextra -o /tmp/runahead_test tests/runahead_test.c bridge/jni/runahead.c
           /tmp/runahead_test
 
+      - name: Run RetroAchievements unit test (host)
+        run: |
+          set -euo pipefail
+          # Phase 10: the RetroAchievements wrapper is pure C
+          # (bridge/jni/ra_client.c + vendored rcheevos), so it is
+          # tested on the host with a plain C compiler — no NDK,
+          # no game files, no account, no network. The mock server
+          # answers the login / game-load / award calls with canned
+          # JSON (from upstream rcheevos's own test suite) and the
+          # mock RAM stands in for the core, so the full flow
+          # (login -> load -> frame -> unlock -> serialize -> reset
+          # -> deserialize) runs here. -lm is for rcheevos's fmod.
+          RC_SRC="deps/rcheevos/src"
+          gcc -I bridge/jni -I deps/rcheevos/include -I "$RC_SRC" \
+            -DRC_CLIENT_SUPPORTS_HASH -D_GNU_SOURCE -std=c99 -Wall -Wextra \
+            -o /tmp/ra_client_test tests/ra_client_test.c bridge/jni/ra_client.c \
+            "$RC_SRC/rc_client.c" "$RC_SRC/rc_compat.c" "$RC_SRC/rc_util.c" "$RC_SRC/rc_version.c" \
+            "$RC_SRC/rcheevos/alloc.c" "$RC_SRC/rcheevos/condition.c" "$RC_SRC/rcheevos/condset.c" \
+            "$RC_SRC/rcheevos/consoleinfo.c" "$RC_SRC/rcheevos/format.c" "$RC_SRC/rcheevos/lboard.c" \
+            "$RC_SRC/rcheevos/memref.c" "$RC_SRC/rcheevos/operand.c" "$RC_SRC/rcheevos/rc_validate.c" \
+            "$RC_SRC/rcheevos/richpresence.c" "$RC_SRC/rcheevos/runtime.c" "$RC_SRC/rcheevos/runtime_progress.c" \
+            "$RC_SRC/rcheevos/trigger.c" "$RC_SRC/rcheevos/value.c" \
+            "$RC_SRC/rhash/aes.c" "$RC_SRC/rhash/cdreader.c" "$RC_SRC/rhash/hash.c" \
+            "$RC_SRC/rhash/hash_disc.c" "$RC_SRC/rhash/hash_encrypted.c" "$RC_SRC/rhash/hash_rom.c" \
+            "$RC_SRC/rhash/hash_zip.c" "$RC_SRC/rhash/md5.c" \
+            "$RC_SRC/rapi/rc_api_common.c" "$RC_SRC/rapi/rc_api_editor.c" "$RC_SRC/rapi/rc_api_info.c" \
+            "$RC_SRC/rapi/rc_api_runtime.c" "$RC_SRC/rapi/rc_api_user.c" \
+            -lm
+          /tmp/ra_client_test
+
       - name: Verify core
         run: |
           set -euo pipefail
@@ -176,14 +206,14 @@ jobs:
             "$READELF" -d "$BRIDGE"
             exit 1
           }
-          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeSetOption nativeSerialize nativeUnserialize nativeFlushSaveData nativeUnloadGame nativeDeinit nativeLastError nativeSetRunahead nativeRunFrameRunahead; do
+          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeSetOption nativeSerialize nativeUnserialize nativeFlushSaveData nativeUnloadGame nativeDeinit nativeLastError nativeSetRunahead nativeRunFrameRunahead nativeRaInit nativeRaLogin nativeRaLogout nativeRaIsLoggedIn nativeRaLoggedInUsername nativeRaLoadGame nativeRaUnloadGame nativeRaIsGameLoaded nativeRaGameTitle nativeRaDoFrame nativeRaReset nativeRaSerializeProgress nativeRaDeserializeProgress nativeRaGetAchievements nativeRaHttpResponse; do
             "$NM" -D "$BRIDGE" | grep -q "Java_app_howlingdog_Bridge_$sym" || {
               echo "missing JNI export: $sym"
               "$NM" -D "$BRIDGE"
               exit 1
             }
           done
-          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 16 JNI entry points present"
+          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 31 JNI entry points present"
 
       - name: Stage native libs for Gradle
         run: |

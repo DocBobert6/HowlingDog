@@ -1478,6 +1478,16 @@ void *retro_get_memory_data(unsigned id) {
             return NULL;
         }
         case RETRO_MEMORY_SYSTEM_RAM: {
+            /* Phase 10 (RetroAchievements): in CD mode the main
+             * RAM is the 2 MB PRAM, not the 64 KB cart work-RAM
+             * array — geo_mem_ptr(MAINRAM) already reports a 2 MB
+             * size in CD mode but returns the cart array, so a
+             * reader trusting the size would read past it. Return
+             * the PRAM here, so SYSTEM_RAM is the 2 MB program
+             * RAM in CD mode (the work RAM is its 0x100000
+             * region) and the 64 KB work RAM in cart mode. */
+            if (cd_mode)
+                return (void*)geo_cd_pram_ptr();
             return (void*)geo_mem_ptr(GEO_MEMTYPE_MAINRAM, NULL);
         }
         case RETRO_MEMORY_VIDEO_RAM: {
