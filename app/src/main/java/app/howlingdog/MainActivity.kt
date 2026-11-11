@@ -19,6 +19,11 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -73,8 +78,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
+import androidx.compose.ui.input.pointer.awaitPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -468,6 +475,22 @@ class MainActivity : ComponentActivity() {
         // sit). While editing, the game stays paused, the pause
         // overlay hides, and the two control units drag.
         var editControls by remember { mutableStateOf(false) }
+        // Phase 9, item 7 — top bar auto-hide: the title row
+        // (game name + SAVE / LOAD / Pause) hides a couple of
+        // seconds after a game starts and comes back on a swipe
+        // down from the top edge, hiding again after a few idle
+        // seconds. The pure state machine is TopBarVisibility
+        // (no Compose dependency, unit-tested on the JVM); these
+        // two Compose states mirror it so recomposition follows
+        // it — `generation` is the timer's restart signal, bumped
+        // on every reveal.
+        val topBar = remember { TopBarVisibility() }
+        var topBarVisible by remember { mutableStateOf(topBar.visible) }
+        var topBarGeneration by remember { mutableStateOf(topBar.generation) }
+        fun syncTopBar() {
+            topBarVisible = topBar.visible
+            topBarGeneration = topBar.generation
+        }
         // First-run setup (audit 2): offered once on a genuinely
         // fresh install, after the boot splash. `setupPending` is
         // set when the first library load finds no system files
@@ -482,6 +505,10 @@ class MainActivity : ComponentActivity() {
             controlSettings.setButtonsScale(buttonsScale)
             for ((id, off) in buttonOverrides) controlSettings.setButtonOffset(id, off)
             editControls = false
+            // Leaving edit mode re-arms the idle timer, so the bar
+            // hides again a few seconds after Done.
+            topBar.onEditModeChanged(false)
+            syncTopBar()
         }
         val haptics = remember(context) {
             Haptics(context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
@@ -678,6 +705,9 @@ class MainActivity : ComponentActivity() {
             playingGame = null
             paused = false
             pauseStatus = ""
+            // Phase 9, item 7 — reset the bar to shown for the next game.
+            topBar.onQuit()
+            syncTopBar()
             screen = Screen.Library
         }
 
@@ -719,6 +749,11 @@ class MainActivity : ComponentActivity() {
             session?.pause()
             paused = true
             pauseStatus = ""
+            // Phase 9, item 7 — a pause always shows the bar, so
+            // SAVE / LOAD stay reachable even when it had hidden
+            // (e.g. paused from the gamepad while hidden).
+            topBar.onPaused()
+            syncTopBar()
         }
 
         fun resumeGame() {
@@ -732,6 +767,10 @@ class MainActivity : ComponentActivity() {
             paused = false
             pauseStatus = ""
             inputActive = true
+            // Phase 9, item 7 — a resume shows the bar, then hides
+            // it again after the start delay.
+            topBar.onResumed()
+            syncTopBar()
         }
 
         /**
@@ -920,6 +959,10 @@ class MainActivity : ComponentActivity() {
             screen = Screen.Playing
             session?.start()
             inputActive = true
+            // Phase 9, item 7 — show the bar, then hide it after
+            // the start delay (long enough to see it first).
+            topBar.onGameStarted()
+            syncTopBar()
         }
 
         // Starting a game from the setup screen's PLAY row: the
@@ -1534,7 +1577,61 @@ class MainActivity : ComponentActivity() {
                         controller.show(WindowInsetsCompat.Type.systemBars())
                     }
                 }
-                Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                // Phase 9, item 7 — auto-hide timer: while the bar
+                // is visible, the game is running (not paused), and
+                // the controls are not being adjusted, hide the bar
+                // after the machine's delay (2 s after start or
+                // resume, 4 s after a swipe-down reveal or leaving
+                // edit mode). The effect restarts whenever the bar
+                // is revealed (generation), hides, edit mode
+                // toggles, or the game pauses/resumes — so a reveal
+                // always gets its full idle window.
+                LaunchedEffect(topBarVisible, editControls, paused, topBarGeneration) {
+                    if (topBarVisible && !editControls && !paused) {
+                        delay(topBar.hideDelayMs)
+                        topBar.onHideDue()
+                        syncTopBar()
+                    }
+                }
+                // Phase 9, item 7 — swipe down from the top edge
+                // reveals the bar. The detector is observe-only
+                // (see detectTopEdgeSwipeDown): it never consumes a
+                // touch, so game input, the stick, and the buttons
+                // all receive their touches untouched. The callback
+                // is read through rememberUpdatedState, so the
+                // detector — keyed on the stable `topBar` — never
+                // goes stale.
+                val density = LocalDensity.current
+                val topEdgePx = with(density) { TopBarVisibility.EDGE_HEIGHT_DP.dp.toPx() }
+                val swipeMinPx = with(density) { TopBarVisibility.SWIPE_MIN_DP.dp.toPx() }
+                val onTopEdgeSwipe = rememberUpdatedState {
+                    topBar.onSwipeDown()
+                    syncTopBar()
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black)
+                        .pointerInput(topBar) {
+                            detectTopEdgeSwipeDown(topEdgePx, swipeMinPx) {
+                                onTopEdgeSwipe.value()
+                            }
+                        },
+                ) {
+                    // Phase 9, item 7 — the title row auto-hides:
+                    // shown while playing only until the timer
+                    // fires, and always while adjusting controls
+                    // (the Together / Reset / Done buttons live
+                    // here — the bar must never hide under them)
+                    // or paused. Hiding frees the row's height for
+                    // the game view below. The SAVE / LOAD note
+                    // is a separate overlay over the game area and
+                    // is untouched by this.
+                    AnimatedVisibility(
+                        visible = topBarVisible || editControls || paused,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically(),
+                    ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1593,6 +1690,7 @@ class MainActivity : ComponentActivity() {
                                 Button(onClick = { pauseGame() }) { Text("Pause") }
                             }
                         }
+                    }
                     }
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AndroidView(
@@ -2151,7 +2249,15 @@ class MainActivity : ComponentActivity() {
                                         settingsFrom = Screen.Playing
                                         screen = Screen.Settings
                                     },
-                                    onAdjustControls = { editControls = true },
+                                    onAdjustControls = {
+                                        editControls = true
+                                        // Phase 9, item 7 — entering
+                                        // edit mode always shows the
+                                        // bar and suspends auto-hide
+                                        // until Done.
+                                        topBar.onEditModeChanged(true)
+                                        syncTopBar()
+                                    },
                                     onQuit = { quitToLibrary() },
                                 )
                             }
@@ -3289,6 +3395,56 @@ fun PauseMenu(
         if (status.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(status, color = Color(EraUi.Palette.TEXT))
+        }
+    }
+}
+
+/**
+ * Phase 9, item 7 — top-edge swipe-down detector: reveals the
+ * title row during play.
+ *
+ * Observe-only, by design: it NEVER consumes a change, so a swipe
+ * (or any touch) still reaches the game view, the stick, and the
+ * buttons untouched — the detector only watches. It fires once per
+ * press, when a touch that started inside the top edge strip
+ * (y <= [edgePx]) travels down past [minSwipePx]. A press that
+ * starts below the strip (the game, the stick, the buttons) is
+ * ignored entirely, and a tap in the strip never travels far
+ * enough to fire.
+ *
+ * The caller re-arms the hide timer on every fire (a swipe while
+ * the bar is already visible counts as interaction with it).
+ */
+private suspend fun AwaitPointerEventScope.detectTopEdgeSwipeDown(
+    edgePx: Float,
+    minSwipePx: Float,
+    onSwipeDown: () -> Unit,
+) {
+    // A press that started in the top strip, by pointer id, and
+    // whether it has already fired (one reveal per press).
+    val startY = HashMap<PointerId, Float>()
+    val fired = HashSet<PointerId>()
+    while (true) {
+        val event = awaitPointerEvent()
+        for (change in event.changes) {
+            when {
+                change.changedToDown() && change.position.y <= edgePx -> {
+                    startY[change.id] = change.position.y
+                }
+                change.changedToUpOrCanceled() -> {
+                    startY.remove(change.id)
+                    fired.remove(change.id)
+                }
+                else -> {
+                    val start = startY[change.id] ?: continue
+                    if (change.id !in fired &&
+                        change.position.y - start >= minSwipePx
+                    ) {
+                        fired.add(change.id)
+                        onSwipeDown()
+                    }
+                }
+            }
         }
     }
 }
