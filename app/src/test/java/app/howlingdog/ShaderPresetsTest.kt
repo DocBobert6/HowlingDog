@@ -18,6 +18,8 @@ class ShaderPresetsTest {
         assertEquals("Neon", ShaderPresets.forMode("mvs").name)
         assertEquals("Comet", ShaderPresets.forMode("cd").name)
         assertEquals("Zenith", ShaderPresets.forMode("cdz").name)
+        // Phase 9, item 9 — Universe BIOS on CDZ keeps the CDZ preset.
+        assertEquals("Zenith", ShaderPresets.forMode("cdz_unibios").name)
     }
 
     @Test

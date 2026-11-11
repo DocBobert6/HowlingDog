@@ -18,6 +18,8 @@ class OverlayThemeTest {
         assertEquals(OverlayTheme.ButtonLayout.BCD_A, OverlayTheme.themeFor("mvs").layout)
         assertEquals(OverlayTheme.ButtonLayout.DIAMOND, OverlayTheme.themeFor("cd").layout)
         assertEquals(OverlayTheme.ButtonLayout.DIAMOND, OverlayTheme.themeFor("cdz").layout)
+        // Phase 9, item 9 — Universe BIOS on CDZ keeps the CD look.
+        assertEquals(OverlayTheme.ButtonLayout.DIAMOND, OverlayTheme.themeFor("cdz_unibios").layout)
         // Unknown modes fall back to the home console look.
         assertEquals(OverlayTheme.ButtonLayout.ARC, OverlayTheme.themeFor("").layout)
         assertEquals(OverlayTheme.ButtonLayout.ARC, OverlayTheme.themeFor("atari").layout)

@@ -30,9 +30,10 @@ system, each matched to the display that system was played on.
   libretro thumbnails collection (Wi-Fi only, one image per game,
   cached on the device); a typographic tile is the fallback when a
   game has no art.
-- **All four systems** — AES (Home console), MVS (Arcade), Neo Geo
-  CD, and Neo Geo CDZ. Discs default to Neo Geo CD; CDZ is a
-  per-game pick. Cartridges are `.NEO` files (TerraOnion format);
+- **All four systems, plus Universe BIOS** — AES (Home console), MVS (Arcade), Neo Geo
+  CD, and Neo Geo CDZ. Universe BIOS is a per-game pick too (carts
+  and CDZ discs) — boot under it to open its in-game menu.
+  Discs default to Neo Geo CD; CDZ is a per-game pick. Cartridges are `.NEO` files (TerraOnion format);
   discs are `.bin/.cue` or `.chd`.
 - **Per-system overlay themes** — AES gets the arc layout with
   rainbow buttons (A red, B yellow, C green, D blue), MVS gets the
@@ -59,6 +60,7 @@ system, each matched to the display that system was played on.
   overclocking, region, overscan, Universe BIOS hardware, memory
   card (on by default), free play, and the CD speed/DMA/loading
   options, in Settings.
+- **Universe BIOS menu** — pause a game booted in Universe BIOS mode and tap UNIVERSE BIOS MENU: the game resumes with START+SELECT held briefly, opening the UniBIOS in-game menu, where the region and Arcade/Home-console mode can be switched mid-game. Needs `neogeo.zip` (carts) or `neocdz.zip` (CDZ discs), which already hold the UniBIOS ROMs.
 - **Per-game settings** — the gear chip on the picked game opens
   that game's own settings: region, palette, aspect ratio, sprites
   per line, overclocking, free play, CRT shader, screen curvature,

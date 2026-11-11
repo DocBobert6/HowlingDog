@@ -95,9 +95,15 @@ object ShaderPresets {
         ),
     )
 
-    /** The preset for a system mode ("aes", "mvs", "cd", "cdz"); unknown modes fall back to AES. */
-    fun forMode(mode: String): ShaderPreset =
-        presets[mode] ?: presets.getValue("aes")
+    /**
+     * The preset for a system mode ("aes", "mvs", "cd", "cdz");
+     * unknown modes fall back to AES. Universe BIOS on CDZ keeps
+     * the CDZ preset ("uni" falls back to AES, the cart default).
+     */
+    fun forMode(mode: String): ShaderPreset = when (mode) {
+        "cdz_unibios" -> presets.getValue("cdz")
+        else -> presets[mode] ?: presets.getValue("aes")
+    }
 
     /** The four system modes, in display order. */
     fun modes(): List<String> = presets.keys.toList()

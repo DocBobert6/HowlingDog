@@ -117,10 +117,10 @@ object OverlayTheme {
         accent = GOLD,
     )
 
-    /** The overlay look for a system mode ("aes", "mvs", "cd", "cdz"). Unknown modes fall back to AES. */
+    /** The overlay look for a system mode ("aes", "mvs", "cd", "cdz"). Universe BIOS on CDZ keeps the CD look; "uni" and unknown modes fall back to AES. */
     fun themeFor(mode: String): Theme = when (mode.lowercase()) {
         "mvs" -> MVS_THEME
-        "cd", "cdz" -> CD_THEME
+        "cd", "cdz", "cdz_unibios" -> CD_THEME
         else -> AES_THEME
     }
 

@@ -51,7 +51,7 @@ data class GameEntry(
     val files: List<String>,
     /** Epoch millis the game was (first) added; stable sort tiebreak. */
     val addedAt: Long,
-    /** Per-game system mode ("aes", "mvs", "cd", "cdz"), or null for the type default. */
+    /** Per-game system mode ("aes", "mvs", "uni", "cd", "cdz", "cdz_unibios"), or null for the type default. */
     val mode: String? = null,
     /** Favourite: pinned games sit at the top of the library grid. */
     val pinned: Boolean = false,
@@ -83,14 +83,22 @@ data class GameEntry(
 fun modeLabel(mode: String): String = when (mode) {
     "aes" -> "Home console"
     "mvs" -> "Arcade"
+    "uni" -> "Universe BIOS"
     "cd" -> "Neo Geo CD"
     "cdz" -> "Neo Geo CDZ"
+    "cdz_unibios" -> "Universe BIOS (CDZ)"
     else -> mode
 }
 
-/** The modes a game can boot with: the two cart systems, or the two disc systems. */
+/**
+ * The modes a game can boot with: the cart systems (Home console,
+ * Arcade, Universe BIOS), or the disc systems (Neo Geo CD, Neo Geo
+ * CDZ, Universe BIOS on CDZ). Phase 9, item 9 — Universe BIOS is
+ * a boot mode so a game can run under the UniBIOS at all, which
+ * is what makes its in-game menu reachable mid-game.
+ */
 fun modesFor(entry: GameEntry): List<String> =
-    if (entry.isDisc) listOf("cd", "cdz") else listOf("aes", "mvs")
+    if (entry.isDisc) listOf("cd", "cdz", "cdz_unibios") else listOf("aes", "mvs", "uni")
 
 /** The four system files, by name — the only zips the BIOS picker copies in (audit fix F2). */
 val KNOWN_BIOS_FILES: Set<String> = setOf("aes.zip", "neogeo.zip", "neocd.zip", "neocdz.zip")
@@ -99,7 +107,7 @@ val KNOWN_BIOS_FILES: Set<String> = setOf("aes.zip", "neogeo.zip", "neocd.zip", 
 fun isKnownBiosFile(name: String): Boolean = name.lowercase() in KNOWN_BIOS_FILES
 
 /** The system modes a stored mode value may hold. */
-val KNOWN_MODES: Set<String> = setOf("aes", "mvs", "cd", "cdz")
+val KNOWN_MODES: Set<String> = setOf("aes", "mvs", "uni", "cd", "cdz", "cdz_unibios")
 
 data class BiosStatus(
     val home: Boolean, // aes.zip
@@ -266,17 +274,19 @@ class GameLibrary(
 
     /**
      * Whether a game can boot under its effective mode: Home console
-     * needs aes.zip, Arcade needs neogeo.zip, Neo Geo CD needs
-     * neocd.zip, Neo Geo CDZ needs neocdz.zip. If this is false the
-     * UI says so instead of starting a game that cannot load; the
-     * core's own load error still surfaces if it fails.
+     * needs aes.zip, Arcade and Universe BIOS (carts) need
+     * neogeo.zip — the UniBIOS ROM lives in it — Neo Geo CD needs
+     * neocd.zip, Neo Geo CDZ and Universe BIOS (CDZ) need
+     * neocdz.zip. If this is false the UI says so instead of
+     * starting a game that cannot load; the core's own load error
+     * still surfaces if it fails.
      */
     fun biosReadyFor(entry: GameEntry, status: BiosStatus): Boolean {
         return when (entry.effectiveMode) {
             "aes" -> status.home
-            "mvs" -> status.arcade
+            "mvs", "uni" -> status.arcade
             "cd" -> status.system1994
-            "cdz" -> status.system1995
+            "cdz", "cdz_unibios" -> status.system1995
             else -> false
         }
     }

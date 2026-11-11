@@ -3,6 +3,7 @@ package app.howlingdog
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -40,6 +41,8 @@ class PauseMenuTest {
         selectedSlot: Int = QuickSave.QUICK_SLOT,
         occupiedSlots: List<Int> = emptyList(),
         onSelectSlot: (Int) -> Unit = {},
+        showUniBiosMenu: Boolean = false,
+        onUniBiosMenu: () -> Unit = {},
     ) {
         composeRule.setContent {
             Box(Modifier.size(width.dp, height.dp)) {
@@ -49,6 +52,8 @@ class PauseMenuTest {
                     occupiedSlots = occupiedSlots,
                     onSelectSlot = onSelectSlot,
                     onResume = {},
+                    showUniBiosMenu = showUniBiosMenu,
+                    onUniBiosMenu = onUniBiosMenu,
                     onSaveState = {},
                     onLoadState = {},
                     onSettings = {},
@@ -106,5 +111,45 @@ class PauseMenuTest {
         )
         composeRule.onNodeWithText("SLOT 2 ○").performClick()
         assertEquals(2, picked)
+    }
+
+    @Test
+    fun uniBiosMenuButtonHiddenUnlessEnabled() {
+        // Phase 9, item 9 — under any system but Universe BIOS
+        // there is no UniBIOS menu to open, so the row is not
+        // shown at all and the six-button fit is unchanged.
+        setMenu(width = 800, height = 360)
+        composeRule.onNodeWithText("UNIVERSE BIOS MENU").assertDoesNotExist()
+    }
+
+    @Test
+    fun uniBiosMenuButtonOpensOnTap() {
+        // Phase 9, item 9 — in Universe BIOS mode the row shows
+        // and taps through. At 420dp the seven-row menu fits
+        // whole, so QUIT is displayed alongside it.
+        var opened = false
+        setMenu(
+            width = 800,
+            height = 420,
+            showUniBiosMenu = true,
+            onUniBiosMenu = { opened = true },
+        )
+        composeRule.onNodeWithText("UNIVERSE BIOS MENU")
+            .assertIsDisplayed()
+            .performClick()
+        assertEquals(true, opened)
+        composeRule.onNodeWithText("QUIT TO LIBRARY").assertIsDisplayed()
+    }
+
+    @Test
+    fun uniBiosMenuButtonStillLeavesQuitReachableAt360() {
+        // Phase 9, item 9 — with the seventh row the menu is
+        // taller than a 360dp game area, so it scrolls — and QUIT
+        // stays reachable, like every other short-screen menu.
+        setMenu(width = 800, height = 360, showUniBiosMenu = true)
+        composeRule.onNodeWithText("UNIVERSE BIOS MENU").assertIsDisplayed()
+        composeRule.onNodeWithText("QUIT TO LIBRARY")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 }

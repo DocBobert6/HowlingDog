@@ -372,6 +372,12 @@ class MainActivity : ComponentActivity() {
         var settingsFrom by remember { mutableStateOf(Screen.Library) }
         var paused by remember { mutableStateOf(false) }
         var pauseStatus by remember { mutableStateOf("") }
+        // Phase 9, item 9 — the uptimeMillis deadline until which
+        // the injected UniBIOS menu combo (START+SELECT) is held
+        // in the input mask; 0 means no injection is armed. Set by
+        // the pause menu's UNIVERSE BIOS MENU button, cleared by a
+        // pause, a quit, or the release timer below.
+        var uniBiosHoldUntil by remember { mutableStateOf(0L) }
         // Phase 9, item 3 — the save-state slot the pause menu's
         // Save / Load acts on (1..QuickSave.SLOT_COUNT). Slot 1 is
         // the legacy slot the quick path uses too; a new game starts
@@ -694,7 +700,17 @@ class MainActivity : ComponentActivity() {
                 up = held.up, down = held.down, left = held.left, right = held.right,
                 a = held.a, b = held.b, c = held.c, d = held.d,
                 start = held.start, coin = held.coin,
-            ) or padMask
+            ) or padMask or
+                // Phase 9, item 9 — while the UniBIOS menu injection
+                // is armed, START+SELECT rides along: the UniBIOS
+                // opens its in-game menu on that combo. START and
+                // SELECT are not turbo bits, so the pulse below
+                // passes them through unchanged.
+                if (UniBiosMenu.holdActive(uniBiosHoldUntil, SystemClock.uptimeMillis())) {
+                    UniBiosMenu.comboMask()
+                } else {
+                    0
+                }
             session?.setInput(turboState.apply(raw, turboMask, SystemClock.uptimeMillis()))
         }
 
@@ -718,10 +734,24 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Phase 9, item 9 — release the injected UniBIOS menu
+        // combo when its hold expires, so the combo can never
+        // stick: re-push the mask (now without START+SELECT) once
+        // the deadline passes. Keyed on the deadline, so arming a
+        // new injection restarts the timer.
+        LaunchedEffect(uniBiosHoldUntil) {
+            val until = uniBiosHoldUntil
+            if (until <= 0L) return@LaunchedEffect
+            val remaining = until - SystemClock.uptimeMillis()
+            if (remaining > 0) delay(remaining)
+            pushMask()
+        }
+
         fun quitToLibrary() {
             inputActive = false
             clearPadState()
             turboState.releaseAll()
+            uniBiosHoldUntil = 0L
             session?.stop()
             session = null
             held = Held()
@@ -754,6 +784,9 @@ class MainActivity : ComponentActivity() {
         fun pauseGame() {
             if (session == null || paused) return
             inputActive = false
+            // Phase 9, item 9 — a pause cancels a pending UniBIOS
+            // menu injection before the released mask is pushed.
+            uniBiosHoldUntil = 0L
             // Drop any shoulder buttons held for a quick-save/load
             // combo, so one held across the pause cannot fire a
             // combo the moment the game resumes.
@@ -794,6 +827,33 @@ class MainActivity : ComponentActivity() {
             // it again after the start delay.
             topBar.onResumed()
             syncTopBar()
+        }
+
+        /**
+         * Phase 9, item 9 — open the Universe BIOS in-game menu.
+         * The UniBIOS watches the input ports itself, so the app
+         * delivers its documented combo (START+SELECT) by resuming
+         * the game with the combo injected into the input mask for
+         * one hold window (see UniBiosMenu): the BIOS opens its
+         * menu within a frame or two, and the release timer drops
+         * the combo again. Only reachable from the pause menu when
+         * the game booted in Universe BIOS mode — under any other
+         * system there is no UniBIOS to open, so the button is not
+         * shown at all (the guard below is for any future caller).
+         */
+        fun openUniBiosMenu() {
+            val game = playingGame ?: return
+            if (!UniBiosMenu.isUniBiosMode(game.effectiveMode)) {
+                pauseStatus = "Start this game in Universe BIOS mode to open its menu."
+                return
+            }
+            resumeGame()
+            // A quick save/load still owns the paused session:
+            // resumeGame() left the game paused, so arm nothing
+            // and let the user tap again once it finishes.
+            if (paused) return
+            uniBiosHoldUntil = SystemClock.uptimeMillis() + UniBiosMenu.HOLD_MS
+            pushMask()
         }
 
         /**
@@ -2291,6 +2351,13 @@ class MainActivity : ComponentActivity() {
                                     } ?: emptyList(),
                                     onSelectSlot = { saveSlot = it },
                                     onResume = { resumeGame() },
+                                    // Phase 9, item 9 — only under
+                                    // Universe BIOS: any other system
+                                    // has no UniBIOS menu to open.
+                                    showUniBiosMenu = playingGame?.let {
+                                        UniBiosMenu.isUniBiosMode(it.effectiveMode)
+                                    } ?: false,
+                                    onUniBiosMenu = { openUniBiosMenu() },
                                     onSaveState = { saveState() },
                                     onLoadState = { loadState() },
                                     onSettings = {
@@ -3458,12 +3525,19 @@ private fun SetupRow(
 
 /**
  * The arcade "CONTINUE?" pause menu: header, decorative countdown,
- * and the six options. The button list scrolls, so every option is
+ * and the options. The button list scrolls, so every option is
  * reachable even on a short landscape screen; the header, countdown,
  * spacing and button padding are tight, so the whole menu fits
  * without scrolling when the screen is tall enough. The buttons
  * stay full-size and comfortably tappable — the compact padding
  * only removes height above the Material3 40dp floor.
+ *
+ * Phase 9, item 9 adds one optional row: UNIVERSE BIOS MENU,
+ * shown only when the game booted in Universe BIOS mode (it
+ * resumes the game with the UniBIOS menu combo injected). The
+ * six-button default menu still fits a landscape game area
+ * without scrolling, as before; with the seventh row the menu
+ * scrolls slightly on the shortest screens (see PauseMenuTest).
  *
  * Extracted from MainActivity so the layout is testable in
  * isolation (a running game needs native code, which Robolectric
@@ -3480,6 +3554,10 @@ fun PauseMenu(
     occupiedSlots: List<Int> = emptyList(),
     onSelectSlot: (Int) -> Unit = {},
     onResume: () -> Unit,
+    // Phase 9, item 9 — the Universe BIOS menu row, shown only
+    // under Universe BIOS mode; hidden otherwise (default).
+    showUniBiosMenu: Boolean = false,
+    onUniBiosMenu: () -> Unit = {},
     onSaveState: () -> Unit,
     onLoadState: () -> Unit,
     onSettings: () -> Unit,
@@ -3512,6 +3590,13 @@ fun PauseMenu(
         Spacer(Modifier.height(2.dp))
         ArcadeButton(text = "RESUME", primary = true, compact = true, onClick = onResume)
         Spacer(Modifier.height(2.dp))
+        // Phase 9, item 9 — Universe BIOS mode only: resumes the
+        // game with START+SELECT injected, opening the UniBIOS
+        // in-game menu (region / Arcade-or-home-console mode).
+        if (showUniBiosMenu) {
+            ArcadeButton(text = "UNIVERSE BIOS MENU", compact = true, onClick = onUniBiosMenu)
+            Spacer(Modifier.height(2.dp))
+        }
         // Save-state slot picker: three small chips, one per
         // slot — a filled dot means the slot holds a save, an
         // open dot means it is empty, and the picked slot is

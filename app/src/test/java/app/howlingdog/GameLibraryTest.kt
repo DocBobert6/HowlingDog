@@ -233,12 +233,39 @@ class GameLibraryTest {
         assertEquals("aes", cart.effectiveMode)
         assertEquals("cd", cue.effectiveMode)
         assertEquals("cd", chd.effectiveMode)
-        assertEquals(listOf("aes", "mvs"), modesFor(cart))
-        assertEquals(listOf("cd", "cdz"), modesFor(cue))
+        assertEquals(listOf("aes", "mvs", "uni"), modesFor(cart))
+        assertEquals(listOf("cd", "cdz", "cdz_unibios"), modesFor(cue))
         assertEquals("Home console", modeLabel("aes"))
         assertEquals("Arcade", modeLabel("mvs"))
+        assertEquals("Universe BIOS", modeLabel("uni"))
         assertEquals("Neo Geo CD", modeLabel("cd"))
         assertEquals("Neo Geo CDZ", modeLabel("cdz"))
+        assertEquals("Universe BIOS (CDZ)", modeLabel("cdz_unibios"))
+    }
+
+    @Test
+    fun universeBiosModePersistsAndGatesOnItsZip() {
+        // Phase 9, item 9 — Universe BIOS is a stored per-game
+        // mode, and its ROMs live in the Arcade / CDZ zips: a cart
+        // needs neogeo.zip, a CDZ disc needs neocdz.zip.
+        val dir = tempDir("lib-mode-uni")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "neobombe.neo").writeText("fake")
+        File(games, "game.cue").writeText("fake cue")
+        val cart = lib.register("neobombe.neo", listOf("neobombe.neo"))
+        val disc = lib.register("game.cue", listOf("game.cue"))
+        lib.setMode(cart, "uni")
+        lib.setMode(disc, "cdz_unibios")
+        val loaded = library(dir).load()
+        assertEquals("uni", loaded.first { it.mainFile == "neobombe.neo" }.mode)
+        assertEquals("cdz_unibios", loaded.first { it.mainFile == "game.cue" }.mode)
+        val bios = File(dir, "bios")
+        File(bios, "neogeo.zip").writeText("fake")
+        assertTrue(lib.biosReadyFor(loaded.first { it.mainFile == "neobombe.neo" }, lib.biosStatus()))
+        assertFalse(lib.biosReadyFor(loaded.first { it.mainFile == "game.cue" }, lib.biosStatus()))
+        File(bios, "neocdz.zip").writeText("fake")
+        assertTrue(lib.biosReadyFor(loaded.first { it.mainFile == "game.cue" }, lib.biosStatus()))
     }
 
     @Test
