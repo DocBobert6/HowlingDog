@@ -81,7 +81,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
-import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -2400,7 +2399,7 @@ class MainActivity : ComponentActivity() {
                                     onDirectionChange = { mask ->
                                         if (mask != 0) playHaptic()
                                     },
-                                    enabled = !editControls,
+                                    enabled = !editControls && !paused,
                                     modifier = Modifier
                                         .offset { stickOffset }
                                         .size(stickTouchDp.dp)
@@ -2427,7 +2426,7 @@ class MainActivity : ComponentActivity() {
                                     onDirectionChange = { mask ->
                                         if (mask != 0) playHaptic()
                                     },
-                                    enabled = !editControls,
+                                    enabled = !editControls && !paused,
                                     modifier = Modifier
                                         .offset { stickOffset }
                                         .size(stickTouchDp.dp)
@@ -2482,22 +2481,22 @@ class MainActivity : ComponentActivity() {
                                 val styleD = overlayTheme.buttonStyles.getValue("D")
                                 HoldButton("A", { pressed ->
                                     held = held.copy(a = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("A") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls, color = styleA.background, labelColor = styleA.label)
+                                }, modifier = Modifier.offset { place("A") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls && !paused, color = styleA.background, labelColor = styleA.label)
                                 HoldButton("B", { pressed ->
                                     held = held.copy(b = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("B") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls, color = styleB.background, labelColor = styleB.label)
+                                }, modifier = Modifier.offset { place("B") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls && !paused, color = styleB.background, labelColor = styleB.label)
                                 HoldButton("C", { pressed ->
                                     held = held.copy(c = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("C") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls, color = styleC.background, labelColor = styleC.label)
+                                }, modifier = Modifier.offset { place("C") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls && !paused, color = styleC.background, labelColor = styleC.label)
                                 HoldButton("D", { pressed ->
                                     held = held.copy(d = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("D") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls, color = styleD.background, labelColor = styleD.label)
+                                }, modifier = Modifier.offset { place("D") }, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls && !paused, color = styleD.background, labelColor = styleD.label)
                                 HoldButton("Coin", { pressed ->
                                     held = held.copy(coin = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("Coin") }, small = true, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
+                                }, modifier = Modifier.offset { place("Coin") }, small = true, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls && !paused)
                                 HoldButton("Start", { pressed ->
                                     held = held.copy(start = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("Start") }, small = true, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls)
+                                }, modifier = Modifier.offset { place("Start") }, small = true, scale = buttonsScaleEff, onHaptic = ::playHaptic, enabled = !editControls && !paused)
                             }
                             // Resize grips (edit mode only): a visible
                             // "↘" grip at each unit's bottom-end
@@ -3509,35 +3508,41 @@ class MainActivity : ComponentActivity() {
                     // Compose has no PointerEventType.Cancel: a cancelled gesture
                     // cancels this coroutine instead, so release the hold in
                     // finally — otherwise a stuck button keeps firing input.
+                    // The hold is tracked per pointer change, not per batch
+                    // event type (see PointerDrag.kt): a batch Release
+                    // fires when ANY finger lifts, and the old handler
+                    // released the button on it even when this button's
+                    // finger was still down. releaseOnExit = true keeps
+                    // the correct button behaviour — the hold ends when
+                    // the finger slides off the button — without ending
+                    // it on another finger's lift or exit.
+                    val tracker = DragTracker(releaseOnExit = true)
                     try {
                         while (true) {
                             val event = awaitPointerEvent()
-                            when (event.type) {
-                                PointerEventType.Press -> {
-                                    if (!held) {
+                            for (change in event.changes) {
+                                when (tracker.onChange(
+                                    change.id.value,
+                                    change.pressed,
+                                    change.previousPressed,
+                                    change.isOutOfBounds,
+                                )) {
+                                    DragAction.CLAIM -> {
                                         held = true
                                         onHaptic?.invoke()
                                         onHoldChange(true)
                                     }
-                                }
-                                // A button releases when the finger
-                                // slides off it (Exit) as well as when
-                                // it lifts (Release) — that is correct
-                                // button behaviour, and it is NOT the
-                                // stick/D-pad bug: a held direction
-                                // must keep tracking past the edge,
-                                // but a button must let go.
-                                PointerEventType.Release,
-                                PointerEventType.Exit -> {
-                                    if (held) {
+                                    DragAction.END -> {
                                         held = false
                                         onHoldChange(false)
                                     }
+                                    DragAction.UPDATE,
+                                    DragAction.IGNORE -> {}
                                 }
                             }
                         }
                     } finally {
-                        if (held) {
+                        if (tracker.reset() == DragAction.END) {
                             held = false
                             onHoldChange(false)
                         }
@@ -3663,7 +3668,6 @@ class MainActivity : ComponentActivity() {
                 .pointerInput(enabled, maxTravel) {
                     if (!enabled) return@pointerInput
                     awaitPointerEventScope {
-                        var activeId: PointerId? = null
                         var lastMask = 0
                         fun setDirection(mask: Int) {
                             if (mask != lastMask) {
@@ -3704,56 +3708,47 @@ class MainActivity : ComponentActivity() {
                             knob = clamped * 0.45f
                             setDirection(StickInput.direction(cx, cy))
                         }
+                        // One tracker per scope: the drag lifecycle
+                        // is decided per pointer change, not per
+                        // batch event type (see PointerDrag.kt). The
+                        // old batch Release handler ended the drag
+                        // whenever ANY finger lifted — it only
+                        // checked that the stick's id appeared in
+                        // the event's changes — so a face button
+                        // lifting dropped the stick mid-drag. Exit
+                        // is still ignored (releaseOnExit = false):
+                        // a drag that runs off the edge keeps its
+                        // direction, clamped by updateKnob.
+                        val tracker = DragTracker(releaseOnExit = false)
                         try {
                             while (true) {
                                 val event = awaitPointerEvent()
-                                when (event.type) {
-                                    PointerEventType.Press -> {
-                                        if (activeId == null) {
-                                            val change = event.changes.firstOrNull { it.pressed }
-                                            if (change != null) {
-                                                activeId = change.id
-                                                updateKnob(change.position)
-                                            }
-                                        }
-                                    }
-                                    PointerEventType.Move -> {
-                                        val id = activeId ?: continue
-                                        val change = event.changes.firstOrNull { it.id == id }
-                                        if (change != null && change.pressed) {
-                                            updateKnob(change.position)
-                                        }
-                                    }
-                                    // Only a real Release (finger lift)
-                                    // ends the drag. An Exit — the
-                                    // pointer sliding out of the touch
-                                    // area while still down — is
-                                    // deliberately NOT handled: the
-                                    // Move events keep coming with
-                                    // out-of-bounds positions, and
-                                    // updateKnob clamps the direction
-                                    // to the edge (and the nub to the
-                                    // base radius). Ending the drag on
-                                    // Exit is what dropped the touch on
-                                    // straight left-to-right drags (a
-                                    // circular drag stays inside the
-                                    // bounds, so it never fired Exit).
-                                    // A Cancel ends it too, via the
-                                    // finally block below.
-                                    PointerEventType.Release -> {
-                                        val id = activeId
-                                        if (id != null && event.changes.any { it.id == id }) {
-                                            activeId = null
+                                for (change in event.changes) {
+                                    when (tracker.onChange(
+                                        change.id.value,
+                                        change.pressed,
+                                        change.previousPressed,
+                                        change.isOutOfBounds,
+                                    )) {
+                                        DragAction.CLAIM,
+                                        DragAction.UPDATE -> updateKnob(change.position)
+                                        DragAction.END -> {
                                             knob = Offset.Zero
                                             setDirection(0)
                                         }
+                                        DragAction.IGNORE -> {}
                                     }
                                 }
                             }
                         } finally {
-                            activeId = null
-                            if (knob != Offset.Zero) knob = Offset.Zero
-                            setDirection(0)
+                            // A Cancel ends the drag through here;
+                            // reset() only clears when one is live,
+                            // so a scope restart with no drag is a
+                            // no-op.
+                            if (tracker.reset() == DragAction.END) {
+                                if (knob != Offset.Zero) knob = Offset.Zero
+                                setDirection(0)
+                            }
                         }
                     }
                 },
@@ -3866,7 +3861,6 @@ class MainActivity : ComponentActivity() {
                 .pointerInput(enabled, touchPx) {
                     if (!enabled) return@pointerInput
                     awaitPointerEventScope {
-                        var activeId: PointerId? = null
                         var lastMask = 0
                         fun setDirection(mask: Int) {
                             if (mask != lastMask) {
@@ -3876,63 +3870,44 @@ class MainActivity : ComponentActivity() {
                                 if (mask != 0) onDirectionChange(mask)
                             }
                         }
+                        // One tracker per scope, same as the stick
+                        // (see PointerDrag.kt): the drag lifecycle is
+                        // decided per pointer change, not per batch
+                        // event type. The old batch Release handler
+                        // ended the drag whenever ANY finger lifted,
+                        // so a face button lifting dropped the
+                        // D-pad's direction mid-drag. Exit is still
+                        // ignored (releaseOnExit = false).
+                        val tracker = DragTracker(releaseOnExit = false)
                         try {
                             while (true) {
                                 val event = awaitPointerEvent()
-                                when (event.type) {
-                                    PointerEventType.Press -> {
-                                        if (activeId == null) {
-                                            val change = event.changes
-                                                .firstOrNull { it.pressed }
-                                            if (change != null) {
-                                                activeId = change.id
-                                                setDirection(
-                                                    DpadInput.directionFromPress(
-                                                        change.position.x,
-                                                        change.position.y,
-                                                        touchPx,
-                                                    ),
-                                                )
-                                            }
-                                        }
-                                    }
-                                    PointerEventType.Move -> {
-                                        val id = activeId ?: continue
-                                        val change = event.changes
-                                            .firstOrNull { it.id == id }
-                                        if (change != null && change.pressed) {
-                                            setDirection(
-                                                DpadInput.directionFromPress(
-                                                    change.position.x,
-                                                    change.position.y,
-                                                    touchPx,
-                                                ),
-                                            )
-                                        }
-                                    }
-                                    // Only a real Release (finger lift)
-                                    // ends the drag — same as the stick:
-                                    // an Exit (the pointer sliding out
-                                    // of the pad while still down) is
-                                    // deliberately NOT handled, so a
-                                    // drag that runs off the pad's edge
-                                    // keeps its direction (the press
-                                    // position clamps to the edge in
-                                    // DpadInput). Ending the drag on
-                                    // Exit dropped the direction on
-                                    // straight drags.
-                                    PointerEventType.Release -> {
-                                        val id = activeId
-                                        if (id != null && event.changes.any { it.id == id }) {
-                                            activeId = null
-                                            setDirection(0)
-                                        }
+                                for (change in event.changes) {
+                                    when (tracker.onChange(
+                                        change.id.value,
+                                        change.pressed,
+                                        change.previousPressed,
+                                        change.isOutOfBounds,
+                                    )) {
+                                        DragAction.CLAIM,
+                                        DragAction.UPDATE -> setDirection(
+                                            DpadInput.directionFromPress(
+                                                change.position.x,
+                                                change.position.y,
+                                                touchPx,
+                                            ),
+                                        )
+                                        DragAction.END -> setDirection(0)
+                                        DragAction.IGNORE -> {}
                                     }
                                 }
                             }
                         } finally {
-                            activeId = null
-                            setDirection(0)
+                            // A Cancel ends the drag through here;
+                            // reset() only clears when one is live.
+                            if (tracker.reset() == DragAction.END) {
+                                setDirection(0)
+                            }
                         }
                     }
                 },
