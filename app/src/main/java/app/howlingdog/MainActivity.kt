@@ -1900,6 +1900,11 @@ class MainActivity : ComponentActivity() {
                     coverArt = coverArt,
                     gamesDir = gamesDir,
                     refreshLibrary = { refreshLibrary() },
+                    onAddGame = { gamePicker.launch(arrayOf("*/*")) },
+                    onAddFolder = { folderPicker.launch(null) },
+                    onPickBios = { biosPicker.launch(null) },
+                    startGame = { entry -> startGame(entry) },
+                    togglePin = { entry -> togglePin(entry) },
                 )
             }
 
@@ -2401,6 +2406,11 @@ class MainActivity : ComponentActivity() {
         coverArt: CoverArt,
         gamesDir: File,
         refreshLibrary: () -> Unit,
+        onAddGame: () -> Unit,
+        onAddFolder: () -> Unit,
+        onPickBios: () -> Unit,
+        startGame: (GameEntry) -> Unit,
+        togglePin: (GameEntry) -> Unit,
     ) {
         val context = LocalContext.current
         var screen by screenState
@@ -2589,12 +2599,12 @@ class MainActivity : ComponentActivity() {
                     BiosRow("Neo Geo CDZ", b.system1995)
                 }
                 Spacer(Modifier.height(8.dp))
-                ArcadeButton(text = "Pick BIOS folder") { biosPicker.launch(null) }
+                ArcadeButton(text = "Pick BIOS folder") { onPickBios() }
             }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ArcadeButton(text = "Add game") { gamePicker.launch(arrayOf("*/*")) }
-                ArcadeButton(text = "Add folder") { folderPicker.launch(null) }
+                ArcadeButton(text = "Add game") { onAddGame() }
+                ArcadeButton(text = "Add folder") { onAddFolder() }
                 ArcadeButton(text = "Settings") {
                     settingsFrom = Screen.Library
                     screen = Screen.Settings
