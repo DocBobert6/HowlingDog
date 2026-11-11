@@ -157,9 +157,14 @@ jobs:
           # breaks the YAML (its continuation lines sit at column 0
           # and terminate the block), so --notes-file is used instead.
           {
-            echo "HowlingDog $TAG — the first signed release."
+            echo "HowlingDog $TAG."
             echo ""
             echo "A standalone Neo Geo emulator for Android (AES / MVS / Neo Geo CD / Neo Geo CDZ) around the Geolith libretro core."
+            echo ""
+            echo "New in this release:"
+            echo "- First-run setup guide: a new SYSTEM SETUP screen walks you through the BIOS folder, adding games, and starting your first game."
+            echo "- Importing a large game now shows its progress, and the library countdown is hidden until you have games to pick from."
+            echo "- Various bug fixes and stability improvements."
             echo ""
             echo "Install the APK below on an Android device (arm64). BIOS files and games are user-supplied and never bundled — see the README for what to supply."
             echo ""
