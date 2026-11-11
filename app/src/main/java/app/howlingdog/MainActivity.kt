@@ -66,6 +66,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -409,6 +410,126 @@ class MainActivity : ComponentActivity() {
         val coin: Boolean = false,
     )
 
+    // v1.3.1: HowlingDogUi's states and settings live here,
+    // not in the composable. The composable had grown past
+    // the 256-register dex limit and ART rejected the class
+    // at launch (VerifyError), so the app died before
+    // anything drew. `by lazy` initialises on first access,
+    // during the first composition -- the same timing as
+    // the remember()s these replace. The screens re-delegate
+    // these fields, so their bodies are unchanged.
+    private val appSettings by lazy {
+        AppSettings(
+            SharedPrefsStore(
+                getSharedPreferences(
+                    "howlingdog-settings", Context.MODE_PRIVATE,
+                ),
+            ),
+        )
+    }
+    private val settings by lazy {
+        CoreSettings(
+            SharedPrefsStore(
+                getSharedPreferences(
+                    "howlingdog-settings", Context.MODE_PRIVATE,
+                ),
+            ),
+        )
+    }
+    private val controlSettings by lazy {
+        ControlSettings(
+            SharedPrefsStore(
+                getSharedPreferences(
+                    "howlingdog-settings", Context.MODE_PRIVATE,
+                ),
+            ),
+        )
+    }
+    private val shaderSettings by lazy {
+        ShaderSettings(
+            SharedPrefsStore(
+                getSharedPreferences(
+                    "howlingdog-settings", Context.MODE_PRIVATE,
+                ),
+            ),
+        )
+    }
+    private val perGameSettings by lazy {
+        PerGameSettings(
+            SharedPrefsStore(
+                getSharedPreferences(
+                    "howlingdog-settings", Context.MODE_PRIVATE,
+                ),
+            ),
+        )
+    }
+    private val topBar by lazy { TopBarVisibility() }
+    private val screenState by lazy { mutableStateOf(if (appSettings.showBoot()) Screen.Boot else Screen.Library) }
+    private val gamesState by lazy { mutableStateOf<List<GameEntry>>(emptyList()) }
+    private val biosState by lazy { mutableStateOf<BiosStatus?>(null) }
+    private val statusState by lazy { mutableStateOf("") }
+    private val playingGameState by lazy { mutableStateOf<GameEntry?>(null) }
+    private val confirmRemoveState by lazy { mutableStateOf<GameEntry?>(null) }
+    private val modePickerForState by lazy { mutableStateOf<GameEntry?>(null) }
+    private val renameForState by lazy { mutableStateOf<GameEntry?>(null) }
+    private val renameTextState by lazy { mutableStateOf("") }
+    private val searchTextState by lazy { mutableStateOf("") }
+    private val librarySortState by lazy { mutableStateOf(LibrarySort.NAME) }
+    private val collectionFilterState by lazy { mutableStateOf<String?>(null) }
+    private val collectionsState by lazy { mutableStateOf<List<String>>(emptyList()) }
+    private val collectionForState by lazy { mutableStateOf<GameEntry?>(null) }
+    private val collectionTextState by lazy { mutableStateOf("") }
+    private val perGameForState by lazy { mutableStateOf<GameEntry?>(null) }
+    private val perGameTickState by lazy { mutableStateOf(0) }
+    private val settingsFromState by lazy { mutableStateOf(Screen.Library) }
+    private val pausedState by lazy { mutableStateOf(false) }
+    private val pauseStatusState by lazy { mutableStateOf("") }
+    private val uniBiosHoldUntilState by lazy { mutableStateOf(0L) }
+    private val saveSlotState by lazy { mutableStateOf(QuickSave.QUICK_SLOT) }
+    private val quickStatusState by lazy { mutableStateOf("") }
+    private val selectedMainFileState by lazy { mutableStateOf<String?>(null) }
+    private val timeLeftState by lazy { mutableStateOf(9) }
+    private val pauseTimeLeftState by lazy { mutableStateOf(9) }
+    private val pressStartAlphaState by lazy { mutableStateOf(1f) }
+    private val padMaskState by lazy { mutableStateOf(0) }
+    private val heldState by lazy { mutableStateOf(Held()) }
+    private val artIndexState by lazy { mutableStateOf<List<String>?>(null) }
+    private val coversState by lazy { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
+    private val artTriedState by lazy { mutableStateOf<Set<String>>(emptySet()) }
+    private val hapticsLevelState by lazy { mutableStateOf(controlSettings.haptics()) }
+    private val stickOpacityState by lazy { mutableStateOf(controlSettings.stickOpacity()) }
+    private val buttonsOpacityState by lazy { mutableStateOf(controlSettings.buttonsOpacity()) }
+    private val controlSizeState by lazy { mutableStateOf(controlSettings.size()) }
+    private val leftControlState by lazy { mutableStateOf(controlSettings.leftControl()) }
+    private val gamepadMappingState by lazy { mutableStateOf(controlSettings.gamepadMapping()) }
+    private val remapCapturingState by lazy { mutableStateOf<String?>(null) }
+    private val remapHintState by lazy { mutableStateOf("") }
+    private val turboMaskState by lazy { mutableStateOf(controlSettings.turboMask()) }
+    private val runaheadFramesState by lazy { mutableStateOf(appSettings.runaheadFrames()) }
+    private val ffHeldState by lazy { mutableStateOf(false) }
+    private val slowHeldState by lazy { mutableStateOf(false) }
+    private val ffSpeedState by lazy { mutableStateOf(appSettings.fastForwardSpeed()) }
+    private val slowOnState by lazy { mutableStateOf(appSettings.slowMotionOn()) }
+    private val autoSaveOnQuitState by lazy { mutableStateOf(appSettings.autoSaveOnQuit()) }
+    private val raUsernameTextState by lazy { mutableStateOf(appSettings.raUsername()) }
+    private val raPasswordTextState by lazy { mutableStateOf("") }
+    private val showBootState by lazy { mutableStateOf(appSettings.showBoot()) }
+    private val crtShaderOnState by lazy { mutableStateOf(shaderSettings.shaderMasterOn()) }
+    private val curvatureOnState by lazy { mutableStateOf(shaderSettings.curvatureMasterOn()) }
+    private val stickPosState by lazy { mutableStateOf(controlSettings.stickPosition()) }
+    private val buttonsPosState by lazy { mutableStateOf(controlSettings.buttonsPosition()) }
+    private val stickScaleState by lazy { mutableStateOf(controlSettings.stickScale()) }
+    private val buttonsScaleState by lazy { mutableStateOf(controlSettings.buttonsScale()) }
+    private val dpadScaleState by lazy { mutableStateOf(controlSettings.dpadScale()) }
+    private val buttonOverridesState by lazy { mutableStateOf(controlSettings.buttonOffsets()) }
+    private val buttonSizeMultsState by lazy { mutableStateOf(controlSettings.buttonSizeMults()) }
+    private val moveTogetherState by lazy { mutableStateOf(true) }
+    private val editControlsState by lazy { mutableStateOf(false) }
+    private val topBarVisibleState by lazy { mutableStateOf(topBar.visible) }
+    private val topBarGenerationState by lazy { mutableStateOf(topBar.generation) }
+    private val setupPendingState by lazy { mutableStateOf(false) }
+    private val dismissedUpdateState by lazy { mutableStateOf(appSettings.dismissedUpdateVersion()) }
+
     @Composable
     private fun HowlingDogUi() {
         val context = LocalContext.current
@@ -416,73 +537,64 @@ class MainActivity : ComponentActivity() {
         // App-level settings (boot splash toggle): read before the
         // initial screen is chosen, so a disabled splash goes
         // straight to the library on launch.
-        val appSettings = remember {
-            AppSettings(
-                SharedPrefsStore(
-                    context.getSharedPreferences(
-                        "howlingdog-settings", Context.MODE_PRIVATE,
-                    ),
-                ),
-            )
-        }
-        var screen by remember { mutableStateOf(if (appSettings.showBoot()) Screen.Boot else Screen.Library) }
-        var games by remember { mutableStateOf<List<GameEntry>>(emptyList()) }
-        var bios by remember { mutableStateOf<BiosStatus?>(null) }
-        var status by remember { mutableStateOf("") }
-        var playingGame by remember { mutableStateOf<GameEntry?>(null) }
-        var confirmRemove by remember { mutableStateOf<GameEntry?>(null) }
-        var modePickerFor by remember { mutableStateOf<GameEntry?>(null) }
+        var screen by screenState
+        var games by gamesState
+        var bios by biosState
+        var status by statusState
+        var playingGame by playingGameState
+        var confirmRemove by confirmRemoveState
+        var modePickerFor by modePickerForState
         // Phase 9, item 4 — the game being renamed, and the text in
         // the rename dialog (prefilled with the name it shows now).
-        var renameFor by remember { mutableStateOf<GameEntry?>(null) }
-        var renameText by remember { mutableStateOf("") }
+        var renameFor by renameForState
+        var renameText by renameTextState
         // v1.5, feature 3 — library search / sort / collections:
         // the search text, the sort order, the collection chip
         // picked (null = all games), the collection names in use,
         // and the game whose collection is being picked (with the
         // text for a new collection name).
-        var searchText by remember { mutableStateOf("") }
-        var librarySort by remember { mutableStateOf(LibrarySort.NAME) }
-        var collectionFilter by remember { mutableStateOf<String?>(null) }
-        var collections by remember { mutableStateOf<List<String>>(emptyList()) }
-        var collectionFor by remember { mutableStateOf<GameEntry?>(null) }
-        var collectionText by remember { mutableStateOf("") }
+        var searchText by searchTextState
+        var librarySort by librarySortState
+        var collectionFilter by collectionFilterState
+        var collections by collectionsState
+        var collectionFor by collectionForState
+        var collectionText by collectionTextState
         // Phase 9, item 8 — the game whose own settings screen is
         // open (null when it is closed). `perGameTick` is bumped on
         // every per-game change so that screen recomposes from the
         // store (its rows read the overrides directly).
-        var perGameFor by remember { mutableStateOf<GameEntry?>(null) }
-        var perGameTick by remember { mutableStateOf(0) }
-        var settingsFrom by remember { mutableStateOf(Screen.Library) }
-        var paused by remember { mutableStateOf(false) }
-        var pauseStatus by remember { mutableStateOf("") }
+        var perGameFor by perGameForState
+        var perGameTick by perGameTickState
+        var settingsFrom by settingsFromState
+        var paused by pausedState
+        var pauseStatus by pauseStatusState
         // Phase 9, item 9 — the uptimeMillis deadline until which
         // the injected UniBIOS menu combo (START+SELECT) is held
         // in the input mask; 0 means no injection is armed. Set by
         // the pause menu's UNIVERSE BIOS MENU button, cleared by a
         // pause, a quit, or the release timer below.
-        var uniBiosHoldUntil by remember { mutableStateOf(0L) }
+        var uniBiosHoldUntil by uniBiosHoldUntilState
         // Phase 9, item 3 — the save-state slot the pause menu's
         // Save / Load acts on (1..QuickSave.SLOT_COUNT). Slot 1 is
         // the legacy slot the quick path uses too; a new game starts
         // on slot 1 (reset in startGame).
-        var saveSlot by remember { mutableStateOf(QuickSave.QUICK_SLOT) }
+        var saveSlot by saveSlotState
         // Quick save/load status: a brief note on the game screen
         // ("Saved." / "Loaded." / "No save yet."), cleared after a
         // couple of seconds. The pause menu keeps its own status.
-        var quickStatus by remember { mutableStateOf("") }
+        var quickStatus by quickStatusState
         // Phase 5 — era skin state. The select grid's picked game is
         // a main-file name, derived fresh from `games` below, so it
         // never goes stale when the library reloads. The countdowns
         // are decorative and never trigger an action.
-        var selectedMainFile by remember { mutableStateOf<String?>(null) }
+        var selectedMainFile by selectedMainFileState
         val selectedGame =
             games.firstOrNull { it.mainFile == selectedMainFile } ?: games.firstOrNull()
-        var timeLeft by remember { mutableStateOf(9) }
-        var pauseTimeLeft by remember { mutableStateOf(9) }
-        var pressStartAlpha by remember { mutableStateOf(1f) }
-        var padMask by remember { mutableStateOf(0) }
-        var held by remember { mutableStateOf(Held()) }
+        var timeLeft by timeLeftState
+        var pauseTimeLeft by pauseTimeLeftState
+        var pressStartAlpha by pressStartAlphaState
+        var padMask by padMaskState
+        var held by heldState
         // (The GL game view lives in the Activity field gameGlView,
         // so onPause/onResume can forward to it.)
         // Cover art (box art fetched at runtime, Wi-Fi only,
@@ -491,22 +603,13 @@ class MainActivity : ComponentActivity() {
         // with no art (or a failed fetch) so a tile is not
         // re-attempted on every recomposition; `artIndex` is the
         // cached libretro thumbnails filename list.
-        var artIndex by remember { mutableStateOf<List<String>?>(null) }
-        var covers by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
-        var artTried by remember { mutableStateOf<Set<String>>(emptySet()) }
+        var artIndex by artIndexState
+        var covers by coversState
+        var artTried by artTriedState
         val coverArt = remember { CoverArt(context.filesDir) }
 
         val gamesDir = File(context.filesDir, "games")
         val biosDir = File(context.filesDir, "bios")
-        val settings = remember {
-            CoreSettings(
-                SharedPrefsStore(
-                    context.getSharedPreferences(
-                        "howlingdog-settings", Context.MODE_PRIVATE,
-                    ),
-                ),
-            )
-        }
         val library = remember {
             GameLibrary(
                 gamesDir = gamesDir,
@@ -536,39 +639,30 @@ class MainActivity : ComponentActivity() {
 
         // On-screen controls (stick, haptics, opacity, size, layout):
         // same SharedPreferences file as the core options, own keys.
-        val controlSettings = remember {
-            ControlSettings(
-                SharedPrefsStore(
-                    context.getSharedPreferences(
-                        "howlingdog-settings", Context.MODE_PRIVATE,
-                    ),
-                ),
-            )
-        }
-        var hapticsLevel by remember { mutableStateOf(controlSettings.haptics()) }
+        var hapticsLevel by hapticsLevelState
         // Per-group opacity (Part 2): the stick/D-pad and the
         // buttons each have their own, 20–100%, default 60.
-        var stickOpacity by remember { mutableStateOf(controlSettings.stickOpacity()) }
-        var buttonsOpacity by remember { mutableStateOf(controlSettings.buttonsOpacity()) }
-        var controlSize by remember { mutableStateOf(controlSettings.size()) }
+        var stickOpacity by stickOpacityState
+        var buttonsOpacity by buttonsOpacityState
+        var controlSize by controlSizeState
         // The on-screen left control (stick or 8-way D-pad).
-        var leftControl by remember { mutableStateOf(controlSettings.leftControl()) }
+        var leftControl by leftControlState
         // Gamepad button remapping (v1.3.0, part 1): Neo id ->
         // physical keycode, a permutation of the six remappable
         // buttons. The game reads it through GamepadInput.
-        var gamepadMapping by remember { mutableStateOf(controlSettings.gamepadMapping()) }
+        var gamepadMapping by gamepadMappingState
         // The remap screen's capture: the Neo id waiting for a
         // button press, or null when not capturing.
-        var remapCapturing by remember { mutableStateOf<String?>(null) }
+        var remapCapturing by remapCapturingState
         // A one-line hint on the remap screen (what to press, or
         // why a press was not a remappable button).
-        var remapHint by remember { mutableStateOf("") }
+        var remapHint by remapHintState
         // Turbo/autofire (Phase 9, item 6): the per-button toggles,
         // persisted in ControlSettings, default off for every button.
-        var turboMask by remember { mutableStateOf(controlSettings.turboMask()) }
+        var turboMask by turboMaskState
         // Run-ahead (Phase 10): 0 = off, 1 or 2 frames ahead.
         // Off by default; takes effect the next time a game starts.
-        var runaheadFrames by remember { mutableStateOf(appSettings.runaheadFrames()) }
+        var runaheadFrames by runaheadFramesState
         // v1.5, feature 1 — fast-forward / slow motion: the
         // on-screen hold buttons' state, and the speeds from
         // Settings. Both speeds are off by default, so no speed
@@ -576,75 +670,57 @@ class MainActivity : ComponentActivity() {
         // The gamepad stick clicks (L3/R3) live in the Activity
         // fields (padFfHeld / padSlowHeld) and are read by
         // pushSpeed() alongside these.
-        var ffHeld by remember { mutableStateOf(false) }
-        var slowHeld by remember { mutableStateOf(false) }
-        var ffSpeed by remember { mutableStateOf(appSettings.fastForwardSpeed()) }
-        var slowOn by remember { mutableStateOf(appSettings.slowMotionOn()) }
+        var ffHeld by ffHeldState
+        var slowHeld by slowHeldState
+        var ffSpeed by ffSpeedState
+        var slowOn by slowOnState
         // v1.5, feature 2 — auto-save on quit, on by default.
-        var autoSaveOnQuit by remember { mutableStateOf(appSettings.autoSaveOnQuit()) }
+        var autoSaveOnQuit by autoSaveOnQuitState
         // RetroAchievements (Phase 10, v1.1.2): the username and
         // password typed in Settings. The username is stored; the
         // password lives only in this editable copy while the
         // screen is open and is never stored anywhere — the login
         // keeps the session token instead.
-        var raUsernameText by remember { mutableStateOf(appSettings.raUsername()) }
-        var raPasswordText by remember { mutableStateOf("") }
+        var raUsernameText by raUsernameTextState
+        var raPasswordText by raPasswordTextState
         // The pulse state machine (each turbo button's press start time).
         val turboState = remember { TurboState() }
-        var showBoot by remember { mutableStateOf(appSettings.showBoot()) }
+        var showBoot by showBootState
         // CRT display settings (shader chain, curvature): the same
         // SharedPreferences file, own "display.*" keys.
-        val shaderSettings = remember {
-            ShaderSettings(
-                SharedPrefsStore(
-                    context.getSharedPreferences(
-                        "howlingdog-settings", Context.MODE_PRIVATE,
-                    ),
-                ),
-            )
-        }
-        var crtShaderOn by remember { mutableStateOf(shaderSettings.shaderMasterOn()) }
-        var curvatureOn by remember { mutableStateOf(shaderSettings.curvatureMasterOn()) }
+        var crtShaderOn by crtShaderOnState
+        var curvatureOn by curvatureOnState
         // Phase 9, item 8 — per-game configuration profiles: a
         // game's own overrides for region, a few core options, the
         // CRT shader / curvature, and the left control. Same
         // SharedPreferences file, own "pergame.*" keys.
-        val perGameSettings = remember {
-            PerGameSettings(
-                SharedPrefsStore(
-                    context.getSharedPreferences(
-                        "howlingdog-settings", Context.MODE_PRIVATE,
-                    ),
-                ),
-            )
-        }
-        var stickPos by remember { mutableStateOf(controlSettings.stickPosition()) }
-        var buttonsPos by remember { mutableStateOf(controlSettings.buttonsPosition()) }
+        var stickPos by stickPosState
+        var buttonsPos by buttonsPosState
         // Per-group resize multipliers, set by the resize handle in
         // adjust mode (1.0 = the Settings preset size). The D-pad
         // has its own (Part 2), so it is sized separately from the
         // stick instead of sharing the stick's scale.
-        var stickScale by remember { mutableStateOf(controlSettings.stickScale()) }
-        var buttonsScale by remember { mutableStateOf(controlSettings.buttonsScale()) }
-        var dpadScale by remember { mutableStateOf(controlSettings.dpadScale()) }
+        var stickScale by stickScaleState
+        var buttonsScale by buttonsScaleState
+        var dpadScale by dpadScaleState
         // Per-button offset overrides (Item 2): a button's offset
         // from the cluster centre, in dp at scale 1.0. Absent means
         // the theme layout's default offset for that button.
-        var buttonOverrides by remember { mutableStateOf(controlSettings.buttonOffsets()) }
+        var buttonOverrides by buttonOverridesState
         // Per-button size multipliers (Part 2): a button's own size
         // relative to the group size (1.0 = the group size). Absent
         // means 1.0.
-        var buttonSizeMults by remember { mutableStateOf(controlSettings.buttonSizeMults()) }
+        var buttonSizeMults by buttonSizeMultsState
         // Move-together toggle (Item 2, Mariner's paired-buttons
         // behaviour): on, dragging a button moves the whole
         // cluster; off, it moves that button alone. A session
         // toggle, not persisted — Mariner's `grouped` is the same.
-        var moveTogether by remember { mutableStateOf(true) }
+        var moveTogether by moveTogetherState
         // Adjust-layout edit mode: entered from the pause screen
         // (the game has to be running to see where the controls
         // sit). While editing, the game stays paused, the pause
         // overlay hides, and the two control units drag.
-        var editControls by remember { mutableStateOf(false) }
+        var editControls by editControlsState
         // Phase 9, item 7 — top bar auto-hide: the title row
         // (game name + SAVE / LOAD / Pause) hides a couple of
         // seconds after a game starts and comes back on a swipe
@@ -654,9 +730,8 @@ class MainActivity : ComponentActivity() {
         // two Compose states mirror it so recomposition follows
         // it — `generation` is the timer's restart signal, bumped
         // on every reveal.
-        val topBar = remember { TopBarVisibility() }
-        var topBarVisible by remember { mutableStateOf(topBar.visible) }
-        var topBarGeneration by remember { mutableStateOf(topBar.generation) }
+        var topBarVisible by topBarVisibleState
+        var topBarGeneration by topBarGenerationState
         fun syncTopBar() {
             topBarVisible = topBar.visible
             topBarGeneration = topBar.generation
@@ -666,13 +741,13 @@ class MainActivity : ComponentActivity() {
         // set when the first library load finds no system files
         // and no games; it is consumed when the setup screen is
         // left, and never re-offered after it has been seen.
-        var setupPending by remember { mutableStateOf(false) }
+        var setupPending by setupPendingState
         // Phase 9, item 10 — in-app updater: the update the user
         // dismissed ("Not now" on the library notice), mirrored in
         // a Compose state so dismissing it recomposes the banner
         // away at once; the store is the source of truth across
         // restarts.
-        var dismissedUpdate by remember { mutableStateOf(appSettings.dismissedUpdateVersion()) }
+        var dismissedUpdate by dismissedUpdateState
 
         fun exitEditMode() {
             controlSettings.setStickPosition(stickPos)
@@ -2380,1469 +2455,25 @@ class MainActivity : ComponentActivity() {
             }
 
             Screen.Playing -> {
-                DisposableEffect(Unit) {
-                    activity.requestedOrientation =
-                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                    activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    val controller = WindowInsetsControllerCompat(
-                        activity.window, activity.window.decorView,
-                    )
-                    controller.hide(WindowInsetsCompat.Type.systemBars())
-                    onDispose {
-                        activity.requestedOrientation =
-                            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                        controller.show(WindowInsetsCompat.Type.systemBars())
-                    }
-                }
-                // Phase 9, item 7 — auto-hide timer: while the bar
-                // is visible, the game is running (not paused), and
-                // the controls are not being adjusted, hide the bar
-                // after the machine's delay (2 s after start or
-                // resume, 4 s after a swipe-down reveal or leaving
-                // edit mode). The effect restarts whenever the bar
-                // is revealed (generation), hides, edit mode
-                // toggles, or the game pauses/resumes — so a reveal
-                // always gets its full idle window.
-                LaunchedEffect(topBarVisible, editControls, paused, topBarGeneration) {
-                    if (topBarVisible && !editControls && !paused) {
-                        delay(topBar.hideDelayMs)
-                        topBar.onHideDue()
-                        syncTopBar()
-                    }
-                }
-                // Phase 9, item 7 — swipe down from the top edge
-                // reveals the bar. The detector is observe-only
-                // (see detectTopEdgeSwipeDown): it never consumes a
-                // touch, so game input, the stick, and the buttons
-                // all receive their touches untouched. The callback
-                // is read through rememberUpdatedState, so the
-                // detector — keyed on the stable `topBar` — never
-                // goes stale.
-                val density = LocalDensity.current
-                val topEdgePx = with(density) { TopBarVisibility.EDGE_HEIGHT_DP.dp.toPx() }
-                val swipeMinPx = with(density) { TopBarVisibility.SWIPE_MIN_DP.dp.toPx() }
-                val onTopEdgeSwipe = rememberUpdatedState {
-                    topBar.onSwipeDown()
-                    syncTopBar()
-                }
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black)
-                        .pointerInput(topBar) {
-                            awaitPointerEventScope {
-                                detectTopEdgeSwipeDown(topEdgePx, swipeMinPx) {
-                                    onTopEdgeSwipe.value()
-                                }
-                            }
-                        },
-                ) {
-                    // Phase 9, item 7 — the title row auto-hides:
-                    // shown while playing only until the timer
-                    // fires, and always while adjusting controls
-                    // (the Together / Reset / Done buttons live
-                    // here — the bar must never hide under them)
-                    // or paused. Hiding frees the row's height for
-                    // the game view below. The SAVE / LOAD note
-                    // is a separate overlay over the game area and
-                    // is untouched by this.
-                    AnimatedVisibility(
-                        visible = topBarVisible || editControls || paused,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically(),
-                    ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // The title takes the space LEFT OVER after
-                        // the buttons: it is weighted, so the Row
-                        // measures the (unweighted) button row first
-                        // at its intrinsic width and only then gives
-                        // the title the remainder. Without the
-                        // weight, a long game name (KOF '98's full
-                        // display name) took the whole row and the
-                        // edit-mode buttons — Together, Reset, Done
-                        // — were measured at zero width and invisible
-                        // (Robert: "No button to toggle adjust
-                        // controller together or seperate"). The
-                        // title truncates with an ellipsis instead
-                        // of pushing the buttons off-screen, in any
-                        // orientation.
-                        Text(
-                            playingGame?.effectiveName ?: "Game",
-                            color = Color(EraUi.Palette.TEXT),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        if (editControls) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Button(onClick = { moveTogether = !moveTogether }) {
-                                    Text(if (moveTogether) "Together: On" else "Together: Off")
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                Button(onClick = {
-                                    controlSettings.resetLayout()
-                                    stickPos = ControlSettings.DEFAULT_STICK_POS
-                                    buttonsPos = ControlSettings.DEFAULT_BUTTONS_POS
-                                    stickScale = ControlSettings.DEFAULT_GROUP_SCALE
-                                    buttonsScale = ControlSettings.DEFAULT_GROUP_SCALE
-                                    dpadScale = ControlSettings.DEFAULT_GROUP_SCALE
-                                    buttonOverrides = emptyMap()
-                                    buttonSizeMults = emptyMap()
-                                }) { Text("Reset layout") }
-                                Spacer(Modifier.width(8.dp))
-                                Button(onClick = { exitEditMode() }) { Text("Done") }
-                            }
-                        } else {
-                            // Quick save/load sit beside Pause, in
-                            // the title row — never over the game area
-                            // and never fighting the stick or the
-                            // buttons. They write and read the same
-                            // per-game slot the pause menu uses.
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Button(onClick = { quickSave() }) { Text("SAVE") }
-                                Spacer(Modifier.width(8.dp))
-                                Button(onClick = { quickLoad() }) { Text("LOAD") }
-                                Spacer(Modifier.width(8.dp))
-                                Button(onClick = { pauseGame() }) { Text("Pause") }
-                            }
-                        }
-                    }
-                    }
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        AndroidView(
-                            factory = { ctx ->
-                                GameGlView(ctx).also { gameGlView = it }
-                            },
-                            update = {
-                                // Apply this game's system preset (and
-                                // toggles) whenever the game screen
-                                // recomposes — a new game, or a return
-                                // to the game screen, re-applies it.
-                                val entry = playingGame
-                                if (entry != null) {
-                                    val mode = entry.effectiveMode
-                                    // Phase 9, item 8 — a game's own
-                                    // shader / curvature choice wins
-                                    // over the per-system → master
-                                    // chain; unset falls back to it.
-                                    it.setPreset(
-                                        ShaderPresets.forMode(mode),
-                                        perGameSettings.resolveShader(
-                                            entry.mainFile,
-                                            shaderSettings.shaderOn(mode),
-                                        ),
-                                        perGameSettings.resolveCurvature(
-                                            entry.mainFile,
-                                            shaderSettings.curvatureOn(mode),
-                                        ),
-                                    )
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        // Touch controls float over the game view
-                        // (standard mobile-emulator layout): the game
-                        // fills the whole Box and the controls overlay
-                        // its lower part instead of taking their own
-                        // row. In landscape the old row ate ~240dp
-                        // and left the game ~125dp tall.
-                        //
-                        // The controls are two units, each placed by
-                        // its stored centre (a fraction of this Box):
-                        // the PS1-style stick (bottom-left) and
-                        // the button cluster (bottom-right). Each
-                        // unit takes its own stored opacity (Part 2)
-                        // — the stick/D-pad and the buttons can be
-                        // faded separately.
-                        BoxWithConstraints(
-                            modifier = Modifier
-                                .fillMaxSize(),
-                        ) {
-                            val density = LocalDensity.current
-                            val boxW = with(density) { maxWidth.toPx() }
-                            val boxH = with(density) { maxHeight.toPx() }
-                            // Effective size = the Settings preset
-                            // times the group's own resize scale
-                            // (set by its corner handle in adjust
-                            // mode; 1.0 = the preset size). The
-                            // left control's scale is the active
-                            // control's own — the stick and the
-                            // D-pad are sized separately (Part 2).
-                            val leftScaleEff = controlSize.scale *
-                                if (leftControl == LeftControl.DPAD) dpadScale else stickScale
-                            val buttonsScaleEff = controlSize.scale * buttonsScale
-                            // Stick geometry (dp, scaled): base 140,
-                            // grab margin 16, touch area 172.
-                            val stickTouchDp = 172f * leftScaleEff
-                            val stickTouchPx = with(density) { stickTouchDp.dp.toPx() }
-                            val stickOffset = IntOffset(
-                                (stickPos.x * boxW - stickTouchPx / 2).roundToInt(),
-                                (stickPos.y * boxH - stickTouchPx / 2).roundToInt(),
-                            )
-                            // Per-system overlay theme: the button
-                            // arrangement and colours for the game
-                            // being played (AES arc, MVS BCD/A, CD
-                            // diamond) and the stick's colours.
-                            // Appearance only — the input is identical
-                            // on all four systems.
-                            val overlayTheme = OverlayTheme.themeFor(
-                                playingGame?.effectiveMode ?: "aes",
-                            )
-                            // A button's effective offset: its stored
-                            // override, or the theme layout's default
-                            // for this system. The cluster's bounding
-                            // box follows the effective offsets, so a
-                            // button moved on its own grows the
-                            // cluster to contain it.
-                            val buttonOffsets = OverlayTheme.buttonOffsets(overlayTheme.layout)
-                                .mapValues { (id, off) -> buttonOverrides[id] ?: off }
-                            // Button cluster geometry (dp, scaled):
-                            // the effective bounding box at scale 1,
-                            // times the effective scale.
-                            val (clusterWdp1, clusterHdp1) =
-                                OverlayTheme.clusterSizeFor(buttonOffsets, buttonSizeMults)
-                            val buttonsWdp = clusterWdp1 * buttonsScaleEff
-                            val buttonsHdp = clusterHdp1 * buttonsScaleEff
-                            val buttonsWPx = with(density) { buttonsWdp.dp.toPx() }
-                            val buttonsHPx = with(density) { buttonsHdp.dp.toPx() }
-                            val buttonsOffset = IntOffset(
-                                (buttonsPos.x * boxW - buttonsWPx / 2).roundToInt(),
-                                (buttonsPos.y * boxH - buttonsHPx / 2).roundToInt(),
-                            )
-                            // Adjust-layout drag: in edit mode each
-                            // unit drags to a new centre fraction,
-                            // and its bottom-end corner (the visible
-                            // resize grip, 28dp) drags to resize it.
-                            // The button cluster's detector also
-                            // decides, from where the press landed,
-                            // whether the drag moves the whole cluster
-                            // or one button on its own: with Together
-                            // off, a press inside a button's circle
-                            // moves that button alone (its offset is
-                            // stored as an override); with Together
-                            // on, or a press on empty space, the
-                            // whole cluster moves. One gesture
-                            // detector per unit decides move vs resize
-                            // vs individual-move from where the press
-                            // landed, so the gestures never fight.
-                            // rememberUpdatedState keeps the
-                            // drag lambda reading the current
-                            // position and size without restarting
-                            // the gesture on every move (the size
-                            // changes while resizing, so it must not
-                            // be a pointerInput key). Positions and
-                            // scales persist on drag end (and on
-                            // Done). The units are clamped so they
-                            // stay fully inside the game area — and
-                            // they live inside this Box, below the
-                            // title row, so a dragged or resized
-                            // control can never cover the Pause
-                            // button.
-                            //
-                            // Resize: a horizontal drag of the grip
-                            // resizes proportionally — dragging the
-                            // grip right by the unit's full width
-                            // doubles it — clamped to 0.7x..1.5x of
-                            // the preset size. (Mariner's pattern:
-                            // horizontal drag, 28dp touch area, 20dp
-                            // visible grip with a "↘".)
-                            val stickPosState = rememberUpdatedState(stickPos)
-                            val buttonsPosState = rememberUpdatedState(buttonsPos)
-                            val stickScaleState = rememberUpdatedState(stickScale)
-                            val buttonsScaleState = rememberUpdatedState(buttonsScale)
-                            // The left control's own scale (Part 2):
-                            // the stick and the D-pad are sized
-                            // separately, so the drag writes to the
-                            // one that is showing.
-                            val dpadScaleState = rememberUpdatedState(dpadScale)
-                            val leftControlState = rememberUpdatedState(leftControl)
-                            val stickTouchPxState = rememberUpdatedState(stickTouchPx)
-                            val buttonsWPxState = rememberUpdatedState(buttonsWPx)
-                            val buttonsHPxState = rememberUpdatedState(buttonsHPx)
-                            val clusterSizeState =
-                                rememberUpdatedState(clusterWdp1 to clusterHdp1)
-                            val presetScaleState = rememberUpdatedState(controlSize.scale)
-                            val handlePx = with(density) { 28.dp.toPx() }
-                            val handlePxState = rememberUpdatedState(handlePx)
-                            // The button drag reads these live (the
-                            // offsets change while dragging, so they
-                            // must not be pointerInput keys).
-                            val buttonOffsetsState = rememberUpdatedState(buttonOffsets)
-                            val moveTogetherState = rememberUpdatedState(moveTogether)
-                            val buttonOverridesState = rememberUpdatedState(buttonOverrides)
-                            val buttonSizeMultsState = rememberUpdatedState(buttonSizeMults)
-                            val dpPxState = rememberUpdatedState(with(density) { 1.dp.toPx() })
-                            // A button's own resize grip (Part 2) is
-                            // smaller than the cluster's 28dp grip —
-                            // the button itself is only 56dp (48dp
-                            // for Coin/Start) — so 20dp at its
-                            // bottom-end corner.
-                            val buttonGripPxState =
-                                rememberUpdatedState(with(density) { 20.dp.toPx() })
-                            val stickDrag = if (editControls) {
-                                Modifier.pointerInput(boxW, boxH) {
-                                    var resizing = false
-                                    detectDragGestures(
-                                        onDragStart = { start ->
-                                            val sizePx = stickTouchPxState.value
-                                            val grip = handlePxState.value
-                                            resizing = start.x > sizePx - grip &&
-                                                start.y > sizePx - grip
-                                        },
-                                        onDragEnd = {
-                                            if (resizing) {
-                                                // Persist the scale of
-                                                // the control that is
-                                                // showing (Part 2).
-                                                if (leftControlState.value == LeftControl.DPAD) {
-                                                    controlSettings.setDpadScale(dpadScaleState.value)
-                                                } else {
-                                                    controlSettings.setStickScale(stickScaleState.value)
-                                                }
-                                            } else {
-                                                controlSettings.setStickPosition(stickPosState.value)
-                                            }
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            change.consume()
-                                            if (resizing) {
-                                                val sizePx = stickTouchPxState.value
-                                                if (sizePx > 0) {
-                                                    // The active control's
-                                                    // scale (Part 2): the
-                                                    // D-pad's when it is
-                                                    // showing, else the
-                                                    // stick's.
-                                                    val curScale =
-                                                        if (leftControlState.value == LeftControl.DPAD) {
-                                                            dpadScaleState.value
-                                                        } else {
-                                                            stickScaleState.value
-                                                        }
-                                                    val newScale = (curScale *
-                                                        (1f + dragAmount.x / sizePx))
-                                                        .coerceIn(
-                                                            ControlSettings.MIN_GROUP_SCALE,
-                                                            ControlSettings.MAX_GROUP_SCALE,
-                                                        )
-                                                    if (leftControlState.value == LeftControl.DPAD) {
-                                                        dpadScale = newScale
-                                                    } else {
-                                                        stickScale = newScale
-                                                    }
-                                                    // The grown unit must still fit:
-                                                    // re-clamp its centre to the new size.
-                                                    val newSizePx = with(density) {
-                                                        (172f * presetScaleState.value * newScale)
-                                                            .dp.toPx()
-                                                    }
-                                                    val halfW = newSizePx / 2 / boxW
-                                                    val halfH = newSizePx / 2 / boxH
-                                                    stickPos = ControlPosition(
-                                                        stickPosState.value.x
-                                                            .coerceIn(halfW, 1f - halfW),
-                                                        stickPosState.value.y
-                                                            .coerceIn(halfH, 1f - halfH),
-                                                    )
-                                                }
-                                            } else {
-                                                val cur = stickPosState.value
-                                                val halfW = stickTouchPxState.value / 2 / boxW
-                                                val halfH = stickTouchPxState.value / 2 / boxH
-                                                stickPos = ControlPosition(
-                                                    (cur.x + dragAmount.x / boxW)
-                                                        .coerceIn(halfW, 1f - halfW),
-                                                    (cur.y + dragAmount.y / boxH)
-                                                        .coerceIn(halfH, 1f - halfH),
-                                                )
-                                            }
-                                        },
-                                    )
-                                }
-                            } else {
-                                Modifier
-                            }
-                            val buttonsDrag = if (editControls) {
-                                Modifier.pointerInput(boxW, boxH) {
-                                    var resizing = false
-                                    // The button being moved on its
-                                    // own (null = the whole cluster).
-                                    var dragButton: String? = null
-                                    // The button being resized on its
-                                    // own (Part 2, null = none).
-                                    var resizeButton: String? = null
-                                    detectDragGestures(
-                                        onDragStart = { start ->
-                                            val wPx = buttonsWPxState.value
-                                            val hPx = buttonsHPxState.value
-                                            val grip = handlePxState.value
-                                            resizing = start.x > wPx - grip &&
-                                                start.y > hPx - grip
-                                            dragButton = null
-                                            resizeButton = null
-                                            if (!resizing && !moveTogetherState.value) {
-                                                val offsets = buttonOffsetsState.value
-                                                val scale = presetScaleState.value *
-                                                    buttonsScaleState.value
-                                                val dpPx = dpPxState.value
-                                                val buttonGrip = buttonGripPxState.value
-                                                // Individual resize (Part 2):
-                                                // which button's own ↘ grip
-                                                // (if any) did the press land
-                                                // on? The grip is the small
-                                                // square at the button's
-                                                // bottom-end corner. The
-                                                // circle is checked first
-                                                // below, so a press inside
-                                                // the button always moves it
-                                                // and only a press outside
-                                                // the circle, in the grip
-                                                // square, resizes it.
-                                                for ((id, off) in offsets) {
-                                                    val cx = wPx / 2f +
-                                                        off.first * scale * dpPx
-                                                    val cy = hPx / 2f +
-                                                        off.second * scale * dpPx
-                                                    val r = OverlayTheme.buttonSize(id) *
-                                                        (buttonSizeMultsState.value[id] ?: 1f) *
-                                                        scale * dpPx / 2f
-                                                    val dx = start.x - cx
-                                                    val dy = start.y - cy
-                                                    if (dx * dx + dy * dy > r * r &&
-                                                        start.x > cx + r - buttonGrip &&
-                                                        start.x <= cx + r &&
-                                                        start.y > cy + r - buttonGrip &&
-                                                        start.y <= cy + r
-                                                    ) {
-                                                        resizeButton = id
-                                                        break
-                                                    }
-                                                }
-                                                if (resizeButton == null) {
-                                                    // Individual move: which
-                                                    // button (if any) did the
-                                                    // press land on? A press
-                                                    // counts when it is inside
-                                                    // the button's circle.
-                                                    for ((id, off) in offsets) {
-                                                        val cx = wPx / 2f +
-                                                            off.first * scale * dpPx
-                                                        val cy = hPx / 2f +
-                                                            off.second * scale * dpPx
-                                                        val r = OverlayTheme.buttonSize(id) *
-                                                            (buttonSizeMultsState.value[id] ?: 1f) *
-                                                            scale * dpPx / 2f
-                                                        val dx = start.x - cx
-                                                        val dy = start.y - cy
-                                                        if (dx * dx + dy * dy <= r * r) {
-                                                            dragButton = id
-                                                            break
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        onDragEnd = {
-                                            val id = dragButton
-                                            val resizeId = resizeButton
-                                            when {
-                                                resizing -> controlSettings.setButtonsScale(buttonsScaleState.value)
-                                                resizeId != null -> buttonSizeMultsState.value[resizeId]?.let {
-                                                    controlSettings.setButtonSizeMult(resizeId, it)
-                                                }
-                                                id != null -> buttonOverridesState.value[id]?.let {
-                                                    controlSettings.setButtonOffset(id, it)
-                                                }
-                                                else -> controlSettings.setButtonsPosition(buttonsPosState.value)
-                                            }
-                                            dragButton = null
-                                            resizeButton = null
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            change.consume()
-                                            if (resizing) {
-                                                val wPx = buttonsWPxState.value
-                                                if (wPx > 0) {
-                                                    val newScale = (buttonsScaleState.value *
-                                                        (1f + dragAmount.x / wPx))
-                                                        .coerceIn(
-                                                            ControlSettings.MIN_GROUP_SCALE,
-                                                            ControlSettings.MAX_GROUP_SCALE,
-                                                        )
-                                                    buttonsScale = newScale
-                                                    // The cluster's bounding box at scale
-                                                    // 1 comes from the effective offsets,
-                                                    // so a resized cluster still fits.
-                                                    val eff = presetScaleState.value * newScale
-                                                    val (cw1, ch1) = clusterSizeState.value
-                                                    val newWPx = with(density) {
-                                                        (cw1 * eff).dp.toPx()
-                                                    }
-                                                    val newHPx = with(density) {
-                                                        (ch1 * eff).dp.toPx()
-                                                    }
-                                                    val halfW = newWPx / 2 / boxW
-                                                    val halfH = newHPx / 2 / boxH
-                                                    buttonsPos = ControlPosition(
-                                                        buttonsPosState.value.x
-                                                            .coerceIn(halfW, 1f - halfW),
-                                                        buttonsPosState.value.y
-                                                            .coerceIn(halfH, 1f - halfH),
-                                                    )
-                                                }
-                                            } else if (resizeButton != null) {
-                                                // Resize that button alone
-                                                // (Part 2): horizontal drag
-                                                // changes its size multiplier
-                                                // (same proportional rule as
-                                                // the group resize), clamped
-                                                // 0.7x..1.5x of the group size.
-                                                val resizeId = resizeButton!!
-                                                val cur = buttonSizeMultsState.value[resizeId] ?: 1f
-                                                val scale = presetScaleState.value *
-                                                    buttonsScaleState.value
-                                                val dpPx = dpPxState.value
-                                                val btnPx = OverlayTheme.buttonSize(resizeId) *
-                                                    cur * scale * dpPx
-                                                if (btnPx > 0) {
-                                                    val newMult = (cur *
-                                                        (1f + dragAmount.x / btnPx))
-                                                        .coerceIn(
-                                                            ControlSettings.MIN_GROUP_SCALE,
-                                                            ControlSettings.MAX_GROUP_SCALE,
-                                                        )
-                                                    val newMults = buttonSizeMultsState.value +
-                                                        (resizeId to newMult)
-                                                    buttonSizeMults = newMults
-                                                    // The cluster grew: its
-                                                    // bounding box at scale 1
-                                                    // comes from the updated
-                                                    // sizes, so re-clamp its
-                                                    // centre to the new size.
-                                                    val eff = presetScaleState.value *
-                                                        buttonsScaleState.value
-                                                    val (cw1, ch1) = OverlayTheme.clusterSizeFor(
-                                                        buttonOffsetsState.value,
-                                                        newMults,
-                                                    )
-                                                    val newWPx = with(density) {
-                                                        (cw1 * eff).dp.toPx()
-                                                    }
-                                                    val newHPx = with(density) {
-                                                        (ch1 * eff).dp.toPx()
-                                                    }
-                                                    val halfW = newWPx / 2 / boxW
-                                                    val halfH = newHPx / 2 / boxH
-                                                    buttonsPos = ControlPosition(
-                                                        buttonsPosState.value.x
-                                                            .coerceIn(halfW, 1f - halfW),
-                                                        buttonsPosState.value.y
-                                                            .coerceIn(halfH, 1f - halfH),
-                                                    )
-                                                }
-                                            } else {
-                                                val id = dragButton
-                                                if (id != null) {
-                                                    // Move that button alone:
-                                                    // the drag moves its offset
-                                                    // (dp at scale 1), clamped
-                                                    // so the button stays fully
-                                                    // inside the game area.
-                                                    val cur = buttonOffsetsState.value[id]
-                                                    if (cur != null) {
-                                                        val scale = presetScaleState.value *
-                                                            buttonsScaleState.value
-                                                        val dpPx = dpPxState.value
-                                                        // The button's own size
-                                                        // multiplier (Part 2):
-                                                        // its effective half-size.
-                                                        val halfBtn = OverlayTheme.buttonSize(id) *
-                                                            (buttonSizeMultsState.value[id] ?: 1f) *
-                                                            scale * dpPx / 2f
-                                                        // The button's centre, in
-                                                        // px of the game area.
-                                                        val ccx = buttonsPosState.value.x * boxW
-                                                        val ccy = buttonsPosState.value.y * boxH
-                                                        val curBx = ccx + cur.first * scale * dpPx
-                                                        val curBy = ccy + cur.second * scale * dpPx
-                                                        val newBx = (curBx + dragAmount.x)
-                                                            .coerceIn(halfBtn, boxW - halfBtn)
-                                                        val newBy = (curBy + dragAmount.y)
-                                                            .coerceIn(halfBtn, boxH - halfBtn)
-                                                        // Back to an offset (dp
-                                                        // at scale 1) from the
-                                                        // cluster centre.
-                                                        val newOff = (
-                                                            (newBx - ccx) / (scale * dpPx)
-                                                        ) to (
-                                                            (newBy - ccy) / (scale * dpPx)
-                                                        )
-                                                        buttonOverrides = buttonOverridesState.value +
-                                                            (id to newOff)
-                                                    }
-                                                } else {
-                                                    val cur = buttonsPosState.value
-                                                    val halfW = buttonsWPxState.value / 2 / boxW
-                                                    val halfH = buttonsHPxState.value / 2 / boxH
-                                                    buttonsPos = ControlPosition(
-                                                        (cur.x + dragAmount.x / boxW)
-                                                            .coerceIn(halfW, 1f - halfW),
-                                                        (cur.y + dragAmount.y / boxH)
-                                                            .coerceIn(halfH, 1f - halfH),
-                                                    )
-                                                }
-                                            }
-                                        },
-                                    )
-                                }
-                            } else {
-                                Modifier
-                            }
-                            // The left control: the arcade stick, or
-                            // the 8-way D-pad (Settings toggle). Both
-                            // sit in the same slot, at the same
-                            // position and size, and both drive the
-                            // same direction mask.
-                            if (leftControl == LeftControl.DPAD) {
-                                Dpad(
-                                    size = (140f * leftScaleEff).dp,
-                                    grabMargin = (16f * leftScaleEff).dp,
-                                    baseTop = overlayTheme.stickBaseTop,
-                                    baseBottom = overlayTheme.stickBaseBottom,
-                                    armTop = overlayTheme.stickNubTop,
-                                    armBottom = overlayTheme.stickNubBottom,
-                                    accent = overlayTheme.accent,
-                                    onDirection = { mask ->
-                                        held = held.copy(
-                                            up = mask and (1 shl InputMask.JOY_UP) != 0,
-                                            down = mask and (1 shl InputMask.JOY_DOWN) != 0,
-                                            left = mask and (1 shl InputMask.JOY_LEFT) != 0,
-                                            right = mask and (1 shl InputMask.JOY_RIGHT) != 0,
-                                        )
-                                        pushMask()
-                                    },
-                                    onDirectionChange = { mask ->
-                                        if (mask != 0) playHaptic()
-                                    },
-                                    enabled = !editControls && !paused,
-                                    modifier = Modifier
-                                        .offset { stickOffset }
-                                        .size(stickTouchDp.dp)
-                                        .alpha(stickOpacity)
-                                        .then(stickDrag),
-                                )
-                            } else {
-                                PsStick(
-                                    size = (140f * leftScaleEff).dp,
-                                    grabMargin = (16f * leftScaleEff).dp,
-                                    baseTop = overlayTheme.stickBaseTop,
-                                    baseBottom = overlayTheme.stickBaseBottom,
-                                    nubTop = overlayTheme.stickNubTop,
-                                    nubBottom = overlayTheme.stickNubBottom,
-                                    accent = overlayTheme.accent,
-                                    onDirection = { mask ->
-                                        held = held.copy(
-                                            up = mask and (1 shl InputMask.JOY_UP) != 0,
-                                            down = mask and (1 shl InputMask.JOY_DOWN) != 0,
-                                            left = mask and (1 shl InputMask.JOY_LEFT) != 0,
-                                            right = mask and (1 shl InputMask.JOY_RIGHT) != 0,
-                                        )
-                                        pushMask()
-                                    },
-                                    onDirectionChange = { mask ->
-                                        if (mask != 0) playHaptic()
-                                    },
-                                    enabled = !editControls && !paused,
-                                    modifier = Modifier
-                                        .offset { stickOffset }
-                                        .size(stickTouchDp.dp)
-                                        .alpha(stickOpacity)
-                                        .then(stickDrag),
-                                )
-                            }
-                            // Neo Geo buttons, placed by the theme
-                            // layout's offsets (AES arc, MVS BCD/A,
-                            // CD diamond, or the 2x2 grid) — each
-                            // button centred on its offset from the
-                            // cluster centre, in the theme's rainbow
-                            // colours. In edit mode the cluster shows
-                            // a thin outline so it reads as draggable,
-                            // and its buttons stop taking input.
-                            Box(
-                                modifier = Modifier
-                                    .offset { buttonsOffset }
-                                    .size(buttonsWdp.dp, buttonsHdp.dp)
-                                    .alpha(buttonsOpacity)
-                                    .then(buttonsDrag)
-                                    .then(
-                                        if (editControls) {
-                                            Modifier.border(
-                                                1.dp,
-                                                Color(EraUi.Palette.GOLD).copy(alpha = 0.5f),
-                                                RoundedCornerShape(8.dp),
-                                            )
-                                        } else {
-                                            Modifier
-                                        },
-                                    ),
-                            ) {
-                                // Top-left of a button, in px, from
-                                // its theme offset (dp at scale 1)
-                                // and the cluster's effective scale.
-                                fun place(id: String): IntOffset {
-                                    val off = buttonOffsets.getValue(id)
-                                    // A button's own size multiplier
-                                    // (Part 2) times the group size.
-                                    val sizePx = with(density) {
-                                        (OverlayTheme.buttonSize(id) *
-                                            (buttonSizeMults[id] ?: 1f) *
-                                            buttonsScaleEff).dp.toPx()
-                                    }
-                                    return IntOffset(
-                                        (buttonsWPx / 2f +
-                                            with(density) { (off.first * buttonsScaleEff).dp.toPx() } -
-                                            sizePx / 2f).roundToInt(),
-                                        (buttonsHPx / 2f +
-                                            with(density) { (off.second * buttonsScaleEff).dp.toPx() } -
-                                            sizePx / 2f).roundToInt(),
-                                    )
-                                }
-                                val styleA = overlayTheme.buttonStyles.getValue("A")
-                                val styleB = overlayTheme.buttonStyles.getValue("B")
-                                val styleC = overlayTheme.buttonStyles.getValue("C")
-                                val styleD = overlayTheme.buttonStyles.getValue("D")
-                                HoldButton("A", { pressed ->
-                                    held = held.copy(a = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("A") }, scale = buttonsScaleEff * (buttonSizeMults["A"] ?: 1f), onHaptic = ::playHaptic, enabled = !editControls && !paused, color = styleA.background, labelColor = styleA.label)
-                                HoldButton("B", { pressed ->
-                                    held = held.copy(b = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("B") }, scale = buttonsScaleEff * (buttonSizeMults["B"] ?: 1f), onHaptic = ::playHaptic, enabled = !editControls && !paused, color = styleB.background, labelColor = styleB.label)
-                                HoldButton("C", { pressed ->
-                                    held = held.copy(c = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("C") }, scale = buttonsScaleEff * (buttonSizeMults["C"] ?: 1f), onHaptic = ::playHaptic, enabled = !editControls && !paused, color = styleC.background, labelColor = styleC.label)
-                                HoldButton("D", { pressed ->
-                                    held = held.copy(d = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("D") }, scale = buttonsScaleEff * (buttonSizeMults["D"] ?: 1f), onHaptic = ::playHaptic, enabled = !editControls && !paused, color = styleD.background, labelColor = styleD.label)
-                                HoldButton("Coin", { pressed ->
-                                    held = held.copy(coin = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("Coin") }, small = true, scale = buttonsScaleEff * (buttonSizeMults["Coin"] ?: 1f), onHaptic = ::playHaptic, enabled = !editControls && !paused)
-                                HoldButton("Start", { pressed ->
-                                    held = held.copy(start = pressed); pushMask()
-                                }, modifier = Modifier.offset { place("Start") }, small = true, scale = buttonsScaleEff * (buttonSizeMults["Start"] ?: 1f), onHaptic = ::playHaptic, enabled = !editControls && !paused)
-                                // Per-button resize grips (Part 2,
-                                // edit mode, Together off only): a
-                                // small gold "↘" at each button's
-                                // bottom-end corner, marking where
-                                // to grab to resize just that button.
-                                // Purely visual, like the unit grips.
-                                if (editControls && !moveTogether) {
-                                    for (id in ControlSettings.BUTTON_IDS) {
-                                        val btnPx = with(density) {
-                                            (OverlayTheme.buttonSize(id) *
-                                                (buttonSizeMults[id] ?: 1f) *
-                                                buttonsScaleEff).dp.toPx()
-                                        }
-                                        val topLeft = place(id)
-                                        val gripPx = with(density) { 20.dp.toPx() }
-                                        Box(
-                                            modifier = Modifier
-                                                .offset {
-                                                    IntOffset(
-                                                        (topLeft.x + btnPx - gripPx).roundToInt(),
-                                                        (topLeft.y + btnPx - gripPx).roundToInt(),
-                                                    )
-                                                }
-                                                .size(20.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(14.dp)
-                                                    .background(
-                                                        Color(EraUi.Palette.GOLD),
-                                                        RoundedCornerShape(3.dp),
-                                                    ),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                Text(
-                                                    "↘",
-                                                    color = Color(EraUi.Palette.ON_GOLD),
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            // Resize grips (edit mode only): a visible
-                            // "↘" grip at each unit's bottom-end
-                            // corner. Purely visual — the unit's own
-                            // drag detector decides move vs resize by
-                            // where the press landed, so the grip
-                            // takes no input itself and the two
-                            // gestures never fight. 28dp touch area
-                            // (the drag zone), 20dp visible grip.
-                            if (editControls) {
-                                ResizeGrip(
-                                    offset = IntOffset(
-                                        (stickPos.x * boxW + stickTouchPx / 2 - handlePx / 2).roundToInt(),
-                                        (stickPos.y * boxH + stickTouchPx / 2 - handlePx / 2).roundToInt(),
-                                    ),
-                                )
-                                ResizeGrip(
-                                    offset = IntOffset(
-                                        (buttonsPos.x * boxW + buttonsWPx / 2 - handlePx / 2).roundToInt(),
-                                        (buttonsPos.y * boxH + buttonsHPx / 2 - handlePx / 2).roundToInt(),
-                                    ),
-                                )
-                            }
-                        }
-                        // Edit-mode hint, over the game area.
-                        if (editControls) {
-                            Text(
-                                "Drag a control to move it, drag its ↘ corner to resize it — buttons move together when Together is on, one at a time when it is off; with Together off, a button's own ↘ corner resizes just that button",
-                                color = Color(EraUi.Palette.TEXT),
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .background(Color.Black.copy(alpha = 0.6f))
-                                    .padding(4.dp),
-                            )
-                        }
-                        // Quick save/load status: a brief note over
-                        // the game area, cleared after a couple of
-                        // seconds (see the LaunchedEffect above).
-                        // Hidden while paused — the pause menu has
-                        // its own status line.
-                        if (quickStatus.isNotEmpty() && !paused) {
-                            Text(
-                                quickStatus,
-                                color = Color(EraUi.Palette.GOLD),
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .padding(top = 8.dp)
-                                    .background(
-                                        Color(EraUi.Palette.SURFACE),
-                                        RoundedCornerShape(4.dp),
-                                    )
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                            )
-                        }
-                        // Phase 10 — RetroAchievements: the unlock
-                        // popup, a gold note over the game area
-                        // (the same treatment as the quick status
-                        // above), cleared after four seconds (see
-                        // the LaunchedEffect above). Hidden while
-                        // paused.
-                        val unlock = RaClient.lastUnlock
-                        if (unlock != null && !paused) {
-                            Text(
-                                "Achievement Unlocked: ${unlock.title} (+${unlock.points} pts)",
-                                color = Color(EraUi.Palette.GOLD),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .padding(top = 8.dp)
-                                    .background(
-                                        Color(EraUi.Palette.SURFACE),
-                                        RoundedCornerShape(4.dp),
-                                    )
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                            )
-                        }
-                        // v1.2.0 (item 2) — the leaderboard
-                        // scoreboard note, the same gold treatment
-                        // as the unlock popup: the submitted score
-                        // and the new rank. Hidden while paused.
-                        val scoreboard = RaClient.lastScoreboard
-                        if (scoreboard != null && !paused) {
-                            Text(
-                                "Score submitted: ${scoreboard.submittedScore} — Rank #${scoreboard.newRank} of ${scoreboard.numEntries}",
-                                color = Color(EraUi.Palette.GOLD),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .padding(top = 8.dp)
-                                    .background(
-                                        Color(EraUi.Palette.SURFACE),
-                                        RoundedCornerShape(4.dp),
-                                    )
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                            )
-                        }
-                        // v1.5, feature 1 — speed hold buttons: FF
-                        // and SLOW, hold to run. They are NOT part
-                        // of the overlay by default: each appears
-                        // only when its speed is enabled in Settings
-                        // (both off by default), so the overlay
-                        // stays clean until he turns one on.
-                        // Top-right of the game area, clear of the
-                        // stick (bottom-left) and the buttons
-                        // (bottom-right); hidden while paused or
-                        // adjusting controls, like the notes above.
-                        if (!paused && !editControls && (ffSpeed > SpeedControl.NORMAL || slowOn)) {
-                            Row(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(top = 8.dp, end = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                if (slowOn) {
-                                    HoldButton(
-                                        label = "SLOW",
-                                        small = true,
-                                        onHoldChange = { held ->
-                                            slowHeld = held
-                                            pushSpeed()
-                                        },
-                                    )
-                                }
-                                if (ffSpeed > SpeedControl.NORMAL) {
-                                    HoldButton(
-                                        label = "FF",
-                                        small = true,
-                                        onHoldChange = { held ->
-                                            ffHeld = held
-                                            pushSpeed()
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                        // Pause overlay: covers the game and the
-                        // controls (drawn last, so it is on top) and
-                        // swallows touches, so no button can be
-                        // pressed while paused. Hidden while the
-                        // controls are being adjusted (the game
-                        // stays paused underneath).
-                        if (paused && !editControls) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.7f))
-                                    .clickable(enabled = true, onClick = {}),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                PauseMenu(
-                                    timeLeft = pauseTimeLeft,
-                                    status = pauseStatus,
-                                    // The picker reads the saves
-                                    // folder fresh on each
-                                    // composition, so a slot saved
-                                    // in this pause shows occupied
-                                    // at once.
-                                    selectedSlot = saveSlot,
-                                    occupiedSlots = playingGame?.let {
-                                        QuickSave.occupiedSlots(
-                                            File(context.filesDir, "saves"),
-                                            it.mainFile,
-                                        )
-                                    } ?: emptyList(),
-                                    // v1.5, feature 2 — the slot
-                                    // thumbnails, read fresh on
-                                    // each composition like the
-                                    // occupied slots above.
-                                    slotThumbnails = playingGame?.let {
-                                        QuickSave.slotThumbnails(
-                                            File(context.filesDir, "saves"),
-                                            it.mainFile,
-                                        ).mapValues { (_, file) -> file.path }
-                                    } ?: emptyMap(),
-                                    onSelectSlot = { saveSlot = it },
-                                    onResume = { resumeGame() },
-                                    // Phase 9, item 9 — only under
-                                    // Universe BIOS: any other system
-                                    // has no UniBIOS menu to open.
-                                    showUniBiosMenu = playingGame?.let {
-                                        UniBiosMenu.isUniBiosMode(it.effectiveMode)
-                                    } ?: false,
-                                    onUniBiosMenu = { openUniBiosMenu() },
-                                    onSaveState = { saveState() },
-                                    onLoadState = { loadState() },
-                                    // Phase 10 — RetroAchievements:
-                                    // the achievements list, only
-                                    // when RA has a game loaded. The
-                                    // game stays paused underneath.
-                                    showAchievements = RaClient.gameLoaded,
-                                    onAchievements = { screen = Screen.Achievements },
-                                    // v1.2.0 (item 2) — the
-                                    // leaderboards, only when the
-                                    // game has at least one.
-                                    showLeaderboards = RaClient.leaderboards.isNotEmpty(),
-                                    onLeaderboards = { screen = Screen.Leaderboards },
-                                    onSettings = {
-                                        settingsFrom = Screen.Playing
-                                        screen = Screen.Settings
-                                    },
-                                    onAdjustControls = {
-                                        editControls = true
-                                        // Phase 9, item 7 — entering
-                                        // edit mode always shows the
-                                        // bar and suspends auto-hide
-                                        // until Done.
-                                        topBar.onEditModeChanged(true)
-                                        syncTopBar()
-                                    },
-                                    onQuit = { quitToLibrary() },
-                                )
-                            }
-                        }
-                    }
-                }
+                PlayingScreen(
+                    syncTopBar = { syncTopBar() },
+                    exitEditMode = { exitEditMode() },
+                    playHaptic = { playHaptic() },
+                    pushMask = { pushMask() },
+                    pushSpeed = { pushSpeed() },
+                    quickSave = { quickSave() },
+                    quickLoad = { quickLoad() },
+                    pauseGame = { pauseGame() },
+                    resumeGame = { resumeGame() },
+                    openUniBiosMenu = { openUniBiosMenu() },
+                    saveState = { saveState() },
+                    loadState = { loadState() },
+                    quitToLibrary = { quitToLibrary() },
+                )
             }
 
             Screen.Settings -> {
-                // Audit fix (a): same status-bar inset padding as the
-                // library, so the "Settings" title is not drawn under
-                // the status bar and scrolled content stays below it.
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .statusBarsPadding()
-                        .verticalScroll(rememberScrollState())
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text("Settings", style = MaterialTheme.typography.headlineMedium)
-                    Text(
-                        "Options under \"Apply immediately\" take effect on the next frame, even while a game is running. Options under \"Next game\" take effect the next time you start a game.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text("Apply immediately", style = MaterialTheme.typography.titleSmall)
-                    for (opt in CoreOptions.ALL.filter { it.live }) {
-                        OptionRow(opt, settings)
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Text("Next game", style = MaterialTheme.typography.titleSmall)
-                    for (opt in CoreOptions.ALL.filter { !it.live }) {
-                        OptionRow(opt, settings)
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Text("CRT display", style = MaterialTheme.typography.titleSmall)
-                    ControlDropdownRow(
-                        "CRT shader",
-                        listOf("on" to "On", "off" to "Off"),
-                        if (crtShaderOn) "on" else "off",
-                    ) { value ->
-                        val on = value == "on"
-                        shaderSettings.setShaderMaster(on)
-                        crtShaderOn = on
-                    }
-                    Text(
-                        "Each system uses its own chain, tuned to the display it was played on — AES Hearth, Arcade Neon, Neo Geo CD Comet, Neo Geo CDZ Zenith. Takes effect the next time a game starts.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    ControlDropdownRow(
-                        "Screen curvature",
-                        listOf("on" to "On", "off" to "Off"),
-                        if (curvatureOn) "on" else "off",
-                    ) { value ->
-                        val on = value == "on"
-                        shaderSettings.setCurvatureMaster(on)
-                        curvatureOn = on
-                    }
-                    Text(
-                        "Each system's curve matches its own display — the home TV curve for AES and the CD consoles, the flatter arcade-monitor curve for MVS. Takes effect the next time a game starts.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text("On-screen controls", style = MaterialTheme.typography.titleSmall)
-                    ControlDropdownRow(
-                        "Haptics",
-                        listOf(
-                            "off" to "Off",
-                            "light" to "Light",
-                            "medium" to "Medium",
-                            "heavy" to "Heavy",
-                        ),
-                        hapticsLevel.name.lowercase(),
-                    ) { value ->
-                        val level = HapticLevel.valueOf(value.uppercase())
-                        controlSettings.setHaptics(level)
-                        hapticsLevel = level
-                    }
-                    ControlDropdownRow(
-                        "Controls size",
-                        listOf(
-                            "small" to "Small",
-                            "medium" to "Medium",
-                            "large" to "Large",
-                        ),
-                        controlSize.name.lowercase(),
-                    ) { value ->
-                        val size = ControlSize.valueOf(value.uppercase())
-                        controlSettings.setSize(size)
-                        controlSize = size
-                    }
-                    ControlDropdownRow(
-                        "Left control",
-                        listOf(
-                            "stick" to "Joystick",
-                            "dpad" to "D-pad",
-                        ),
-                        leftControl.name.lowercase(),
-                    ) { value ->
-                        val control = LeftControl.valueOf(value.uppercase())
-                        controlSettings.setLeftControl(control)
-                        leftControl = control
-                    }
-                    Text(
-                        "The D-pad is eight-way, like the stick — its corners are diagonals. It never switches to four-way.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Text("Turbo (autofire)", style = MaterialTheme.typography.bodyMedium)
-                    for (id in ControlSettings.TURBO_BUTTON_IDS) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text("Turbo $id", style = MaterialTheme.typography.bodyMedium)
-                            Switch(
-                                checked = turboMask and TurboInput.bitFor(id) != 0,
-                                onCheckedChange = { on ->
-                                    controlSettings.setTurboEnabled(id, on)
-                                    turboMask = controlSettings.turboMask()
-                                },
-                            )
-                        }
-                    }
-                    Text(
-                        "While held, a turbo button presses and releases about 12 times a second — for shooters and run-and-guns. Off by default. Applies to the on-screen buttons and the gamepad.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text("Gamepad", style = MaterialTheme.typography.titleSmall)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("Button mapping", style = MaterialTheme.typography.bodyMedium)
-                        Button(onClick = {
-                            remapCapturing = null
-                            remapHint = ""
-                            screen = Screen.GamepadRemap
-                        }) { Text("Remap") }
-                    }
-                    Text(
-                        "Move the Neo Geo buttons to whichever gamepad buttons you like. The six face and menu buttons swap with each other; the shoulders stay as quick save and quick load, and the D-pad and stick keep steering.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text("Latency", style = MaterialTheme.typography.titleSmall)
-                    ControlDropdownRow(
-                        "Run-ahead",
-                        Runahead.OPTIONS,
-                        Runahead.store(runaheadFrames),
-                    ) { value ->
-                        val frames = Runahead.parse(value)
-                        appSettings.setRunaheadFrames(frames)
-                        runaheadFrames = frames
-                    }
-                    Text(
-                        "Runs the game one or two frames ahead of the display, so a press shows up sooner. Off by default. Takes effect the next time a game starts.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text("Speed", style = MaterialTheme.typography.titleSmall)
-                    ControlDropdownRow(
-                        "Fast-forward",
-                        listOf("off" to "Off", "2" to "2x", "4" to "4x"),
-                        SpeedControl.storeFfSetting(ffSpeed),
-                    ) { value ->
-                        val speed = SpeedControl.parseFfSetting(value)
-                        appSettings.setFastForwardSpeed(speed)
-                        ffSpeed = speed
-                    }
-                    Text(
-                        "Hold the FF button on the game screen, or hold the left stick click (L3) on a gamepad, to run the game faster — for skipping loading screens and long intros. The button only appears on the overlay while a speed is picked. Sound is muted while it runs.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    ControlDropdownRow(
-                        "Slow motion",
-                        listOf("off" to "Off", "on" to "0.5x"),
-                        SpeedControl.storeSlowSetting(slowOn),
-                    ) { value ->
-                        val on = SpeedControl.parseSlowSetting(value)
-                        appSettings.setSlowMotionOn(on)
-                        slowOn = on
-                    }
-                    Text(
-                        "Hold the SLOW button on the game screen, or hold the right stick click (R3) on a gamepad, to run the game at half speed — for hard sections. The button only appears on the overlay while it is on. Sound is muted while it runs.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text("Save states", style = MaterialTheme.typography.titleSmall)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("Auto-save on quit", style = MaterialTheme.typography.bodyMedium)
-                        Switch(
-                            checked = autoSaveOnQuit,
-                            onCheckedChange = { on ->
-                                appSettings.setAutoSaveOnQuit(on)
-                                autoSaveOnQuit = on
-                            },
-                        )
-                    }
-                    Text(
-                        "Quitting to the library saves the game to slot 1 automatically, so a quick load brings it back to where it was left. Slots 2 and 3 are untouched. On by default.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    // Phase 10 — RetroAchievements (v1.1.2): sign
-                    // in with a username and password, like other
-                    // emulators — the API-key login is gone. The
-                    // password is used once, for this login, and is
-                    // never stored: the session token the server
-                    // returns is what the app keeps. Logged out,
-                    // achievements are simply inactive — no errors,
-                    // no nagging. The status line below is the live
-                    // session state.
-                    Text("RetroAchievements", style = MaterialTheme.typography.titleSmall)
-                    OutlinedTextField(
-                        value = raUsernameText,
-                        onValueChange = { raUsernameText = it },
-                        singleLine = true,
-                        label = { Text("Username") },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = raPasswordText,
-                        onValueChange = { raPasswordText = it },
-                        singleLine = true,
-                        label = { Text("Password") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        RaClient.status.ifEmpty { "Not logged in." },
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            val user = raUsernameText.trim()
-                            val password = raPasswordText
-                            appSettings.setRaUsername(user)
-                            raUsernameText = user
-                            if (user.isNotEmpty() && password.isNotEmpty()) {
-                                // init logs in with the stored
-                                // token when it first creates the
-                                // client; here the typed password
-                                // is the fresh intent, so init
-                                // without the auto-login and log
-                                // in with the password directly —
-                                // the login is never started twice.
-                                if (!RaClient.initialised) {
-                                    RaClient.init(appSettings, autoLogin = false)
-                                }
-                                RaClient.login(user, password)
-                            } else {
-                                RaClient.logout()
-                            }
-                        }) {
-                            Text(if (RaClient.loggedIn) "Log in again" else "Log in")
-                        }
-                        if (RaClient.loggedIn || appSettings.raUsername().isNotEmpty()) {
-                            OutlinedButton(onClick = {
-                                appSettings.setRaUsername("")
-                                appSettings.setRaToken("")
-                                raUsernameText = ""
-                                raPasswordText = ""
-                                RaClient.logout()
-                            }) {
-                                Text("Log out")
-                            }
-                        }
-                    }
-                    Text(
-                        "Sign in with your RetroAchievements account to earn achievements while you play. Your password is used once to log in and is not stored on the device. Achievements are softcore — save states stay available. A game the site does not recognise (or a disc) simply has no achievements.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("Stick opacity", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "${(stickOpacity * 100).roundToInt()}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    Slider(
-                        value = stickOpacity,
-                        onValueChange = { stickOpacity = it },
-                        valueRange = 0.2f..1.0f,
-                        steps = 7,
-                        onValueChangeFinished = {
-                            controlSettings.setStickOpacity((stickOpacity * 100).roundToInt())
-                        },
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("Buttons opacity", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "${(buttonsOpacity * 100).roundToInt()}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    Slider(
-                        value = buttonsOpacity,
-                        onValueChange = { buttonsOpacity = it },
-                        valueRange = 0.2f..1.0f,
-                        steps = 7,
-                        onValueChangeFinished = {
-                            controlSettings.setButtonsOpacity((buttonsOpacity * 100).roundToInt())
-                        },
-                    )
-                    Text(
-                        "To move and resize the controls, start a game, pause, and tap Adjust controls — drag a control to move it, drag its ↘ corner to resize it. Buttons move together when Together is on, or one at a time when it is off; with Together off, drag a button's own ↘ corner to resize just that button.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text("Startup", style = MaterialTheme.typography.titleSmall)
-                    ControlDropdownRow(
-                        "Show boot screen",
-                        listOf("on" to "On", "off" to "Off"),
-                        if (showBoot) "on" else "off",
-                    ) { value ->
-                        val show = value == "on"
-                        appSettings.setShowBoot(show)
-                        showBoot = show
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Text("About", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "HowlingDog — a standalone Neo Geo emulator (AES / MVS / CD / CDZ).",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "Version ${BuildConfig.VERSION_NAME}",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "HowlingDog is not affiliated with or endorsed by SNK Corporation.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { screen = Screen.Licences }) { Text("Licences") }
-                        // First-run SYSTEM SETUP, re-openable any
-                        // time: the debug-menu-style guide for a
-                        // fresh install (audit 2).
-                        Button(onClick = { screen = Screen.Setup }) { Text("Setup guide") }
-                    }
-                    // Phase 9, item 10 — in-app updater: a manual
-                    // check on demand, plus the download when one
-                    // is available. A manual check clears any
-                    // dismissal first, so a found update shows its
-                    // library notice again.
-                    Spacer(Modifier.height(16.dp))
-                    Text("Updates", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "Updates come from the project's GitHub releases and install in place — same signature, your saves untouched.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            appSettings.clearDismissedUpdateVersion()
-                            dismissedUpdate = null
-                            UpdateChecker.checkAsync(appSettings, BuildConfig.VERSION_NAME, force = true)
-                        }) { Text("Check for updates") }
-                        val settingsAvailable = UpdateChecker.availableVersion
-                        if (settingsAvailable != null &&
-                            UpdateChecker.downloadUrl != null &&
-                            UpdateChecker.downloadProgress !in 0..100
-                        ) {
-                            Button(onClick = { UpdateChecker.downloadAndInstall(context) }) {
-                                Text("Download v$settingsAvailable")
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    when {
-                        UpdateChecker.checking -> Text(
-                            "Checking for updates…",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        UpdateChecker.downloadProgress in 0..100 -> Text(
-                            "Downloading version ${UpdateChecker.availableVersion}… ${UpdateChecker.downloadProgress}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        UpdateChecker.availableVersion != null -> {
-                            val settingsAvailable = UpdateChecker.availableVersion
-                            Text(
-                                "Version v$settingsAvailable is available.",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            if (UpdateChecker.downloadUrl == null) {
-                                Text(
-                                    "It has no APK attached yet — check back later.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                            UpdateChecker.releaseNotes?.let { notes ->
-                                Spacer(Modifier.height(8.dp))
-                                Text("What's new", style = MaterialTheme.typography.titleSmall)
-                                Text(
-                                    notes.take(1000),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                            if (UpdateChecker.downloadProgress == -2) {
-                                Text(
-                                    "The download failed — check your connection and try again.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                            if (UpdateChecker.downloadProgress == -3) {
-                                Text(
-                                    "That download failed its check and was deleted — try again.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                        }
-                        UpdateChecker.lastCheckOutcome == CheckOutcome.UP_TO_DATE -> Text(
-                            "You're up to date.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        UpdateChecker.lastCheckOutcome == CheckOutcome.FAILED -> Text(
-                            "Couldn't check — check your connection and try again.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        else -> Text(
-                            "Updates are checked when you open the library.",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Button(onClick = { screen = settingsFrom }) { Text("Back") }
-                }
+                SettingsScreen()
             }
             Screen.GamepadRemap -> {
                 // Gamepad button remapping (v1.3.0, part 1): a
@@ -4279,6 +2910,1557 @@ class MainActivity : ComponentActivity() {
                 // in the APK, plus the GPL-3.0 frontend note and the
                 // SNK disclaimer. Back returns to Settings.
                 LicencesScreen(onBack = { screen = Screen.Settings })
+            }
+        }
+    }
+
+    // v1.3.1 — the settings screen, split out of HowlingDogUi.
+    // Extracting the game screen alone only moved HowlingDogUi
+    // from 264 to 261 registers (the peak lives in the remaining
+    // branches); the Settings branch is the next biggest, and
+    // extracting it too drops the method comfortably under the
+    // 256-register limit. Shared states arrive as MutableState
+    // holders and are re-delegated with `by`, so the body below
+    // is HowlingDogUi's Settings branch verbatim.
+    @Composable
+    private fun SettingsScreen(
+    ) {
+        val context = LocalContext.current
+        var screen by screenState
+        var crtShaderOn by crtShaderOnState
+        var curvatureOn by curvatureOnState
+        var hapticsLevel by hapticsLevelState
+        var controlSize by controlSizeState
+        var leftControl by leftControlState
+        var turboMask by turboMaskState
+        var remapCapturing by remapCapturingState
+        var remapHint by remapHintState
+        var runaheadFrames by runaheadFramesState
+        var raUsernameText by raUsernameTextState
+        var raPasswordText by raPasswordTextState
+        var stickOpacity by stickOpacityState
+        var buttonsOpacity by buttonsOpacityState
+        var showBoot by showBootState
+        var dismissedUpdate by dismissedUpdateState
+        var ffSpeed by ffSpeedState
+        var slowOn by slowOnState
+        var autoSaveOnQuit by autoSaveOnQuitState
+        var settingsFrom by settingsFromState
+        // Audit fix (a): same status-bar inset padding as the
+        // library, so the "Settings" title is not drawn under
+        // the status bar and scrolled content stays below it.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("Settings", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "Options under \"Apply immediately\" take effect on the next frame, even while a game is running. Options under \"Next game\" take effect the next time you start a game.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text("Apply immediately", style = MaterialTheme.typography.titleSmall)
+            for (opt in CoreOptions.ALL.filter { it.live }) {
+                OptionRow(opt, settings)
+            }
+            Spacer(Modifier.height(16.dp))
+            Text("Next game", style = MaterialTheme.typography.titleSmall)
+            for (opt in CoreOptions.ALL.filter { !it.live }) {
+                OptionRow(opt, settings)
+            }
+            Spacer(Modifier.height(16.dp))
+            Text("CRT display", style = MaterialTheme.typography.titleSmall)
+            ControlDropdownRow(
+                "CRT shader",
+                listOf("on" to "On", "off" to "Off"),
+                if (crtShaderOn) "on" else "off",
+            ) { value ->
+                val on = value == "on"
+                shaderSettings.setShaderMaster(on)
+                crtShaderOn = on
+            }
+            Text(
+                "Each system uses its own chain, tuned to the display it was played on — AES Hearth, Arcade Neon, Neo Geo CD Comet, Neo Geo CDZ Zenith. Takes effect the next time a game starts.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            ControlDropdownRow(
+                "Screen curvature",
+                listOf("on" to "On", "off" to "Off"),
+                if (curvatureOn) "on" else "off",
+            ) { value ->
+                val on = value == "on"
+                shaderSettings.setCurvatureMaster(on)
+                curvatureOn = on
+            }
+            Text(
+                "Each system's curve matches its own display — the home TV curve for AES and the CD consoles, the flatter arcade-monitor curve for MVS. Takes effect the next time a game starts.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text("On-screen controls", style = MaterialTheme.typography.titleSmall)
+            ControlDropdownRow(
+                "Haptics",
+                listOf(
+                    "off" to "Off",
+                    "light" to "Light",
+                    "medium" to "Medium",
+                    "heavy" to "Heavy",
+                ),
+                hapticsLevel.name.lowercase(),
+            ) { value ->
+                val level = HapticLevel.valueOf(value.uppercase())
+                controlSettings.setHaptics(level)
+                hapticsLevel = level
+            }
+            ControlDropdownRow(
+                "Controls size",
+                listOf(
+                    "small" to "Small",
+                    "medium" to "Medium",
+                    "large" to "Large",
+                ),
+                controlSize.name.lowercase(),
+            ) { value ->
+                val size = ControlSize.valueOf(value.uppercase())
+                controlSettings.setSize(size)
+                controlSize = size
+            }
+            ControlDropdownRow(
+                "Left control",
+                listOf(
+                    "stick" to "Joystick",
+                    "dpad" to "D-pad",
+                ),
+                leftControl.name.lowercase(),
+            ) { value ->
+                val control = LeftControl.valueOf(value.uppercase())
+                controlSettings.setLeftControl(control)
+                leftControl = control
+            }
+            Text(
+                "The D-pad is eight-way, like the stick — its corners are diagonals. It never switches to four-way.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text("Turbo (autofire)", style = MaterialTheme.typography.bodyMedium)
+            for (id in ControlSettings.TURBO_BUTTON_IDS) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Turbo $id", style = MaterialTheme.typography.bodyMedium)
+                    Switch(
+                        checked = turboMask and TurboInput.bitFor(id) != 0,
+                        onCheckedChange = { on ->
+                            controlSettings.setTurboEnabled(id, on)
+                            turboMask = controlSettings.turboMask()
+                        },
+                    )
+                }
+            }
+            Text(
+                "While held, a turbo button presses and releases about 12 times a second — for shooters and run-and-guns. Off by default. Applies to the on-screen buttons and the gamepad.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text("Gamepad", style = MaterialTheme.typography.titleSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Button mapping", style = MaterialTheme.typography.bodyMedium)
+                Button(onClick = {
+                    remapCapturing = null
+                    remapHint = ""
+                    screen = Screen.GamepadRemap
+                }) { Text("Remap") }
+            }
+            Text(
+                "Move the Neo Geo buttons to whichever gamepad buttons you like. The six face and menu buttons swap with each other; the shoulders stay as quick save and quick load, and the D-pad and stick keep steering.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text("Latency", style = MaterialTheme.typography.titleSmall)
+            ControlDropdownRow(
+                "Run-ahead",
+                Runahead.OPTIONS,
+                Runahead.store(runaheadFrames),
+            ) { value ->
+                val frames = Runahead.parse(value)
+                appSettings.setRunaheadFrames(frames)
+                runaheadFrames = frames
+            }
+            Text(
+                "Runs the game one or two frames ahead of the display, so a press shows up sooner. Off by default. Takes effect the next time a game starts.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text("Speed", style = MaterialTheme.typography.titleSmall)
+            ControlDropdownRow(
+                "Fast-forward",
+                listOf("off" to "Off", "2" to "2x", "4" to "4x"),
+                SpeedControl.storeFfSetting(ffSpeed),
+            ) { value ->
+                val speed = SpeedControl.parseFfSetting(value)
+                appSettings.setFastForwardSpeed(speed)
+                ffSpeed = speed
+            }
+            Text(
+                "Hold the FF button on the game screen, or hold the left stick click (L3) on a gamepad, to run the game faster — for skipping loading screens and long intros. The button only appears on the overlay while a speed is picked. Sound is muted while it runs.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            ControlDropdownRow(
+                "Slow motion",
+                listOf("off" to "Off", "on" to "0.5x"),
+                SpeedControl.storeSlowSetting(slowOn),
+            ) { value ->
+                val on = SpeedControl.parseSlowSetting(value)
+                appSettings.setSlowMotionOn(on)
+                slowOn = on
+            }
+            Text(
+                "Hold the SLOW button on the game screen, or hold the right stick click (R3) on a gamepad, to run the game at half speed — for hard sections. The button only appears on the overlay while it is on. Sound is muted while it runs.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text("Save states", style = MaterialTheme.typography.titleSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Auto-save on quit", style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = autoSaveOnQuit,
+                    onCheckedChange = { on ->
+                        appSettings.setAutoSaveOnQuit(on)
+                        autoSaveOnQuit = on
+                    },
+                )
+            }
+            Text(
+                "Quitting to the library saves the game to slot 1 automatically, so a quick load brings it back to where it was left. Slots 2 and 3 are untouched. On by default.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(16.dp))
+            // Phase 10 — RetroAchievements (v1.1.2): sign
+            // in with a username and password, like other
+            // emulators — the API-key login is gone. The
+            // password is used once, for this login, and is
+            // never stored: the session token the server
+            // returns is what the app keeps. Logged out,
+            // achievements are simply inactive — no errors,
+            // no nagging. The status line below is the live
+            // session state.
+            Text("RetroAchievements", style = MaterialTheme.typography.titleSmall)
+            OutlinedTextField(
+                value = raUsernameText,
+                onValueChange = { raUsernameText = it },
+                singleLine = true,
+                label = { Text("Username") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = raPasswordText,
+                onValueChange = { raPasswordText = it },
+                singleLine = true,
+                label = { Text("Password") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                RaClient.status.ifEmpty { "Not logged in." },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    val user = raUsernameText.trim()
+                    val password = raPasswordText
+                    appSettings.setRaUsername(user)
+                    raUsernameText = user
+                    if (user.isNotEmpty() && password.isNotEmpty()) {
+                        // init logs in with the stored
+                        // token when it first creates the
+                        // client; here the typed password
+                        // is the fresh intent, so init
+                        // without the auto-login and log
+                        // in with the password directly —
+                        // the login is never started twice.
+                        if (!RaClient.initialised) {
+                            RaClient.init(appSettings, autoLogin = false)
+                        }
+                        RaClient.login(user, password)
+                    } else {
+                        RaClient.logout()
+                    }
+                }) {
+                    Text(if (RaClient.loggedIn) "Log in again" else "Log in")
+                }
+                if (RaClient.loggedIn || appSettings.raUsername().isNotEmpty()) {
+                    OutlinedButton(onClick = {
+                        appSettings.setRaUsername("")
+                        appSettings.setRaToken("")
+                        raUsernameText = ""
+                        raPasswordText = ""
+                        RaClient.logout()
+                    }) {
+                        Text("Log out")
+                    }
+                }
+            }
+            Text(
+                "Sign in with your RetroAchievements account to earn achievements while you play. Your password is used once to log in and is not stored on the device. Achievements are softcore — save states stay available. A game the site does not recognise (or a disc) simply has no achievements.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Stick opacity", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "${(stickOpacity * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Slider(
+                value = stickOpacity,
+                onValueChange = { stickOpacity = it },
+                valueRange = 0.2f..1.0f,
+                steps = 7,
+                onValueChangeFinished = {
+                    controlSettings.setStickOpacity((stickOpacity * 100).roundToInt())
+                },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Buttons opacity", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "${(buttonsOpacity * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Slider(
+                value = buttonsOpacity,
+                onValueChange = { buttonsOpacity = it },
+                valueRange = 0.2f..1.0f,
+                steps = 7,
+                onValueChangeFinished = {
+                    controlSettings.setButtonsOpacity((buttonsOpacity * 100).roundToInt())
+                },
+            )
+            Text(
+                "To move and resize the controls, start a game, pause, and tap Adjust controls — drag a control to move it, drag its ↘ corner to resize it. Buttons move together when Together is on, or one at a time when it is off; with Together off, drag a button's own ↘ corner to resize just that button.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text("Startup", style = MaterialTheme.typography.titleSmall)
+            ControlDropdownRow(
+                "Show boot screen",
+                listOf("on" to "On", "off" to "Off"),
+                if (showBoot) "on" else "off",
+            ) { value ->
+                val show = value == "on"
+                appSettings.setShowBoot(show)
+                showBoot = show
+            }
+            Spacer(Modifier.height(16.dp))
+            Text("About", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "HowlingDog — a standalone Neo Geo emulator (AES / MVS / CD / CDZ).",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                "Version ${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                "HowlingDog is not affiliated with or endorsed by SNK Corporation.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { screen = Screen.Licences }) { Text("Licences") }
+                // First-run SYSTEM SETUP, re-openable any
+                // time: the debug-menu-style guide for a
+                // fresh install (audit 2).
+                Button(onClick = { screen = Screen.Setup }) { Text("Setup guide") }
+            }
+            // Phase 9, item 10 — in-app updater: a manual
+            // check on demand, plus the download when one
+            // is available. A manual check clears any
+            // dismissal first, so a found update shows its
+            // library notice again.
+            Spacer(Modifier.height(16.dp))
+            Text("Updates", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Updates come from the project's GitHub releases and install in place — same signature, your saves untouched.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    appSettings.clearDismissedUpdateVersion()
+                    dismissedUpdate = null
+                    UpdateChecker.checkAsync(appSettings, BuildConfig.VERSION_NAME, force = true)
+                }) { Text("Check for updates") }
+                val settingsAvailable = UpdateChecker.availableVersion
+                if (settingsAvailable != null &&
+                    UpdateChecker.downloadUrl != null &&
+                    UpdateChecker.downloadProgress !in 0..100
+                ) {
+                    Button(onClick = { UpdateChecker.downloadAndInstall(context) }) {
+                        Text("Download v$settingsAvailable")
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            when {
+                UpdateChecker.checking -> Text(
+                    "Checking for updates…",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                UpdateChecker.downloadProgress in 0..100 -> Text(
+                    "Downloading version ${UpdateChecker.availableVersion}… ${UpdateChecker.downloadProgress}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                UpdateChecker.availableVersion != null -> {
+                    val settingsAvailable = UpdateChecker.availableVersion
+                    Text(
+                        "Version v$settingsAvailable is available.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (UpdateChecker.downloadUrl == null) {
+                        Text(
+                            "It has no APK attached yet — check back later.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    UpdateChecker.releaseNotes?.let { notes ->
+                        Spacer(Modifier.height(8.dp))
+                        Text("What's new", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            notes.take(1000),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (UpdateChecker.downloadProgress == -2) {
+                        Text(
+                            "The download failed — check your connection and try again.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    if (UpdateChecker.downloadProgress == -3) {
+                        Text(
+                            "That download failed its check and was deleted — try again.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+                UpdateChecker.lastCheckOutcome == CheckOutcome.UP_TO_DATE -> Text(
+                    "You're up to date.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                UpdateChecker.lastCheckOutcome == CheckOutcome.FAILED -> Text(
+                    "Couldn't check — check your connection and try again.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                else -> Text(
+                    "Updates are checked when you open the library.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = { screen = settingsFrom }) { Text("Back") }
+        }
+    }
+
+    // v1.3.1 — the game screen, split out of HowlingDogUi.
+    // HowlingDogUi had grown past 256 registers in v1.3.0,
+    // which made d8 truncate the $changed parameter (v263)
+    // to v7 in the prologue and ART rejected the class at
+    // launch (VerifyError). The shared states arrive as
+    // MutableState holders and are re-delegated with `by`,
+    // so the body below is HowlingDogUi's Playing branch
+    // verbatim. Keeping this screen separate also keeps
+    // HowlingDogUi under the limit as more screens grow.
+    @Composable
+    private fun PlayingScreen(
+        syncTopBar: () -> Unit,
+        exitEditMode: () -> Unit,
+        playHaptic: () -> Unit,
+        pushMask: () -> Unit,
+        pushSpeed: () -> Unit,
+        quickSave: () -> Unit,
+        quickLoad: () -> Unit,
+        pauseGame: () -> Unit,
+        resumeGame: () -> Unit,
+        openUniBiosMenu: () -> Unit,
+        saveState: () -> Unit,
+        loadState: () -> Unit,
+        quitToLibrary: () -> Unit,
+    ) {
+        val context = LocalContext.current
+        val activity = context as Activity
+        var screen by screenState
+        var settingsFrom by settingsFromState
+        var editControls by editControlsState
+        var saveSlot by saveSlotState
+        var moveTogether by moveTogetherState
+        var stickPos by stickPosState
+        var buttonsPos by buttonsPosState
+        var stickScale by stickScaleState
+        var buttonsScale by buttonsScaleState
+        var dpadScale by dpadScaleState
+        var buttonOverrides by buttonOverridesState
+        var buttonSizeMults by buttonSizeMultsState
+        var held by heldState
+        var ffHeld by ffHeldState
+        var slowHeld by slowHeldState
+        var playingGame by playingGameState
+        var paused by pausedState
+        var topBarVisible by topBarVisibleState
+        var topBarGeneration by topBarGenerationState
+        var quickStatus by quickStatusState
+        var pauseTimeLeft by pauseTimeLeftState
+        var pauseStatus by pauseStatusState
+        var controlSize by controlSizeState
+        var leftControl by leftControlState
+        var stickOpacity by stickOpacityState
+        var buttonsOpacity by buttonsOpacityState
+        var ffSpeed by ffSpeedState
+        var slowOn by slowOnState
+        DisposableEffect(Unit) {
+            activity.requestedOrientation =
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            val controller = WindowInsetsControllerCompat(
+                activity.window, activity.window.decorView,
+            )
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            onDispose {
+                activity.requestedOrientation =
+                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        // Phase 9, item 7 — auto-hide timer: while the bar
+        // is visible, the game is running (not paused), and
+        // the controls are not being adjusted, hide the bar
+        // after the machine's delay (2 s after start or
+        // resume, 4 s after a swipe-down reveal or leaving
+        // edit mode). The effect restarts whenever the bar
+        // is revealed (generation), hides, edit mode
+        // toggles, or the game pauses/resumes — so a reveal
+        // always gets its full idle window.
+        LaunchedEffect(topBarVisible, editControls, paused, topBarGeneration) {
+            if (topBarVisible && !editControls && !paused) {
+                delay(topBar.hideDelayMs)
+                topBar.onHideDue()
+                syncTopBar()
+            }
+        }
+        // Phase 9, item 7 — swipe down from the top edge
+        // reveals the bar. The detector is observe-only
+        // (see detectTopEdgeSwipeDown): it never consumes a
+        // touch, so game input, the stick, and the buttons
+        // all receive their touches untouched. The callback
+        // is read through rememberUpdatedState, so the
+        // detector — keyed on the stable `topBar` — never
+        // goes stale.
+        val density = LocalDensity.current
+        val topEdgePx = with(density) { TopBarVisibility.EDGE_HEIGHT_DP.dp.toPx() }
+        val swipeMinPx = with(density) { TopBarVisibility.SWIPE_MIN_DP.dp.toPx() }
+        val onTopEdgeSwipe = rememberUpdatedState {
+            topBar.onSwipeDown()
+            syncTopBar()
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(topBar) {
+                    awaitPointerEventScope {
+                        detectTopEdgeSwipeDown(topEdgePx, swipeMinPx) {
+                            onTopEdgeSwipe.value()
+                        }
+                    }
+                },
+        ) {
+            // Phase 9, item 7 — the title row auto-hides:
+            // shown while playing only until the timer
+            // fires, and always while adjusting controls
+            // (the Together / Reset / Done buttons live
+            // here — the bar must never hide under them)
+            // or paused. Hiding frees the row's height for
+            // the game view below. The SAVE / LOAD note
+            // is a separate overlay over the game area and
+            // is untouched by this.
+            AnimatedVisibility(
+                visible = topBarVisible || editControls || paused,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // The title takes the space LEFT OVER after
+                // the buttons: it is weighted, so the Row
+                // measures the (unweighted) button row first
+                // at its intrinsic width and only then gives
+                // the title the remainder. Without the
+                // weight, a long game name (KOF '98's full
+                // display name) took the whole row and the
+                // edit-mode buttons — Together, Reset, Done
+                // — were measured at zero width and invisible
+                // (Robert: "No button to toggle adjust
+                // controller together or seperate"). The
+                // title truncates with an ellipsis instead
+                // of pushing the buttons off-screen, in any
+                // orientation.
+                Text(
+                    playingGame?.effectiveName ?: "Game",
+                    color = Color(EraUi.Palette.TEXT),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (editControls) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Button(onClick = { moveTogether = !moveTogether }) {
+                            Text(if (moveTogether) "Together: On" else "Together: Off")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = {
+                            controlSettings.resetLayout()
+                            stickPos = ControlSettings.DEFAULT_STICK_POS
+                            buttonsPos = ControlSettings.DEFAULT_BUTTONS_POS
+                            stickScale = ControlSettings.DEFAULT_GROUP_SCALE
+                            buttonsScale = ControlSettings.DEFAULT_GROUP_SCALE
+                            dpadScale = ControlSettings.DEFAULT_GROUP_SCALE
+                            buttonOverrides = emptyMap()
+                            buttonSizeMults = emptyMap()
+                        }) { Text("Reset layout") }
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = { exitEditMode() }) { Text("Done") }
+                    }
+                } else {
+                    // Quick save/load sit beside Pause, in
+                    // the title row — never over the game area
+                    // and never fighting the stick or the
+                    // buttons. They write and read the same
+                    // per-game slot the pause menu uses.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Button(onClick = { quickSave() }) { Text("SAVE") }
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = { quickLoad() }) { Text("LOAD") }
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = { pauseGame() }) { Text("Pause") }
+                    }
+                }
+            }
+            }
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                AndroidView(
+                    factory = { ctx ->
+                        GameGlView(ctx).also { gameGlView = it }
+                    },
+                    update = {
+                        // Apply this game's system preset (and
+                        // toggles) whenever the game screen
+                        // recomposes — a new game, or a return
+                        // to the game screen, re-applies it.
+                        val entry = playingGame
+                        if (entry != null) {
+                            val mode = entry.effectiveMode
+                            // Phase 9, item 8 — a game's own
+                            // shader / curvature choice wins
+                            // over the per-system → master
+                            // chain; unset falls back to it.
+                            it.setPreset(
+                                ShaderPresets.forMode(mode),
+                                perGameSettings.resolveShader(
+                                    entry.mainFile,
+                                    shaderSettings.shaderOn(mode),
+                                ),
+                                perGameSettings.resolveCurvature(
+                                    entry.mainFile,
+                                    shaderSettings.curvatureOn(mode),
+                                ),
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                // Touch controls float over the game view
+                // (standard mobile-emulator layout): the game
+                // fills the whole Box and the controls overlay
+                // its lower part instead of taking their own
+                // row. In landscape the old row ate ~240dp
+                // and left the game ~125dp tall.
+                //
+                // The controls are two units, each placed by
+                // its stored centre (a fraction of this Box):
+                // the PS1-style stick (bottom-left) and
+                // the button cluster (bottom-right). Each
+                // unit takes its own stored opacity (Part 2)
+                // — the stick/D-pad and the buttons can be
+                // faded separately.
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxSize(),
+                ) {
+                    val density = LocalDensity.current
+                    val boxW = with(density) { maxWidth.toPx() }
+                    val boxH = with(density) { maxHeight.toPx() }
+                    // Effective size = the Settings preset
+                    // times the group's own resize scale
+                    // (set by its corner handle in adjust
+                    // mode; 1.0 = the preset size). The
+                    // left control's scale is the active
+                    // control's own — the stick and the
+                    // D-pad are sized separately (Part 2).
+                    val leftScaleEff = controlSize.scale *
+                        if (leftControl == LeftControl.DPAD) dpadScale else stickScale
+                    val buttonsScaleEff = controlSize.scale * buttonsScale
+                    // Stick geometry (dp, scaled): base 140,
+                    // grab margin 16, touch area 172.
+                    val stickTouchDp = 172f * leftScaleEff
+                    val stickTouchPx = with(density) { stickTouchDp.dp.toPx() }
+                    val stickOffset = IntOffset(
+                        (stickPos.x * boxW - stickTouchPx / 2).roundToInt(),
+                        (stickPos.y * boxH - stickTouchPx / 2).roundToInt(),
+                    )
+                    // Per-system overlay theme: the button
+                    // arrangement and colours for the game
+                    // being played (AES arc, MVS BCD/A, CD
+                    // diamond) and the stick's colours.
+                    // Appearance only — the input is identical
+                    // on all four systems.
+                    val overlayTheme = OverlayTheme.themeFor(
+                        playingGame?.effectiveMode ?: "aes",
+                    )
+                    // A button's effective offset: its stored
+                    // override, or the theme layout's default
+                    // for this system. The cluster's bounding
+                    // box follows the effective offsets, so a
+                    // button moved on its own grows the
+                    // cluster to contain it.
+                    val buttonOffsets = OverlayTheme.buttonOffsets(overlayTheme.layout)
+                        .mapValues { (id, off) -> buttonOverrides[id] ?: off }
+                    // Button cluster geometry (dp, scaled):
+                    // the effective bounding box at scale 1,
+                    // times the effective scale.
+                    val (clusterWdp1, clusterHdp1) =
+                        OverlayTheme.clusterSizeFor(buttonOffsets, buttonSizeMults)
+                    val buttonsWdp = clusterWdp1 * buttonsScaleEff
+                    val buttonsHdp = clusterHdp1 * buttonsScaleEff
+                    val buttonsWPx = with(density) { buttonsWdp.dp.toPx() }
+                    val buttonsHPx = with(density) { buttonsHdp.dp.toPx() }
+                    val buttonsOffset = IntOffset(
+                        (buttonsPos.x * boxW - buttonsWPx / 2).roundToInt(),
+                        (buttonsPos.y * boxH - buttonsHPx / 2).roundToInt(),
+                    )
+                    // Adjust-layout drag: in edit mode each
+                    // unit drags to a new centre fraction,
+                    // and its bottom-end corner (the visible
+                    // resize grip, 28dp) drags to resize it.
+                    // The button cluster's detector also
+                    // decides, from where the press landed,
+                    // whether the drag moves the whole cluster
+                    // or one button on its own: with Together
+                    // off, a press inside a button's circle
+                    // moves that button alone (its offset is
+                    // stored as an override); with Together
+                    // on, or a press on empty space, the
+                    // whole cluster moves. One gesture
+                    // detector per unit decides move vs resize
+                    // vs individual-move from where the press
+                    // landed, so the gestures never fight.
+                    // rememberUpdatedState keeps the
+                    // drag lambda reading the current
+                    // position and size without restarting
+                    // the gesture on every move (the size
+                    // changes while resizing, so it must not
+                    // be a pointerInput key). Positions and
+                    // scales persist on drag end (and on
+                    // Done). The units are clamped so they
+                    // stay fully inside the game area — and
+                    // they live inside this Box, below the
+                    // title row, so a dragged or resized
+                    // control can never cover the Pause
+                    // button.
+                    //
+                    // Resize: a horizontal drag of the grip
+                    // resizes proportionally — dragging the
+                    // grip right by the unit's full width
+                    // doubles it — clamped to 0.7x..1.5x of
+                    // the preset size. (Mariner's pattern:
+                    // horizontal drag, 28dp touch area, 20dp
+                    // visible grip with a "↘".)
+                    val stickPosState = rememberUpdatedState(stickPos)
+                    val buttonsPosState = rememberUpdatedState(buttonsPos)
+                    val stickScaleState = rememberUpdatedState(stickScale)
+                    val buttonsScaleState = rememberUpdatedState(buttonsScale)
+                    // The left control's own scale (Part 2):
+                    // the stick and the D-pad are sized
+                    // separately, so the drag writes to the
+                    // one that is showing.
+                    val dpadScaleState = rememberUpdatedState(dpadScale)
+                    val leftControlState = rememberUpdatedState(leftControl)
+                    val stickTouchPxState = rememberUpdatedState(stickTouchPx)
+                    val buttonsWPxState = rememberUpdatedState(buttonsWPx)
+                    val buttonsHPxState = rememberUpdatedState(buttonsHPx)
+                    val clusterSizeState =
+                        rememberUpdatedState(clusterWdp1 to clusterHdp1)
+                    val presetScaleState = rememberUpdatedState(controlSize.scale)
+                    val handlePx = with(density) { 28.dp.toPx() }
+                    val handlePxState = rememberUpdatedState(handlePx)
+                    // The button drag reads these live (the
+                    // offsets change while dragging, so they
+                    // must not be pointerInput keys).
+                    val buttonOffsetsState = rememberUpdatedState(buttonOffsets)
+                    val moveTogetherState = rememberUpdatedState(moveTogether)
+                    val buttonOverridesState = rememberUpdatedState(buttonOverrides)
+                    val buttonSizeMultsState = rememberUpdatedState(buttonSizeMults)
+                    val dpPxState = rememberUpdatedState(with(density) { 1.dp.toPx() })
+                    // A button's own resize grip (Part 2) is
+                    // smaller than the cluster's 28dp grip —
+                    // the button itself is only 56dp (48dp
+                    // for Coin/Start) — so 20dp at its
+                    // bottom-end corner.
+                    val buttonGripPxState =
+                        rememberUpdatedState(with(density) { 20.dp.toPx() })
+                    val stickDrag = if (editControls) {
+                        Modifier.pointerInput(boxW, boxH) {
+                            var resizing = false
+                            detectDragGestures(
+                                onDragStart = { start ->
+                                    val sizePx = stickTouchPxState.value
+                                    val grip = handlePxState.value
+                                    resizing = start.x > sizePx - grip &&
+                                        start.y > sizePx - grip
+                                },
+                                onDragEnd = {
+                                    if (resizing) {
+                                        // Persist the scale of
+                                        // the control that is
+                                        // showing (Part 2).
+                                        if (leftControlState.value == LeftControl.DPAD) {
+                                            controlSettings.setDpadScale(dpadScaleState.value)
+                                        } else {
+                                            controlSettings.setStickScale(stickScaleState.value)
+                                        }
+                                    } else {
+                                        controlSettings.setStickPosition(stickPosState.value)
+                                    }
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    if (resizing) {
+                                        val sizePx = stickTouchPxState.value
+                                        if (sizePx > 0) {
+                                            // The active control's
+                                            // scale (Part 2): the
+                                            // D-pad's when it is
+                                            // showing, else the
+                                            // stick's.
+                                            val curScale =
+                                                if (leftControlState.value == LeftControl.DPAD) {
+                                                    dpadScaleState.value
+                                                } else {
+                                                    stickScaleState.value
+                                                }
+                                            val newScale = (curScale *
+                                                (1f + dragAmount.x / sizePx))
+                                                .coerceIn(
+                                                    ControlSettings.MIN_GROUP_SCALE,
+                                                    ControlSettings.MAX_GROUP_SCALE,
+                                                )
+                                            if (leftControlState.value == LeftControl.DPAD) {
+                                                dpadScale = newScale
+                                            } else {
+                                                stickScale = newScale
+                                            }
+                                            // The grown unit must still fit:
+                                            // re-clamp its centre to the new size.
+                                            val newSizePx = with(density) {
+                                                (172f * presetScaleState.value * newScale)
+                                                    .dp.toPx()
+                                            }
+                                            val halfW = newSizePx / 2 / boxW
+                                            val halfH = newSizePx / 2 / boxH
+                                            stickPos = ControlPosition(
+                                                stickPosState.value.x
+                                                    .coerceIn(halfW, 1f - halfW),
+                                                stickPosState.value.y
+                                                    .coerceIn(halfH, 1f - halfH),
+                                            )
+                                        }
+                                    } else {
+                                        val cur = stickPosState.value
+                                        val halfW = stickTouchPxState.value / 2 / boxW
+                                        val halfH = stickTouchPxState.value / 2 / boxH
+                                        stickPos = ControlPosition(
+                                            (cur.x + dragAmount.x / boxW)
+                                                .coerceIn(halfW, 1f - halfW),
+                                            (cur.y + dragAmount.y / boxH)
+                                                .coerceIn(halfH, 1f - halfH),
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                    } else {
+                        Modifier
+                    }
+                    val buttonsDrag = if (editControls) {
+                        Modifier.pointerInput(boxW, boxH) {
+                            var resizing = false
+                            // The button being moved on its
+                            // own (null = the whole cluster).
+                            var dragButton: String? = null
+                            // The button being resized on its
+                            // own (Part 2, null = none).
+                            var resizeButton: String? = null
+                            detectDragGestures(
+                                onDragStart = { start ->
+                                    val wPx = buttonsWPxState.value
+                                    val hPx = buttonsHPxState.value
+                                    val grip = handlePxState.value
+                                    resizing = start.x > wPx - grip &&
+                                        start.y > hPx - grip
+                                    dragButton = null
+                                    resizeButton = null
+                                    if (!resizing && !moveTogetherState.value) {
+                                        val offsets = buttonOffsetsState.value
+                                        val scale = presetScaleState.value *
+                                            buttonsScaleState.value
+                                        val dpPx = dpPxState.value
+                                        val buttonGrip = buttonGripPxState.value
+                                        // Individual resize (Part 2):
+                                        // which button's own ↘ grip
+                                        // (if any) did the press land
+                                        // on? The grip is the small
+                                        // square at the button's
+                                        // bottom-end corner. The
+                                        // circle is checked first
+                                        // below, so a press inside
+                                        // the button always moves it
+                                        // and only a press outside
+                                        // the circle, in the grip
+                                        // square, resizes it.
+                                        for ((id, off) in offsets) {
+                                            val cx = wPx / 2f +
+                                                off.first * scale * dpPx
+                                            val cy = hPx / 2f +
+                                                off.second * scale * dpPx
+                                            val r = OverlayTheme.buttonSize(id) *
+                                                (buttonSizeMultsState.value[id] ?: 1f) *
+                                                scale * dpPx / 2f
+                                            val dx = start.x - cx
+                                            val dy = start.y - cy
+                                            if (dx * dx + dy * dy > r * r &&
+                                                start.x > cx + r - buttonGrip &&
+                                                start.x <= cx + r &&
+                                                start.y > cy + r - buttonGrip &&
+                                                start.y <= cy + r
+                                            ) {
+                                                resizeButton = id
+                                                break
+                                            }
+                                        }
+                                        if (resizeButton == null) {
+                                            // Individual move: which
+                                            // button (if any) did the
+                                            // press land on? A press
+                                            // counts when it is inside
+                                            // the button's circle.
+                                            for ((id, off) in offsets) {
+                                                val cx = wPx / 2f +
+                                                    off.first * scale * dpPx
+                                                val cy = hPx / 2f +
+                                                    off.second * scale * dpPx
+                                                val r = OverlayTheme.buttonSize(id) *
+                                                    (buttonSizeMultsState.value[id] ?: 1f) *
+                                                    scale * dpPx / 2f
+                                                val dx = start.x - cx
+                                                val dy = start.y - cy
+                                                if (dx * dx + dy * dy <= r * r) {
+                                                    dragButton = id
+                                                    break
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                onDragEnd = {
+                                    val id = dragButton
+                                    val resizeId = resizeButton
+                                    when {
+                                        resizing -> controlSettings.setButtonsScale(buttonsScaleState.value)
+                                        resizeId != null -> buttonSizeMultsState.value[resizeId]?.let {
+                                            controlSettings.setButtonSizeMult(resizeId, it)
+                                        }
+                                        id != null -> buttonOverridesState.value[id]?.let {
+                                            controlSettings.setButtonOffset(id, it)
+                                        }
+                                        else -> controlSettings.setButtonsPosition(buttonsPosState.value)
+                                    }
+                                    dragButton = null
+                                    resizeButton = null
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    if (resizing) {
+                                        val wPx = buttonsWPxState.value
+                                        if (wPx > 0) {
+                                            val newScale = (buttonsScaleState.value *
+                                                (1f + dragAmount.x / wPx))
+                                                .coerceIn(
+                                                    ControlSettings.MIN_GROUP_SCALE,
+                                                    ControlSettings.MAX_GROUP_SCALE,
+                                                )
+                                            buttonsScale = newScale
+                                            // The cluster's bounding box at scale
+                                            // 1 comes from the effective offsets,
+                                            // so a resized cluster still fits.
+                                            val eff = presetScaleState.value * newScale
+                                            val (cw1, ch1) = clusterSizeState.value
+                                            val newWPx = with(density) {
+                                                (cw1 * eff).dp.toPx()
+                                            }
+                                            val newHPx = with(density) {
+                                                (ch1 * eff).dp.toPx()
+                                            }
+                                            val halfW = newWPx / 2 / boxW
+                                            val halfH = newHPx / 2 / boxH
+                                            buttonsPos = ControlPosition(
+                                                buttonsPosState.value.x
+                                                    .coerceIn(halfW, 1f - halfW),
+                                                buttonsPosState.value.y
+                                                    .coerceIn(halfH, 1f - halfH),
+                                            )
+                                        }
+                                    } else if (resizeButton != null) {
+                                        // Resize that button alone
+                                        // (Part 2): horizontal drag
+                                        // changes its size multiplier
+                                        // (same proportional rule as
+                                        // the group resize), clamped
+                                        // 0.7x..1.5x of the group size.
+                                        val resizeId = resizeButton!!
+                                        val cur = buttonSizeMultsState.value[resizeId] ?: 1f
+                                        val scale = presetScaleState.value *
+                                            buttonsScaleState.value
+                                        val dpPx = dpPxState.value
+                                        val btnPx = OverlayTheme.buttonSize(resizeId) *
+                                            cur * scale * dpPx
+                                        if (btnPx > 0) {
+                                            val newMult = (cur *
+                                                (1f + dragAmount.x / btnPx))
+                                                .coerceIn(
+                                                    ControlSettings.MIN_GROUP_SCALE,
+                                                    ControlSettings.MAX_GROUP_SCALE,
+                                                )
+                                            val newMults = buttonSizeMultsState.value +
+                                                (resizeId to newMult)
+                                            buttonSizeMults = newMults
+                                            // The cluster grew: its
+                                            // bounding box at scale 1
+                                            // comes from the updated
+                                            // sizes, so re-clamp its
+                                            // centre to the new size.
+                                            val eff = presetScaleState.value *
+                                                buttonsScaleState.value
+                                            val (cw1, ch1) = OverlayTheme.clusterSizeFor(
+                                                buttonOffsetsState.value,
+                                                newMults,
+                                            )
+                                            val newWPx = with(density) {
+                                                (cw1 * eff).dp.toPx()
+                                            }
+                                            val newHPx = with(density) {
+                                                (ch1 * eff).dp.toPx()
+                                            }
+                                            val halfW = newWPx / 2 / boxW
+                                            val halfH = newHPx / 2 / boxH
+                                            buttonsPos = ControlPosition(
+                                                buttonsPosState.value.x
+                                                    .coerceIn(halfW, 1f - halfW),
+                                                buttonsPosState.value.y
+                                                    .coerceIn(halfH, 1f - halfH),
+                                            )
+                                        }
+                                    } else {
+                                        val id = dragButton
+                                        if (id != null) {
+                                            // Move that button alone:
+                                            // the drag moves its offset
+                                            // (dp at scale 1), clamped
+                                            // so the button stays fully
+                                            // inside the game area.
+                                            val cur = buttonOffsetsState.value[id]
+                                            if (cur != null) {
+                                                val scale = presetScaleState.value *
+                                                    buttonsScaleState.value
+                                                val dpPx = dpPxState.value
+                                                // The button's own size
+                                                // multiplier (Part 2):
+                                                // its effective half-size.
+                                                val halfBtn = OverlayTheme.buttonSize(id) *
+                                                    (buttonSizeMultsState.value[id] ?: 1f) *
+                                                    scale * dpPx / 2f
+                                                // The button's centre, in
+                                                // px of the game area.
+                                                val ccx = buttonsPosState.value.x * boxW
+                                                val ccy = buttonsPosState.value.y * boxH
+                                                val curBx = ccx + cur.first * scale * dpPx
+                                                val curBy = ccy + cur.second * scale * dpPx
+                                                val newBx = (curBx + dragAmount.x)
+                                                    .coerceIn(halfBtn, boxW - halfBtn)
+                                                val newBy = (curBy + dragAmount.y)
+                                                    .coerceIn(halfBtn, boxH - halfBtn)
+                                                // Back to an offset (dp
+                                                // at scale 1) from the
+                                                // cluster centre.
+                                                val newOff = (
+                                                    (newBx - ccx) / (scale * dpPx)
+                                                ) to (
+                                                    (newBy - ccy) / (scale * dpPx)
+                                                )
+                                                buttonOverrides = buttonOverridesState.value +
+                                                    (id to newOff)
+                                            }
+                                        } else {
+                                            val cur = buttonsPosState.value
+                                            val halfW = buttonsWPxState.value / 2 / boxW
+                                            val halfH = buttonsHPxState.value / 2 / boxH
+                                            buttonsPos = ControlPosition(
+                                                (cur.x + dragAmount.x / boxW)
+                                                    .coerceIn(halfW, 1f - halfW),
+                                                (cur.y + dragAmount.y / boxH)
+                                                    .coerceIn(halfH, 1f - halfH),
+                                            )
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                    } else {
+                        Modifier
+                    }
+                    // The left control: the arcade stick, or
+                    // the 8-way D-pad (Settings toggle). Both
+                    // sit in the same slot, at the same
+                    // position and size, and both drive the
+                    // same direction mask.
+                    if (leftControl == LeftControl.DPAD) {
+                        Dpad(
+                            size = (140f * leftScaleEff).dp,
+                            grabMargin = (16f * leftScaleEff).dp,
+                            baseTop = overlayTheme.stickBaseTop,
+                            baseBottom = overlayTheme.stickBaseBottom,
+                            armTop = overlayTheme.stickNubTop,
+                            armBottom = overlayTheme.stickNubBottom,
+                            accent = overlayTheme.accent,
+                            onDirection = { mask ->
+                                held = held.copy(
+                                    up = mask and (1 shl InputMask.JOY_UP) != 0,
+                                    down = mask and (1 shl InputMask.JOY_DOWN) != 0,
+                                    left = mask and (1 shl InputMask.JOY_LEFT) != 0,
+                                    right = mask and (1 shl InputMask.JOY_RIGHT) != 0,
+                                )
+                                pushMask()
+                            },
+                            onDirectionChange = { mask ->
+                                if (mask != 0) playHaptic()
+                            },
+                            enabled = !editControls && !paused,
+                            modifier = Modifier
+                                .offset { stickOffset }
+                                .size(stickTouchDp.dp)
+                                .alpha(stickOpacity)
+                                .then(stickDrag),
+                        )
+                    } else {
+                        PsStick(
+                            size = (140f * leftScaleEff).dp,
+                            grabMargin = (16f * leftScaleEff).dp,
+                            baseTop = overlayTheme.stickBaseTop,
+                            baseBottom = overlayTheme.stickBaseBottom,
+                            nubTop = overlayTheme.stickNubTop,
+                            nubBottom = overlayTheme.stickNubBottom,
+                            accent = overlayTheme.accent,
+                            onDirection = { mask ->
+                                held = held.copy(
+                                    up = mask and (1 shl InputMask.JOY_UP) != 0,
+                                    down = mask and (1 shl InputMask.JOY_DOWN) != 0,
+                                    left = mask and (1 shl InputMask.JOY_LEFT) != 0,
+                                    right = mask and (1 shl InputMask.JOY_RIGHT) != 0,
+                                )
+                                pushMask()
+                            },
+                            onDirectionChange = { mask ->
+                                if (mask != 0) playHaptic()
+                            },
+                            enabled = !editControls && !paused,
+                            modifier = Modifier
+                                .offset { stickOffset }
+                                .size(stickTouchDp.dp)
+                                .alpha(stickOpacity)
+                                .then(stickDrag),
+                        )
+                    }
+                    // Neo Geo buttons, placed by the theme
+                    // layout's offsets (AES arc, MVS BCD/A,
+                    // CD diamond, or the 2x2 grid) — each
+                    // button centred on its offset from the
+                    // cluster centre, in the theme's rainbow
+                    // colours. In edit mode the cluster shows
+                    // a thin outline so it reads as draggable,
+                    // and its buttons stop taking input.
+                    Box(
+                        modifier = Modifier
+                            .offset { buttonsOffset }
+                            .size(buttonsWdp.dp, buttonsHdp.dp)
+                            .alpha(buttonsOpacity)
+                            .then(buttonsDrag)
+                            .then(
+                                if (editControls) {
+                                    Modifier.border(
+                                        1.dp,
+                                        Color(EraUi.Palette.GOLD).copy(alpha = 0.5f),
+                                        RoundedCornerShape(8.dp),
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    ) {
+                        // Top-left of a button, in px, from
+                        // its theme offset (dp at scale 1)
+                        // and the cluster's effective scale.
+                        fun place(id: String): IntOffset {
+                            val off = buttonOffsets.getValue(id)
+                            // A button's own size multiplier
+                            // (Part 2) times the group size.
+                            val sizePx = with(density) {
+                                (OverlayTheme.buttonSize(id) *
+                                    (buttonSizeMults[id] ?: 1f) *
+                                    buttonsScaleEff).dp.toPx()
+                            }
+                            return IntOffset(
+                                (buttonsWPx / 2f +
+                                    with(density) { (off.first * buttonsScaleEff).dp.toPx() } -
+                                    sizePx / 2f).roundToInt(),
+                                (buttonsHPx / 2f +
+                                    with(density) { (off.second * buttonsScaleEff).dp.toPx() } -
+                                    sizePx / 2f).roundToInt(),
+                            )
+                        }
+                        val styleA = overlayTheme.buttonStyles.getValue("A")
+                        val styleB = overlayTheme.buttonStyles.getValue("B")
+                        val styleC = overlayTheme.buttonStyles.getValue("C")
+                        val styleD = overlayTheme.buttonStyles.getValue("D")
+                        HoldButton("A", { pressed ->
+                            held = held.copy(a = pressed); pushMask()
+                        }, modifier = Modifier.offset { place("A") }, scale = buttonsScaleEff * (buttonSizeMults["A"] ?: 1f), onHaptic = playHaptic, enabled = !editControls && !paused, color = styleA.background, labelColor = styleA.label)
+                        HoldButton("B", { pressed ->
+                            held = held.copy(b = pressed); pushMask()
+                        }, modifier = Modifier.offset { place("B") }, scale = buttonsScaleEff * (buttonSizeMults["B"] ?: 1f), onHaptic = playHaptic, enabled = !editControls && !paused, color = styleB.background, labelColor = styleB.label)
+                        HoldButton("C", { pressed ->
+                            held = held.copy(c = pressed); pushMask()
+                        }, modifier = Modifier.offset { place("C") }, scale = buttonsScaleEff * (buttonSizeMults["C"] ?: 1f), onHaptic = playHaptic, enabled = !editControls && !paused, color = styleC.background, labelColor = styleC.label)
+                        HoldButton("D", { pressed ->
+                            held = held.copy(d = pressed); pushMask()
+                        }, modifier = Modifier.offset { place("D") }, scale = buttonsScaleEff * (buttonSizeMults["D"] ?: 1f), onHaptic = playHaptic, enabled = !editControls && !paused, color = styleD.background, labelColor = styleD.label)
+                        HoldButton("Coin", { pressed ->
+                            held = held.copy(coin = pressed); pushMask()
+                        }, modifier = Modifier.offset { place("Coin") }, small = true, scale = buttonsScaleEff * (buttonSizeMults["Coin"] ?: 1f), onHaptic = playHaptic, enabled = !editControls && !paused)
+                        HoldButton("Start", { pressed ->
+                            held = held.copy(start = pressed); pushMask()
+                        }, modifier = Modifier.offset { place("Start") }, small = true, scale = buttonsScaleEff * (buttonSizeMults["Start"] ?: 1f), onHaptic = playHaptic, enabled = !editControls && !paused)
+                        // Per-button resize grips (Part 2,
+                        // edit mode, Together off only): a
+                        // small gold "↘" at each button's
+                        // bottom-end corner, marking where
+                        // to grab to resize just that button.
+                        // Purely visual, like the unit grips.
+                        if (editControls && !moveTogether) {
+                            for (id in ControlSettings.BUTTON_IDS) {
+                                val btnPx = with(density) {
+                                    (OverlayTheme.buttonSize(id) *
+                                        (buttonSizeMults[id] ?: 1f) *
+                                        buttonsScaleEff).dp.toPx()
+                                }
+                                val topLeft = place(id)
+                                val gripPx = with(density) { 20.dp.toPx() }
+                                Box(
+                                    modifier = Modifier
+                                        .offset {
+                                            IntOffset(
+                                                (topLeft.x + btnPx - gripPx).roundToInt(),
+                                                (topLeft.y + btnPx - gripPx).roundToInt(),
+                                            )
+                                        }
+                                        .size(20.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .background(
+                                                Color(EraUi.Palette.GOLD),
+                                                RoundedCornerShape(3.dp),
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            "↘",
+                                            color = Color(EraUi.Palette.ON_GOLD),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Resize grips (edit mode only): a visible
+                    // "↘" grip at each unit's bottom-end
+                    // corner. Purely visual — the unit's own
+                    // drag detector decides move vs resize by
+                    // where the press landed, so the grip
+                    // takes no input itself and the two
+                    // gestures never fight. 28dp touch area
+                    // (the drag zone), 20dp visible grip.
+                    if (editControls) {
+                        ResizeGrip(
+                            offset = IntOffset(
+                                (stickPos.x * boxW + stickTouchPx / 2 - handlePx / 2).roundToInt(),
+                                (stickPos.y * boxH + stickTouchPx / 2 - handlePx / 2).roundToInt(),
+                            ),
+                        )
+                        ResizeGrip(
+                            offset = IntOffset(
+                                (buttonsPos.x * boxW + buttonsWPx / 2 - handlePx / 2).roundToInt(),
+                                (buttonsPos.y * boxH + buttonsHPx / 2 - handlePx / 2).roundToInt(),
+                            ),
+                        )
+                    }
+                }
+                // Edit-mode hint, over the game area.
+                if (editControls) {
+                    Text(
+                        "Drag a control to move it, drag its ↘ corner to resize it — buttons move together when Together is on, one at a time when it is off; with Together off, a button's own ↘ corner resizes just that button",
+                        color = Color(EraUi.Palette.TEXT),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .padding(4.dp),
+                    )
+                }
+                // Quick save/load status: a brief note over
+                // the game area, cleared after a couple of
+                // seconds (see the LaunchedEffect above).
+                // Hidden while paused — the pause menu has
+                // its own status line.
+                if (quickStatus.isNotEmpty() && !paused) {
+                    Text(
+                        quickStatus,
+                        color = Color(EraUi.Palette.GOLD),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 8.dp)
+                            .background(
+                                Color(EraUi.Palette.SURFACE),
+                                RoundedCornerShape(4.dp),
+                            )
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+                // Phase 10 — RetroAchievements: the unlock
+                // popup, a gold note over the game area
+                // (the same treatment as the quick status
+                // above), cleared after four seconds (see
+                // the LaunchedEffect above). Hidden while
+                // paused.
+                val unlock = RaClient.lastUnlock
+                if (unlock != null && !paused) {
+                    Text(
+                        "Achievement Unlocked: ${unlock.title} (+${unlock.points} pts)",
+                        color = Color(EraUi.Palette.GOLD),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 8.dp)
+                            .background(
+                                Color(EraUi.Palette.SURFACE),
+                                RoundedCornerShape(4.dp),
+                            )
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+                // v1.2.0 (item 2) — the leaderboard
+                // scoreboard note, the same gold treatment
+                // as the unlock popup: the submitted score
+                // and the new rank. Hidden while paused.
+                val scoreboard = RaClient.lastScoreboard
+                if (scoreboard != null && !paused) {
+                    Text(
+                        "Score submitted: ${scoreboard.submittedScore} — Rank #${scoreboard.newRank} of ${scoreboard.numEntries}",
+                        color = Color(EraUi.Palette.GOLD),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 8.dp)
+                            .background(
+                                Color(EraUi.Palette.SURFACE),
+                                RoundedCornerShape(4.dp),
+                            )
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+                // v1.5, feature 1 — speed hold buttons: FF
+                // and SLOW, hold to run. They are NOT part
+                // of the overlay by default: each appears
+                // only when its speed is enabled in Settings
+                // (both off by default), so the overlay
+                // stays clean until he turns one on.
+                // Top-right of the game area, clear of the
+                // stick (bottom-left) and the buttons
+                // (bottom-right); hidden while paused or
+                // adjusting controls, like the notes above.
+                if (!paused && !editControls && (ffSpeed > SpeedControl.NORMAL || slowOn)) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 8.dp, end = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (slowOn) {
+                            HoldButton(
+                                label = "SLOW",
+                                small = true,
+                                onHoldChange = { held ->
+                                    slowHeld = held
+                                    pushSpeed()
+                                },
+                            )
+                        }
+                        if (ffSpeed > SpeedControl.NORMAL) {
+                            HoldButton(
+                                label = "FF",
+                                small = true,
+                                onHoldChange = { held ->
+                                    ffHeld = held
+                                    pushSpeed()
+                                },
+                            )
+                        }
+                    }
+                }
+                // Pause overlay: covers the game and the
+                // controls (drawn last, so it is on top) and
+                // swallows touches, so no button can be
+                // pressed while paused. Hidden while the
+                // controls are being adjusted (the game
+                // stays paused underneath).
+                if (paused && !editControls) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.7f))
+                            .clickable(enabled = true, onClick = {}),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        PauseMenu(
+                            timeLeft = pauseTimeLeft,
+                            status = pauseStatus,
+                            // The picker reads the saves
+                            // folder fresh on each
+                            // composition, so a slot saved
+                            // in this pause shows occupied
+                            // at once.
+                            selectedSlot = saveSlot,
+                            occupiedSlots = playingGame?.let {
+                                QuickSave.occupiedSlots(
+                                    File(context.filesDir, "saves"),
+                                    it.mainFile,
+                                )
+                            } ?: emptyList(),
+                            // v1.5, feature 2 — the slot
+                            // thumbnails, read fresh on
+                            // each composition like the
+                            // occupied slots above.
+                            slotThumbnails = playingGame?.let {
+                                QuickSave.slotThumbnails(
+                                    File(context.filesDir, "saves"),
+                                    it.mainFile,
+                                ).mapValues { (_, file) -> file.path }
+                            } ?: emptyMap(),
+                            onSelectSlot = { saveSlot = it },
+                            onResume = { resumeGame() },
+                            // Phase 9, item 9 — only under
+                            // Universe BIOS: any other system
+                            // has no UniBIOS menu to open.
+                            showUniBiosMenu = playingGame?.let {
+                                UniBiosMenu.isUniBiosMode(it.effectiveMode)
+                            } ?: false,
+                            onUniBiosMenu = { openUniBiosMenu() },
+                            onSaveState = { saveState() },
+                            onLoadState = { loadState() },
+                            // Phase 10 — RetroAchievements:
+                            // the achievements list, only
+                            // when RA has a game loaded. The
+                            // game stays paused underneath.
+                            showAchievements = RaClient.gameLoaded,
+                            onAchievements = { screen = Screen.Achievements },
+                            // v1.2.0 (item 2) — the
+                            // leaderboards, only when the
+                            // game has at least one.
+                            showLeaderboards = RaClient.leaderboards.isNotEmpty(),
+                            onLeaderboards = { screen = Screen.Leaderboards },
+                            onSettings = {
+                                settingsFrom = Screen.Playing
+                                screen = Screen.Settings
+                            },
+                            onAdjustControls = {
+                                editControls = true
+                                // Phase 9, item 7 — entering
+                                // edit mode always shows the
+                                // bar and suspends auto-hide
+                                // until Done.
+                                topBar.onEditModeChanged(true)
+                                syncTopBar()
+                            },
+                            onQuit = { quitToLibrary() },
+                        )
+                    }
+                }
             }
         }
     }
