@@ -698,29 +698,56 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Cover art: fetch the filename index once (Wi-Fi only,
-        // cached on the device), then one small image per game —
-        // only when its tile is shown, only on Wi-Fi, only once
-        // per game. Any failure leaves the typographic tile;
+        // Cover art: the filename index is fetched once (Wi-Fi
+        // only, cached on the device), then one small image per
+        // game — only when its tile is shown, only on Wi-Fi, only
+        // once per game. Any failure leaves the typographic tile;
         // nothing here blocks the library or shows an error.
-        LaunchedEffect(games, artIndex) {
+        //
+        // Two effects, on purpose. The index load sets `artIndex`,
+        // which is a key of the art effect below — if the index
+        // were loaded inside that effect, setting the key would
+        // restart it and cancel the art fetches it had just
+        // launched, so every game would be fetched twice per
+        // launch (and, on a slow index load, the fetch could be
+        // cancelled before it ever wrote the cache). Loading the
+        // index in its own effect means the art effect only ever
+        // restarts when the index actually arrives, at which
+        // point it has launched nothing to cancel.
+        LaunchedEffect(games) {
             if (artIndex == null && CoverArt.isWifi(context)) {
                 artIndex = withContext(Dispatchers.IO) { coverArt.loadIndex(isWifi = true) }
             }
-            val index = artIndex ?: return@LaunchedEffect
+        }
+        LaunchedEffect(games, artIndex) {
+            // The index may still be loading (or unavailable);
+            // cached art does not need it, so the effect runs
+            // regardless and serves the cache first.
+            val index = artIndex
             val pending = games.filter { it.mainFile !in covers && it.mainFile !in artTried }
             if (pending.isEmpty()) return@LaunchedEffect
             for (game in pending) {
                 launch(Dispatchers.IO) {
-                    val artFile = coverArt.resolveArtFile(game, gamesDir, index)
-                    val bitmap = if (artFile != null) {
-                        coverArt.cachedBitmap(game) ?: coverArt.fetchBitmap(artFile, game)
-                    } else {
-                        null
+                    // The disk cache comes FIRST, before the index
+                    // or the network: a game whose art was fetched
+                    // once is served from filesDir/art/ on every
+                    // later launch with no network call at all —
+                    // even if the index is unavailable or the
+                    // match would fail. Only a game with no cached
+                    // art resolves its filename and fetches, and
+                    // only when the index is available.
+                    val bitmap = coverArt.cachedBitmap(game) ?: run {
+                        val artFile = index?.let { coverArt.resolveArtFile(game, gamesDir, it) }
+                        if (artFile != null) coverArt.fetchBitmap(artFile, game) else null
                     }
                     withContext(Dispatchers.Main) {
                         if (bitmap != null) covers = covers + (game.mainFile to bitmap)
-                        artTried = artTried + game.mainFile
+                        // Only mark tried when a bitmap was found
+                        // or the index was available (a fetch was
+                        // attempted). A game with no cache and no
+                        // index yet is left untried, so it is
+                        // retried once the index arrives.
+                        if (bitmap != null || index != null) artTried = artTried + game.mainFile
                     }
                 }
             }

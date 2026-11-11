@@ -81,15 +81,29 @@ class CoverArt(private val filesDir: File) {
         }
     }
 
-    /** The cached art bitmap for a game, or null when it was never fetched. */
-    fun cachedBitmap(entry: GameEntry): Bitmap? {
+    /**
+     * The cached art bytes for a game, or null when it was never
+     * fetched. Pure file IO (no Bitmap), so the cache round-trip
+     * is testable on the plain JVM. This is the authoritative
+     * check for "does this game already have art": the tile
+     * loading path reads this FIRST, before the index or the
+     * network, so a game whose art was fetched once is served
+     * from disk on every later launch with no network call.
+     */
+    fun cachedArtBytes(entry: GameEntry): ByteArray? {
         val file = cacheFile(entry)
         if (!file.isFile) return null
         return try {
-            BitmapFactory.decodeFile(file.absolutePath)
+            file.readBytes()
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** The cached art bitmap for a game, or null when it was never fetched. */
+    fun cachedBitmap(entry: GameEntry): Bitmap? {
+        val bytes = cachedArtBytes(entry) ?: return null
+        return decodeArt(bytes)
     }
 
     /**
@@ -126,7 +140,8 @@ class CoverArt(private val filesDir: File) {
         }
     }
 
-    private fun cacheFile(entry: GameEntry): File {
+    /** The cache file for a game (internal, so the cache round-trip is testable). */
+    internal fun cacheFile(entry: GameEntry): File {
         val stem = sanitize(entry.mainFile.substringBeforeLast('.', entry.mainFile))
         return File(File(filesDir, "art"), "$stem.png")
     }
