@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /**
  * 2.0, feature 6 — the Arcade Manager screen: input heatmaps
@@ -159,8 +160,8 @@ fun ArcadeManagerScreen(
 
 /**
  * The heatmap for one game's counts: the eight stick directions
- * in a 3x3 grid (the centre shows the total direction presses)
- * and the six buttons in a row. Each cell's gold is brighter
+ * in a 3x3 grid (the centre shows the total direction presses,
+ * labelled TOTAL) and the six buttons in a row. Each cell's gold is brighter
  * the more that control was pressed, scaled to the hottest
  * control in its group.
  */
@@ -185,6 +186,8 @@ fun HeatmapView(counts: ArcadeCounts) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (name in row) {
                     if (name == null) {
+                        // Centre: the direction total, labelled so
+                        // it is not read as a ninth direction.
                         Box(
                             modifier = Modifier
                                 .size(56.dp)
@@ -194,11 +197,18 @@ fun HeatmapView(counts: ArcadeCounts) {
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(
-                                "${counts.totalDirectionPresses}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White,
-                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    "${counts.totalDirectionPresses}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White,
+                                )
+                                Text(
+                                    "TOTAL",
+                                    fontSize = 10.sp,
+                                    color = Color.White,
+                                )
+                            }
                         }
                     } else {
                         val count = counts.directionCount(name)
