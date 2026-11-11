@@ -2,6 +2,7 @@ package app.howlingdog
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -27,6 +28,13 @@ class LicencesTest {
     @Test
     fun licencesScreenShowsAllLicenceTexts() {
         composeRule.onNodeWithText("PRESS START").performClick()
+        // A fresh install shows the first-run SYSTEM SETUP screen
+        // after the first library load — dismiss it to reach the
+        // library, like the startup gate does.
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodesWithText("HOWLINGDOG — SYSTEM SETUP").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("SKIP").performClick()
         composeRule.onNodeWithText("Settings").performClick()
         // The About section sits at the bottom of the scrollable
         // Settings screen — scroll the button into view first.
@@ -60,6 +68,12 @@ class LicencesTest {
     @Test
     fun licencesBackReturnsToSettings() {
         composeRule.onNodeWithText("PRESS START").performClick()
+        // Fresh install: dismiss the first-run SYSTEM SETUP screen
+        // first (see the test above).
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodesWithText("HOWLINGDOG — SYSTEM SETUP").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("SKIP").performClick()
         composeRule.onNodeWithText("Settings").performClick()
         composeRule.onNodeWithText("Licences").performScrollTo().performClick()
         composeRule.onNodeWithText("Back").performScrollTo().performClick()
