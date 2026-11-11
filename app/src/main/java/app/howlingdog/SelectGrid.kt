@@ -55,7 +55,7 @@ import androidx.compose.ui.unit.sp
  * sorts by media.
  */
 
-/** A chunky square-cornered arcade button. Primary is gold on maroon, the rest are dark maroon with a gold border. */
+/** A chunky square-cornered arcade button. Primary is gold on maroon, the rest are dark maroon with a gold border. [tight] is the four-across portrait row: smaller text and padding so four buttons fit. */
 @Composable
 fun ArcadeButton(
     text: String,
@@ -63,6 +63,7 @@ fun ArcadeButton(
     primary: Boolean = false,
     compact: Boolean = false,
     onClick: () -> Unit,
+    tight: Boolean = false,
 ) {
     Button(
         onClick = onClick,
@@ -76,14 +77,17 @@ fun ArcadeButton(
         // Compact buttons (the pause menu) use less vertical
         // padding. The Material3 40dp minimum height still applies,
         // so they stay comfortably tappable — this only removes
-        // height above that floor.
-        contentPadding = if (compact) {
+        // height above that floor. Tight buttons (the portrait row)
+        // also lose horizontal padding, for the same reason.
+        contentPadding = if (tight) {
+            PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+        } else if (compact) {
             PaddingValues(horizontal = 24.dp, vertical = 4.dp)
         } else {
             ButtonDefaults.ContentPadding
         },
     ) {
-        Text(text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text(text, fontWeight = FontWeight.Bold, fontSize = if (tight) 13.sp else 15.sp)
     }
 }
 
@@ -138,7 +142,7 @@ fun GameTile(
         // it.
         if (cover == null) {
             Text(
-                text = entry.displayName,
+                text = entry.effectiveName,
                 color = Color(EraUi.Palette.TEXT),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
@@ -170,7 +174,7 @@ fun GameTile(
                     ),
                 ) {
                     Text(
-                        text = entry.displayName,
+                        text = entry.effectiveName,
                         color = Color(EraUi.Palette.TEXT),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -205,13 +209,14 @@ fun GameTile(
     }
 }
 
-/** The picked game, big in the middle. Tap the portrait (or START) to play. [cover] is the fetched box art, or null for the typographic portrait. */
+/** The picked game, big in the middle. Tap the portrait (or START) to play. [cover] is the fetched box art, or null for the typographic portrait. RENAME opens the rename dialog (Phase 9, item 4) — the rename lives here, on the portrait, so the tile's long-press keeps meaning pin/unpin exactly as before. */
 @Composable
 fun SelectedPortrait(
     entry: GameEntry,
     onPlay: () -> Unit,
     onMode: () -> Unit,
     onRemove: () -> Unit,
+    onRename: () -> Unit,
     modifier: Modifier = Modifier,
     cover: Bitmap? = null,
 ) {
@@ -251,7 +256,7 @@ fun SelectedPortrait(
             // the game will run on.
             if (cover == null) {
                 Text(
-                    text = entry.displayName,
+                    text = entry.effectiveName,
                     color = Color(EraUi.Palette.TEXT),
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Black,
@@ -298,12 +303,17 @@ fun SelectedPortrait(
                 )
             }
             Spacer(modifier = Modifier.weight(1f))
-            Row {
-                ArcadeButton(text = "▶ START", onClick = onPlay, primary = true)
-                Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                ArcadeButton(text = "SYSTEM", onClick = onMode)
-                Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                ArcadeButton(text = "REMOVE", onClick = onRemove)
+            // Four buttons across, sharing the width — the tight
+            // variant keeps them inside the portrait at a narrow
+            // phone width.
+            Row(modifier = Modifier.fillMaxWidth()) {
+                ArcadeButton(text = "▶ START", onClick = onPlay, primary = true, tight = true, modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.padding(horizontal = 2.dp))
+                ArcadeButton(text = "SYSTEM", onClick = onMode, tight = true, modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.padding(horizontal = 2.dp))
+                ArcadeButton(text = "RENAME", onClick = onRename, tight = true, modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.padding(horizontal = 2.dp))
+                ArcadeButton(text = "REMOVE", onClick = onRemove, tight = true, modifier = Modifier.weight(1f))
             }
         }
     }

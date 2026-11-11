@@ -392,6 +392,126 @@ class GameLibraryTest {
         assertTrue(lib.load()[0].pinned)
     }
 
+    // --- Phase 9, item 4: manual rename ---
+
+    @Test
+    fun renamePersistsAndShowsCustomNameButKeepsOriginal() {
+        val dir = tempDir("lib-rename")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "metal-slug-2.neo").writeText("fake")
+        val entry = lib.register("metal-slug-2.neo", listOf("metal-slug-2.neo"))
+        assertEquals("metal slug 2", entry.displayName)
+        assertEquals("metal slug 2", entry.effectiveName)
+        val renamed = lib.setCustomName(entry, "My Favourite Slug")
+        assertEquals("My Favourite Slug", renamed.customName)
+        assertEquals("My Favourite Slug", renamed.effectiveName)
+        // The original never changes: it is what art matching reads.
+        assertEquals("metal slug 2", renamed.displayName)
+        // A fresh instance reads the custom name back from the store.
+        val reloaded = library(dir).load()[0]
+        assertEquals("My Favourite Slug", reloaded.customName)
+        assertEquals("My Favourite Slug", reloaded.effectiveName)
+        assertEquals("metal slug 2", reloaded.displayName)
+    }
+
+    @Test
+    fun emptyOrBlankNameRevertsToOriginal() {
+        val dir = tempDir("lib-rename-clear")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "neobombe.neo").writeText("fake")
+        val entry = lib.register("neobombe.neo", listOf("neobombe.neo"))
+        lib.setCustomName(entry, "Bomber")
+        assertEquals("Bomber", lib.load()[0].effectiveName)
+        // Empty, blank, and null all clear the custom name.
+        val cleared = lib.setCustomName(lib.load()[0], "")
+        assertEquals(null, cleared.customName)
+        assertEquals("neobombe", cleared.effectiveName)
+        lib.setCustomName(lib.load()[0], "Bomber")
+        lib.setCustomName(lib.load()[0], "   ")
+        assertEquals(null, lib.load()[0].customName)
+        assertEquals("neobombe", lib.load()[0].effectiveName)
+        lib.setCustomName(lib.load()[0], "Bomber")
+        lib.setCustomName(lib.load()[0], null)
+        assertEquals(null, library(dir).load()[0].customName)
+        assertEquals("neobombe", library(dir).load()[0].effectiveName)
+    }
+
+    @Test
+    fun renameKeepsArtMatchingOnTheOriginalName() {
+        val dir = tempDir("lib-rename-art")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "metal-slug-5.neo").writeText("fake")
+        val entry = lib.register("metal-slug-5.neo", listOf("metal-slug-5.neo"))
+        val index = listOf(
+            "Metal Slug 5 (NGH-2680).png",
+            "Metal Slug 2 (NGH-2410).png",
+            "Neo Bomberman.png",
+        )
+        val renamed = lib.setCustomName(entry, "My Slug")
+        // Art matching reads the ORIGINAL name: it still finds the art.
+        assertEquals(
+            "Metal Slug 5 (NGH-2680).png",
+            NeoHeader.matchArtFile(renamed.displayName, null, index),
+        )
+        // The custom name would NOT find it — so nothing in the app
+        // may ever feed the custom name to the art matcher.
+        assertEquals(null, NeoHeader.matchArtFile(renamed.effectiveName, null, index))
+    }
+
+    @Test
+    fun reimportKeepsCustomName() {
+        val dir = tempDir("lib-rename-reimport")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "neobombe.neo").writeText("fake")
+        val entry = lib.register("neobombe.neo", listOf("neobombe.neo"))
+        lib.setCustomName(entry, "Bomber")
+        lib.register("neobombe.neo", listOf("neobombe.neo"))
+        assertEquals("Bomber", lib.load()[0].customName)
+        assertEquals("Bomber", lib.load()[0].effectiveName)
+    }
+
+    @Test
+    fun renamedGameSortsByItsShownName() {
+        val dir = tempDir("lib-rename-sort")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "aaa.neo").writeText("fake")
+        File(games, "zzz.neo").writeText("fake")
+        lib.register("aaa.neo", listOf("aaa.neo"))
+        val zzz = lib.register("zzz.neo", listOf("zzz.neo"))
+        assertEquals(listOf("aaa", "zzz"), lib.load().map { it.displayName })
+        lib.setCustomName(zzz, "000 first")
+        assertEquals(listOf("000 first", "aaa"), lib.load().map { it.effectiveName })
+    }
+
+    @Test
+    fun legacyLinesLoadUnrenamedAndSeventhFieldLoadsCustomName() {
+        val dir = tempDir("lib-rename-legacy")
+        val lib = library(dir)
+        val games = File(dir, "games")
+        File(games, "aaa.neo").writeText("fake")
+        File(games, "mmm.neo").writeText("fake")
+        File(games, "zzz.neo").writeText("fake")
+        // Four/six fields (before renames) load unrenamed; a
+        // seven-field line loads its custom name.
+        File(dir, "library.txt").writeText(
+            "aaa.neo|aaa|100|aaa.neo\n" +
+                "mmm.neo|mmm|200|mmm.neo||1\n" +
+                "zzz.neo|zzz|300|zzz.neo||1|Zed Game\n",
+        )
+        val loaded = lib.load()
+        assertEquals(null, loaded.find { it.mainFile == "aaa.neo" }?.customName)
+        assertEquals(null, loaded.find { it.mainFile == "mmm.neo" }?.customName)
+        val zzz = loaded.find { it.mainFile == "zzz.neo" }!!
+        assertEquals("Zed Game", zzz.customName)
+        assertEquals("Zed Game", zzz.effectiveName)
+        assertEquals("zzz", zzz.displayName)
+    }
+
     @Test
     fun legacyLinesLoadUnpinnedAndSixthFieldLoadsPinned() {
         val dir = tempDir("lib-pin-legacy")

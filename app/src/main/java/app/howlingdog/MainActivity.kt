@@ -45,6 +45,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -337,6 +338,10 @@ class MainActivity : ComponentActivity() {
         var playingGame by remember { mutableStateOf<GameEntry?>(null) }
         var confirmRemove by remember { mutableStateOf<GameEntry?>(null) }
         var modePickerFor by remember { mutableStateOf<GameEntry?>(null) }
+        // Phase 9, item 4 — the game being renamed, and the text in
+        // the rename dialog (prefilled with the name it shows now).
+        var renameFor by remember { mutableStateOf<GameEntry?>(null) }
+        var renameText by remember { mutableStateOf("") }
         var settingsFrom by remember { mutableStateOf(Screen.Library) }
         var paused by remember { mutableStateOf(false) }
         var pauseStatus by remember { mutableStateOf("") }
@@ -571,9 +576,9 @@ class MainActivity : ComponentActivity() {
                 withContext(Dispatchers.Main) {
                     refreshLibrary()
                     status = if (entry.pinned) {
-                        "Unpinned ${entry.displayName}."
+                        "Unpinned ${entry.effectiveName}."
                     } else {
-                        "Pinned ${entry.displayName}."
+                        "Pinned ${entry.effectiveName}."
                     }
                 }
             }
@@ -837,7 +842,7 @@ class MainActivity : ComponentActivity() {
             settings.applyAll()
             settings.applyMode(entry)
             val saveDir = File(context.filesDir, "saves").apply { mkdirs() }
-            status = "Starting ${entry.displayName}…"
+            status = "Starting ${entry.effectiveName}…"
             session = PlayerSession(
                 systemDir = biosDir.absolutePath,
                 saveDir = saveDir.absolutePath,
@@ -911,7 +916,7 @@ class MainActivity : ComponentActivity() {
                             val entry = library.register(dest.name, listOf(dest.name))
                             withContext(Dispatchers.Main) {
                                 refreshLibrary()
-                                status = "Added ${entry.displayName}."
+                                status = "Added ${entry.effectiveName}."
                             }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) {
@@ -1261,6 +1266,10 @@ class MainActivity : ComponentActivity() {
                                 onPlay = { startGame(selected) },
                                 onMode = { modePickerFor = selected },
                                 onRemove = { confirmRemove = selected },
+                                onRename = {
+                                    renameFor = selected
+                                    renameText = selected.effectiveName
+                                },
                                 cover = covers[selected.mainFile],
                             )
                             Spacer(Modifier.height(12.dp))
@@ -1301,7 +1310,7 @@ class MainActivity : ComponentActivity() {
                 if (toRemove != null) {
                     AlertDialog(
                         onDismissRequest = { confirmRemove = null },
-                        title = { Text("Remove ${toRemove.displayName}?") },
+                        title = { Text("Remove ${toRemove.effectiveName}?") },
                         text = { Text("This deletes its files from the library.") },
                         confirmButton = {
                             TextButton(onClick = {
@@ -1310,7 +1319,7 @@ class MainActivity : ComponentActivity() {
                                     withContext(Dispatchers.Main) {
                                         confirmRemove = null
                                         refreshLibrary()
-                                        status = "Removed ${toRemove.displayName}."
+                                        status = "Removed ${toRemove.effectiveName}."
                                     }
                                 }
                             }) { Text("Remove") }
@@ -1326,7 +1335,7 @@ class MainActivity : ComponentActivity() {
                 if (modeGame != null) {
                     AlertDialog(
                         onDismissRequest = { modePickerFor = null },
-                        title = { Text("System for ${modeGame.displayName}") },
+                        title = { Text("System for ${modeGame.effectiveName}") },
                         text = {
                             Column {
                                 Text(
@@ -1342,7 +1351,7 @@ class MainActivity : ComponentActivity() {
                                             withContext(Dispatchers.Main) {
                                                 modePickerFor = null
                                                 refreshLibrary()
-                                                status = "${target.displayName}: ${modeLabel(mode)}."
+                                                status = "${target.effectiveName}: ${modeLabel(mode)}."
                                             }
                                         }
                                     }) {
@@ -1359,7 +1368,7 @@ class MainActivity : ComponentActivity() {
                                         withContext(Dispatchers.Main) {
                                             modePickerFor = null
                                             refreshLibrary()
-                                            status = "${target.displayName}: default system."
+                                            status = "${target.effectiveName}: default system."
                                         }
                                     }
                                 }) {
@@ -1370,6 +1379,48 @@ class MainActivity : ComponentActivity() {
                         confirmButton = {},
                         dismissButton = {
                             TextButton(onClick = { modePickerFor = null }) {
+                                Text("Cancel")
+                            }
+                        },
+                    )
+                }
+                // Phase 9, item 4 — rename the picked game. Save
+                // with an empty name clears the custom name, so the
+                // game shows its original name again.
+                val renameTarget = renameFor
+                if (renameTarget != null) {
+                    AlertDialog(
+                        onDismissRequest = { renameFor = null },
+                        title = { Text("Rename ${renameTarget.effectiveName}") },
+                        text = {
+                            OutlinedTextField(
+                                value = renameText,
+                                onValueChange = { renameText = it },
+                                singleLine = true,
+                                label = { Text("Name") },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                val target = renameTarget
+                                val typed = renameText
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    val updated = library.setCustomName(target, typed)
+                                    withContext(Dispatchers.Main) {
+                                        renameFor = null
+                                        refreshLibrary()
+                                        status = if (updated.customName == null) {
+                                            "Back to ${updated.displayName}."
+                                        } else {
+                                            "Renamed to ${updated.effectiveName}."
+                                        }
+                                    }
+                                }
+                            }) { Text("Save") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { renameFor = null }) {
                                 Text("Cancel")
                             }
                         },
@@ -1388,7 +1439,7 @@ class MainActivity : ComponentActivity() {
                     state = SetupState(
                         biosReady = bios?.readyCount ?: 0,
                         gameCount = games.size,
-                        pickedName = selectedGame?.displayName,
+                        pickedName = selectedGame?.effectiveName,
                     ),
                     onSystemFiles = { biosPicker.launch(null) },
                     onAddGame = { gamePicker.launch(arrayOf("*/*")) },
@@ -1436,7 +1487,7 @@ class MainActivity : ComponentActivity() {
                         // of pushing the buttons off-screen, in any
                         // orientation.
                         Text(
-                            playingGame?.displayName ?: "Game",
+                            playingGame?.effectiveName ?: "Game",
                             color = Color(EraUi.Palette.TEXT),
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,

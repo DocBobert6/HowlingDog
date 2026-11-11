@@ -8,14 +8,20 @@ import java.io.File
  * system may clear cacheDir, and the library must survive), and the
  * index lives in [storeFile], one game per line:
  *
- *   mainFile | displayName | addedAtMillis | file1,file2,... | mode | pinned
+ *   mainFile | displayName | addedAtMillis | file1,file2,... | mode | pinned | customName
  *
  * The mode field is the per-game system mode (or empty for the type
  * default); lines written before the mode existed have only four
  * fields and still load, with the mode unset. The pinned field is
  * "1" for a favourite, empty otherwise; lines written before pins
  * existed have four or five fields and still load, unpinned.
- * Pinned games sort to the top of the library, then by name.
+ * The customName field (Phase 9, item 4) is the name the user typed
+ * in the rename dialog, or empty for the original name; lines
+ * written before renames existed have six or fewer fields and still
+ * load, unrenamed. It is a display-only override: [displayName]
+ * stays the filename-derived original, and cover-art matching
+ * (CoverArt / NeoHeader) keeps using that original, so a renamed
+ * game keeps its art. Pinned games sort to the top of the library, then by name.
  *
  * Filenames are sanitized (see [sanitize]: letters, digits, '.', '_',
  * '-' only), so '|' and ',' can never appear in a stored name and the
@@ -49,7 +55,17 @@ data class GameEntry(
     val mode: String? = null,
     /** Favourite: pinned games sit at the top of the library grid. */
     val pinned: Boolean = false,
+    /**
+     * Phase 9, item 4 — the name the user typed for this game, or
+     * null for the original. Display-only: [displayName] keeps the
+     * filename-derived original, so cover-art matching (which reads
+     * [displayName], never this) still works after a rename.
+     */
+    val customName: String? = null,
 ) {
+    /** The name the library shows: the custom name when set, else the original. */
+    val effectiveName: String get() = customName?.takeIf { it.isNotBlank() } ?: displayName
+
     /** The file the core loads: the main file's path under [gamesDir]. */
     fun mainPath(gamesDir: File): File = File(gamesDir, mainFile)
 
@@ -128,10 +144,10 @@ fun parseCueBinFiles(cueText: String): List<String> {
     return seen.toList()
 }
 
-/** The library order: pinned favourites first, then by display name, then by when added. */
+/** The library order: pinned favourites first, then by the shown name, then by when added. */
 val libraryOrder: Comparator<GameEntry> =
     compareByDescending<GameEntry> { it.pinned }
-        .thenBy { it.displayName.lowercase() }
+        .thenBy { it.effectiveName.lowercase() }
         .thenBy { it.addedAt }
 
 class GameLibrary(
@@ -170,7 +186,7 @@ class GameLibrary(
         return all
     }
 
-    /** Add or replace a game (deduplicate by main file name). Files must already be in [gamesDir]. A re-import keeps the game's stored mode and pin. */
+    /** Add or replace a game (deduplicate by main file name). Files must already be in [gamesDir]. A re-import keeps the game's stored mode, pin, and custom name. */
     fun register(mainFile: String, files: List<String>): GameEntry {
         val existing = load().find { it.mainFile == mainFile }
         val entry = GameEntry(
@@ -180,6 +196,7 @@ class GameLibrary(
             addedAt = System.currentTimeMillis(),
             mode = existing?.mode,
             pinned = existing?.pinned ?: false,
+            customName = existing?.customName,
         )
         val all = load().filter { it.mainFile != mainFile } + entry
         save(all.sortedWith(libraryOrder))
@@ -198,6 +215,23 @@ class GameLibrary(
     /** Pin or unpin a game; returns the updated entry. Pinned games sort to the top of the library. */
     fun setPinned(entry: GameEntry, pinned: Boolean): GameEntry {
         val updated = entry.copy(pinned = pinned)
+        val all = load().filter { it.mainFile != entry.mainFile } + updated
+        save(all.sortedWith(libraryOrder))
+        return updated
+    }
+
+    /**
+     * Phase 9, item 4 — rename a game; returns the updated entry.
+     * The name is trimmed, and '|' / newlines are replaced (they
+     * would break the store line); a blank or null name clears the
+     * custom name, so the game shows its original name again. The
+     * original [GameEntry.displayName] never changes, so cover-art
+     * matching keeps using it and a renamed game keeps its art.
+     */
+    fun setCustomName(entry: GameEntry, name: String?): GameEntry {
+        val cleaned = name?.replace('|', ' ')?.replace('\n', ' ')?.replace('\r', ' ')
+            ?.trim()?.take(120)?.takeIf { it.isNotEmpty() }
+        val updated = entry.copy(customName = cleaned)
         val all = load().filter { it.mainFile != entry.mainFile } + updated
         save(all.sortedWith(libraryOrder))
         return updated
@@ -330,7 +364,8 @@ class GameLibrary(
                 val parts = line.split('|')
                 // Four fields: written before per-game modes
                 // existed. Five: before pins. Six: mode + pin.
-                if (parts.size !in 4..6) continue
+                // Seven: mode + pin + custom name.
+                if (parts.size !in 4..7) continue
                 val main = parts[0].trim()
                 val name = parts[1].trim()
                 val added = parts[2].trim().toLongOrNull() ?: continue
@@ -344,9 +379,16 @@ class GameLibrary(
                 }
                 // Sixth field, written since pins existed: "1" is
                 // pinned; anything else (including absent) is not.
-                val pinned = parts.size == 6 &&
+                val pinned = parts.size >= 6 &&
                     (parts[5].trim() == "1" || parts[5].trim().equals("true", ignoreCase = true))
-                out.add(GameEntry(main, name, files, added, mode, pinned))
+                // Seventh field, written since renames existed: the
+                // custom name, or empty/absent for the original.
+                val customName = if (parts.size == 7) {
+                    parts[6].trim().takeIf { it.isNotEmpty() }
+                } else {
+                    null
+                }
+                out.add(GameEntry(main, name, files, added, mode, pinned, customName))
             }
         } catch (_: Exception) {
             return emptyList()
@@ -359,7 +401,8 @@ class GameLibrary(
             storeFile.parentFile?.mkdirs()
             val text = entries.joinToString("\n") { e ->
                 val safeName = e.displayName.replace('|', ' ').replace('\n', ' ').trim()
-                "${e.mainFile}|$safeName|${e.addedAt}|${e.files.joinToString(",")}|${e.mode ?: ""}|${if (e.pinned) "1" else ""}"
+                val safeCustom = e.customName?.replace('|', ' ')?.replace('\n', ' ')?.trim() ?: ""
+                "${e.mainFile}|$safeName|${e.addedAt}|${e.files.joinToString(",")}|${e.mode ?: ""}|${if (e.pinned) "1" else ""}|$safeCustom"
             }
             storeFile.writeText(if (text.isEmpty()) "" else text + "\n")
         } catch (_: Exception) {

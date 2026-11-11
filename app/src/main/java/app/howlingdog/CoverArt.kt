@@ -37,7 +37,13 @@ class CoverArt(private val filesDir: File) {
         return NeoHeader.matchArtFile(title, catalogue, index)
     }
 
-    /** The identity a game is looked up by: the .NEO header for carts, the display name for discs. */
+    /**
+     * The identity a game is looked up by: the .NEO header for
+     * carts, the display name for discs. This deliberately reads
+     * [GameEntry.displayName] — the filename-derived ORIGINAL —
+     * never the user's custom name (Phase 9, item 4): a renamed
+     * game keeps its art, because the lookup never sees the rename.
+     */
     fun identityFor(entry: GameEntry, gamesDir: File): Pair<String, String?> {
         if (entry.mainFile.endsWith(".neo", ignoreCase = true)) {
             val file = File(gamesDir, entry.mainFile)
