@@ -55,7 +55,7 @@ jobs:
           # it, but this step proves the file itself is a real
           # TrueType font and not a placeholder or a corrupted copy.
           test -f app/src/main/res/font/neogeo_system_font.ttf
-          file app/src/main/res/font/neogeo_system_font.ttf | grep -q "TrueType font data"
+          file app/src/main/res/font/neogeo_system_font.ttf | grep -q "TrueType Font data"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
