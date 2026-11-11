@@ -159,6 +159,17 @@ class MainActivity : ComponentActivity() {
     private val padButtonsHeld = mutableSetOf<Int>()
     /** Direction bits from the gamepad axes (stick/hat). */
     private var padAxesMask = 0
+    /**
+     * v1.5, feature 5 — two-player multiplayer: which gamepad is
+     * player 1 and which is player 2 (first to send input is
+     * player 1, second is player 2, a third is ignored). The
+     * touch overlay is always player 1.
+     */
+    private val playerAssignment = PlayerAssignment()
+    /** Player-2 gamepad buttons currently held (KeyEvent keycodes). */
+    private val pad2ButtonsHeld = mutableSetOf<Int>()
+    /** Direction bits from the player-2 gamepad axes (stick/hat). */
+    private var pad2AxesMask = 0
     /** True only while a game is running and not paused: pad input is tracked only then, so the D-pad stays free for the pause menu and the library. */
     private var inputActive = false
     /** Set by the UI while the game screen is active; called with the current gamepad mask. */
@@ -229,13 +240,27 @@ class MainActivity : ComponentActivity() {
         override fun onInputDeviceAdded(deviceId: Int) {}
         override fun onInputDeviceChanged(deviceId: Int) {}
         override fun onInputDeviceRemoved(deviceId: Int) {
-            if (padButtonsHeld.isNotEmpty() || padAxesMask != 0 || padFfHeld || padSlowHeld) {
-                padButtonsHeld.clear()
-                padAxesMask = 0
-                padFfHeld = false
-                padSlowHeld = false
-                pushPadMask()
-                onPadSpeed?.invoke()
+            // v1.5, feature 5 — two-player multiplayer: only the
+            // removed pad's state is dropped, and its player slot
+            // is freed for the next gamepad. The other pad keeps
+            // playing untouched.
+            if (deviceId == playerAssignment.deviceP1) {
+                if (padButtonsHeld.isNotEmpty() || padAxesMask != 0 || padFfHeld || padSlowHeld) {
+                    padButtonsHeld.clear()
+                    padAxesMask = 0
+                    padFfHeld = false
+                    padSlowHeld = false
+                    pushPadMask()
+                    onPadSpeed?.invoke()
+                }
+                playerAssignment.release(deviceId)
+            } else if (deviceId == playerAssignment.deviceP2) {
+                if (pad2ButtonsHeld.isNotEmpty() || pad2AxesMask != 0) {
+                    pad2ButtonsHeld.clear()
+                    pad2AxesMask = 0
+                    pushPad2Mask()
+                }
+                playerAssignment.release(deviceId)
             }
         }
     }
@@ -286,6 +311,19 @@ class MainActivity : ComponentActivity() {
         onPadMask?.invoke(mask)
     }
 
+    /**
+     * v1.5, feature 5 — two-player multiplayer: recompute the
+     * player-2 gamepad mask and hand it straight to the session.
+     * Player 2 is gamepad-only (no touch, no turbo, no UniBIOS
+     * combo), so there is nothing to OR it with — the mask IS the
+     * input. The same remapping applies as for player 1.
+     */
+    private fun pushPad2Mask() {
+        var mask = pad2AxesMask
+        for (code in pad2ButtonsHeld) mask = mask or GamepadInput.maskForButton(code, gamepadMappingField)
+        session?.setInput2(mask)
+    }
+
     /** Drop all gamepad-held input (quit, disconnect). */
     private fun clearPadState() {
         padButtonsHeld.clear()
@@ -295,9 +333,36 @@ class MainActivity : ComponentActivity() {
         padSlowHeld = false
         pushPadMask()
         onPadSpeed?.invoke()
+        // v1.5, feature 5 — two-player multiplayer: the second
+        // pad's held input goes too, so no player-2 button sticks
+        // across a quit or a background. The assignment itself is
+        // NOT cleared here — the pads are still the same physical
+        // devices, so they keep their players; a slot is only
+        // freed when its device actually disconnects (see the
+        // device listener above).
+        pad2ButtonsHeld.clear()
+        pad2AxesMask = 0
+        pushPad2Mask()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        // v1.5, feature 5 — two-player multiplayer: a gamepad
+        // button belongs to whichever player its device is assigned
+        // to (first gamepad is player 1, second is player 2, a
+        // third is ignored). Player 2's buttons go straight to the
+        // player-2 mask — the quick combos, speed buttons, pause
+        // hotkey, and remap capture are all player-1 system
+        // functions and never fire for it.
+        if (GamepadInput.isGamepadButton(keyCode) ||
+            GamepadInput.isQuickComboButton(keyCode) ||
+            GamepadInput.isSpeedButton(keyCode)
+        ) {
+            when (playerAssignment.playerFor(event.deviceId)) {
+                PlayerAssignment.PLAYER_2 -> return onPad2KeyDown(keyCode, event)
+                PlayerAssignment.IGNORED -> return super.onKeyDown(keyCode, event)
+                else -> { /* Player 1: fall through to the code below. */ }
+            }
+        }
         // Remapping capture (v1.3.0, part 1): while the remap
         // screen is waiting for a button, a recognised gamepad
         // button press is captured here, before the game-input
@@ -363,7 +428,46 @@ class MainActivity : ComponentActivity() {
         return true
     }
 
+    /**
+     * v1.5, feature 5 — two-player multiplayer: a player-2 gamepad
+     * button press. Only the six Neo Geo inputs reach the game;
+     * the quick combos, speed buttons, and pause hotkey are
+     * player-1 system functions and never fire here.
+     */
+    private fun onPad2KeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (!inputActive || event.repeatCount != 0) return super.onKeyDown(keyCode, event)
+        if (!GamepadInput.isGamepadButton(keyCode)) return super.onKeyDown(keyCode, event)
+        pad2ButtonsHeld.add(keyCode)
+        pushPad2Mask()
+        return true
+    }
+
+    /**
+     * v1.5, feature 5 — two-player multiplayer: a player-2 gamepad
+     * button release.
+     */
+    private fun onPad2KeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (!inputActive) return super.onKeyUp(keyCode, event)
+        if (pad2ButtonsHeld.remove(keyCode)) {
+            pushPad2Mask()
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        // v1.5, feature 5 — two-player multiplayer: route the
+        // release to the player that owns this device.
+        if (GamepadInput.isGamepadButton(keyCode) ||
+            GamepadInput.isQuickComboButton(keyCode) ||
+            GamepadInput.isSpeedButton(keyCode)
+        ) {
+            when (playerAssignment.playerFor(event.deviceId)) {
+                PlayerAssignment.PLAYER_2 -> return onPad2KeyUp(keyCode, event)
+                PlayerAssignment.IGNORED -> return super.onKeyUp(keyCode, event)
+                else -> { /* Player 1: fall through to the code below. */ }
+            }
+        }
         if (!inputActive) return super.onKeyUp(keyCode, event)
         if (padQuickHeld.remove(keyCode)) {
             return true
@@ -385,12 +489,27 @@ class MainActivity : ComponentActivity() {
             event.source and InputDevice.SOURCE_JOYSTICK != 0 &&
             event.action == MotionEvent.ACTION_MOVE
         ) {
-            val mask = GamepadInput.maskForAxes(event)
-            if (mask != padAxesMask) {
-                padAxesMask = mask
-                pushPadMask()
+            // v1.5, feature 5 — two-player multiplayer: the axes
+            // belong to whichever player this device is assigned to.
+            when (playerAssignment.playerFor(event.deviceId)) {
+                PlayerAssignment.PLAYER_2 -> {
+                    val mask = GamepadInput.maskForAxes(event)
+                    if (mask != pad2AxesMask) {
+                        pad2AxesMask = mask
+                        pushPad2Mask()
+                    }
+                    return true
+                }
+                PlayerAssignment.IGNORED -> return super.onGenericMotionEvent(event)
+                else -> {
+                    val mask = GamepadInput.maskForAxes(event)
+                    if (mask != padAxesMask) {
+                        padAxesMask = mask
+                        pushPadMask()
+                    }
+                    return true
+                }
             }
-            return true
         }
         return super.onGenericMotionEvent(event)
     }
@@ -3315,6 +3434,10 @@ class MainActivity : ComponentActivity() {
             }
             Text(
                 "Move the Neo Geo buttons to whichever gamepad buttons you like. The six face and menu buttons swap with each other; the shoulders stay as quick save and quick load, and the D-pad and stick keep steering.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "Second player: connect a second gamepad and it controls player 2. The first gamepad you press is player 1, the second is player 2, and a third gamepad is ignored. The same button mapping applies to both players; the shoulders, stick clicks, and START+SELECT pause stay with player 1.",
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(16.dp))

@@ -16,8 +16,10 @@
 //     interpolator, because the core's native rates (55943 Hz AES,
 //     55555 Hz MVS, 44396 Hz CD) are outside what AudioTrack accepts
 //     reliably. A proper resampler belongs in a later phase.
-//   - Input is port 0 only (player 1), touch only. Gamepad input
-//     arrives in Phase 4.
+//   - Input is ports 0 and 1 (players 1 and 2). Player 1 is the
+//     touch overlay and the first gamepad; player 2 is a second
+//     gamepad (v1.5, feature 5). Ports 2 and 3 (the NEO-FTC1B
+//     4-player extension board) are unanswered and read as 0.
 //   - Core options are settable through nativeSetOption (Phase 4):
 //     the bridge answers GET_VARIABLE from a mutable table seeded
 //     with the core's documented defaults; a set flags
@@ -96,6 +98,10 @@ static bool g_resample_have_prev = false;
 
 // Input: player-1 joypad bitmask, bits are (1 << RETRO_DEVICE_ID_JOYPAD_*).
 static volatile int16_t g_input_mask = 0;
+// v1.5, feature 5 — two-player multiplayer: the player-2 joypad
+// bitmask, same bit layout. Set by nativeSetInput2; the core reads
+// it when it polls port 1 (P2 directions/buttons, Coin 2, P2 Start).
+static volatile int16_t g_input_mask_p2 = 0;
 
 // Run-ahead (Phase 10): the state ring lives here, on the bridge,
 // because the state bytes are native. The requested frame count is
@@ -612,12 +618,25 @@ static void bridge_input_poll(void) {
 static int16_t bridge_input_state(unsigned port, unsigned device,
                                   unsigned index, unsigned id) {
     (void)index;
-    if (port != 0 || device != RETRO_DEVICE_JOYPAD)
+    if (device != RETRO_DEVICE_JOYPAD)
         return 0;
+    // v1.5, feature 5 — two-player multiplayer: port 0 is player 1,
+    // port 1 is player 2. Ports 2 and 3 (the NEO-FTC1B 4-player
+    // extension board) are unanswered and read as 0. The core asks
+    // for the whole mask (RETRO_DEVICE_ID_JOYPAD_MASK) and for single
+    // buttons; both read the same per-player mask.
+    int16_t mask;
+    if (port == 0) {
+        mask = g_input_mask;
+    } else if (port == 1) {
+        mask = g_input_mask_p2;
+    } else {
+        return 0;
+    }
     if (id == RETRO_DEVICE_ID_JOYPAD_MASK)
-        return g_input_mask;
+        return mask;
     if (id < 16)
-        return (g_input_mask & (int16_t)(1u << id)) ? 1 : 0;
+        return (mask & (int16_t)(1u << id)) ? 1 : 0;
     return 0;
 }
 
@@ -807,6 +826,15 @@ JNIEXPORT void JNICALL
 Java_app_howlingdog_Bridge_nativeSetInput(JNIEnv * /* env */,
                                           jobject /* thiz */, jint mask) {
     g_input_mask = (int16_t)mask;
+}
+
+// v1.5, feature 5 — two-player multiplayer: the player-2 joypad
+// mask, same bit layout as player 1. The core reads it when it
+// polls port 1.
+JNIEXPORT void JNICALL
+Java_app_howlingdog_Bridge_nativeSetInput2(JNIEnv * /* env */,
+                                           jobject /* thiz */, jint mask) {
+    g_input_mask_p2 = (int16_t)mask;
 }
 
 // Set one core option (Phase 4 settings / per-game mode). The value

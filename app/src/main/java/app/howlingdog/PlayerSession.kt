@@ -92,6 +92,22 @@ class PlayerSession(
     }
 
     /**
+     * v1.5, feature 5 — two-player multiplayer: the player-2 joypad
+     * mask, same bit layout as player 1. Player 2 is gamepad-only
+     * (no touch, no turbo), so this is the whole of player 2's
+     * input. Mirrors [setInput]: the volatile holds it for the
+     * post-load push, and the native call updates the live mask at
+     * once when a game is running.
+     */
+    @Volatile
+    private var inputMask2 = 0
+
+    fun setInput2(mask: Int) {
+        inputMask2 = mask
+        if (running) Bridge.nativeSetInput2(mask)
+    }
+
+    /**
      * v1.5, feature 1 — the frame-pace multiplier (1.0 =
      * normal). Set by the UI; the emu loop reads it every frame
      * for the sleep, and the audio loop reads it to mute while
@@ -267,6 +283,10 @@ class PlayerSession(
         Log.i(TAG, "playing ${width}x${height} @ $fps fps, audio ${av[3]} Hz -> $AUDIO_RATE Hz, run-ahead ${runaheadFrames} frame(s)")
         // Push any input the UI already recorded before the load finished.
         Bridge.nativeSetInput(inputMask)
+        // v1.5, feature 5 — two-player multiplayer: the same for
+        // player 2, so a second gamepad held during the load is
+        // live from the first frame.
+        Bridge.nativeSetInput2(inputMask2)
         // Phase 10 — size the run-ahead ring for this game now
         // that it is loaded (the state size is only known then).
         // With run-ahead off this stores 0 and the loop below uses

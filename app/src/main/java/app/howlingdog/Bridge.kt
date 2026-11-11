@@ -49,6 +49,9 @@ object Bridge {
     external fun nativeReadAudio(samples: ShortArray, maxFrames: Int): Int
     external fun nativeSetInput(mask: Int)
 
+    /** v1.5, feature 5 — two-player multiplayer: the player-2 joypad mask, same bit layout as player 1. */
+    external fun nativeSetInput2(mask: Int)
+
     /** Set one core option (see bridge.cpp). False for an unknown key. */
     external fun nativeSetOption(key: String, value: String): Boolean
 
