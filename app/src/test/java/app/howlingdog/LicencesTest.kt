@@ -35,7 +35,8 @@ class LicencesTest {
             composeRule.onAllNodesWithText("HOWLINGDOG — SYSTEM SETUP").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText("SKIP").performClick()
-        composeRule.onNodeWithText("Settings").performClick()
+        // Same below-fold row as Add game — scroll into view first.
+        composeRule.onNodeWithText("Settings").performScrollTo().performClick()
         // The About section sits at the bottom of the scrollable
         // Settings screen — scroll the button into view first.
         composeRule.onNodeWithText("Licences").performScrollTo().performClick()
@@ -77,7 +78,11 @@ class LicencesTest {
             composeRule.onAllNodesWithText("HOWLINGDOG — SYSTEM SETUP").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText("SKIP").performClick()
-        composeRule.onNodeWithText("Settings").performClick()
+        // The Settings button sits in the same row as Add game,
+        // below the fold in the small test window when the System
+        // files card is fully loaded — scroll it into view first
+        // so the click lands on the button.
+        composeRule.onNodeWithText("Settings").performScrollTo().performClick()
         // Probe (merge diagnosis): split the Licences chain so the
         // failing step is named by its line — lookup, scroll, click.
         composeRule.onNodeWithText("Licences").assertExists()
