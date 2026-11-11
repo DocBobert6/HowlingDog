@@ -31,6 +31,18 @@
  * around save states, which hardcore forbids. Achievements
  * unlock in softcore. Rich presence and leaderboards are not
  * used in v1.1.0 — their events are ignored.
+ *
+ * v1.2.0 (items 2 and 3): leaderboards and rich presence are
+ * wired up. Leaderboard submission is automatic — rc_client
+ * evaluates the trackers in rc_client_do_frame and submits an
+ * attempt through the same async HTTP plumbing as achievements
+ * — so the app only has to forward the leaderboard events
+ * (tracker show/hide/update, scoreboard) and offer a way to
+ * list the boards and fetch their entries. Rich presence is
+ * likewise automatic: the periodic ping rc_client schedules at
+ * game load sends the current presence string to the server
+ * through the same plumbing, so the app only reads the current
+ * message (for display) — there is nothing to send by hand.
  */
 
 #ifndef RA_CLIENT_H
@@ -53,6 +65,13 @@ extern "C" {
 /* Event types forwarded to the app (rcheevos
  * RC_CLIENT_EVENT_*). Only the two below are forwarded. */
 #define RA_EVENT_ACHIEVEMENT_TRIGGERED 1
+#define RA_EVENT_LEADERBOARD_STARTED 2
+#define RA_EVENT_LEADERBOARD_FAILED 3
+#define RA_EVENT_LEADERBOARD_SUBMITTED 4
+#define RA_EVENT_LEADERBOARD_TRACKER_SHOW 10
+#define RA_EVENT_LEADERBOARD_TRACKER_HIDE 11
+#define RA_EVENT_LEADERBOARD_TRACKER_UPDATE 12
+#define RA_EVENT_LEADERBOARD_SCOREBOARD 13
 #define RA_EVENT_GAME_COMPLETED 15
 
 /* The core's SYSTEM_RAM, supplied by the bridge (which reads it
@@ -66,6 +85,24 @@ typedef void (*ra_server_call_fn)(int request_id, const char* url, const char* p
 
 /* An achievement event (unlock, game completed). */
 typedef void (*ra_event_fn)(int type, uint32_t achievement_id, const char* title, const char* description, uint32_t points, void* ctx);
+
+/* A leaderboard event (tracker show/hide/update, attempt
+ * started/failed/submitted, scoreboard). The payload is a JSON
+ * string (NULL when the event carries none): the tracker events
+ * carry {"display":"..."} and the scoreboard carries
+ * {"submitted_score","best_score","new_rank","num_entries",
+ * "top":[{"username","rank","score"}]}. The wrapper builds the
+ * JSON and frees it after the callback returns, so the app must
+ * copy anything it wants to keep. Registered separately from
+ * ra_init (see ra_set_leaderboard_event_handler) so the
+ * achievement path stays untouched. */
+typedef void (*ra_leaderboard_event_fn)(int type, uint32_t leaderboard_id, const char* json, void* ctx);
+
+/* An async JSON result (a leaderboard entries fetch). json is
+ * NULL on failure (result != 0); on success it is the entries
+ * object, and the app must copy anything it wants to keep — the
+ * wrapper frees it after the callback returns. */
+typedef void (*ra_json_result_fn)(int result, const char* error_message, const char* json, void* ctx);
 
 /* An async result (login, game load). result is 0 (RC_OK) on
  * success, non-zero on failure; error_message may be NULL. */
@@ -141,6 +178,29 @@ char* ra_get_achievements_json(void);
 /* Deliver an HTTP response for a pending server call (called by
  * the bridge when the app's HTTP request finishes). */
 void ra_http_response(int request_id, const char* body, size_t body_length, int http_status_code);
+
+/* Leaderboards (v1.2.0, item 2). The list is the loaded game's
+ * boards as a JSON array string (malloc'd; the caller frees
+ * it). NULL when no game is loaded. Each entry: id, title,
+ * description, format (0 time, 1 score, 2 value),
+ * lower_is_better (0/1), state, tracker_value ("" when the
+ * board is not being attempted). The entries fetch is async:
+ * around_user fetches the entries around the logged-in user,
+ * otherwise the top entries (10, from the top); the result is
+ * delivered through result_cb, exactly once. Returns -1 when
+ * no game is loaded (the callback is not called). */
+void ra_set_leaderboard_event_handler(ra_leaderboard_event_fn fn, void* ctx);
+int ra_has_leaderboards(void);
+char* ra_get_leaderboards_json(void);
+int ra_fetch_leaderboard_entries(uint32_t leaderboard_id, int around_user, ra_json_result_fn result_cb, void* ctx);
+
+/* Rich presence (v1.2.0, item 2). The presence string is sent
+ * to the server automatically by rc_client's periodic ping
+ * (driven by ra_do_frame), so the app never sends it by hand —
+ * these only read the current state, for display. Returns 0
+ * (and an empty message) when the game has no rich presence. */
+int ra_has_rich_presence(void);
+size_t ra_get_rich_presence(char* buffer, size_t buffer_size);
 
 #ifdef __cplusplus
 }

@@ -46,6 +46,13 @@ static void* g_server_ctx;
 static ra_event_fn g_event_cb;
 static void* g_event_ctx;
 
+/* The leaderboard event callback (v1.2.0, item 2): tracker
+ * show/hide/update and the scoreboard. Registered separately
+ * (ra_set_leaderboard_event_handler) so the achievement path
+ * in ra_init stays untouched. */
+static ra_leaderboard_event_fn g_leaderboard_event_cb;
+static void* g_leaderboard_event_ctx;
+
 /* Pending server calls (the app's async HTTP). The table is
  * small — rc_client has at most a couple of calls in flight
  * (login, game load, unlock, ping). */
@@ -209,23 +216,181 @@ void ra_http_response(int request_id, const char* body, size_t body_length, int 
     /* Unknown id — the call already completed. Nothing to do. */
 }
 
+/* A growable string buffer for the JSON builder. */
+typedef struct {
+    char* data;
+    size_t len;
+    size_t cap;
+} ra_json_buf_t;
+
+static int ra_json_reserve(ra_json_buf_t* buf, size_t extra) {
+    size_t needed = buf->len + extra + 1;
+    char* grown;
+    if (needed <= buf->cap)
+        return 0;
+    while (buf->cap < needed)
+        buf->cap = buf->cap ? buf->cap * 2 : 256;
+    grown = (char*)realloc(buf->data, buf->cap);
+    if (!grown)
+        return -1;
+    buf->data = grown;
+    return 0;
+}
+
+static int ra_json_append(ra_json_buf_t* buf, const char* text) {
+    size_t len = strlen(text);
+    if (ra_json_reserve(buf, len) != 0)
+        return -1;
+    memcpy(buf->data + buf->len, text, len);
+    buf->len += len;
+    buf->data[buf->len] = '\0';
+    return 0;
+}
+
+static int ra_json_append_char(ra_json_buf_t* buf, char c) {
+    char text[2];
+    text[0] = c;
+    text[1] = '\0';
+    return ra_json_append(buf, text);
+}
+
+/* Append a JSON string (quoted, with ", \ and control characters
+ * escaped). NULL renders as "". */
+static int ra_json_append_string(ra_json_buf_t* buf, const char* text) {
+    if (ra_json_append_char(buf, '"') != 0)
+        return -1;
+    if (text) {
+        for (const unsigned char* p = (const unsigned char*)text; *p; ++p) {
+            char escaped[8];
+            if (*p == '"') {
+                if (ra_json_append(buf, "\\\"") != 0)
+                    return -1;
+            } else if (*p == '\\') {
+                if (ra_json_append(buf, "\\\\") != 0)
+                    return -1;
+            } else if (*p < 0x20) {
+                snprintf(escaped, sizeof(escaped), "\\u%04x", *p);
+                if (ra_json_append(buf, escaped) != 0)
+                    return -1;
+            } else {
+                if (ra_json_append_char(buf, (char)*p) != 0)
+                    return -1;
+            }
+        }
+    }
+    return ra_json_append_char(buf, '"');
+}
+
+static int ra_json_append_int(ra_json_buf_t* buf, long value) {
+    char text[32];
+    snprintf(text, sizeof(text), "%ld", value);
+    return ra_json_append(buf, text);
+}
+
+static int ra_json_append_double(ra_json_buf_t* buf, double value) {
+    char text[32];
+    snprintf(text, sizeof(text), "%g", value);
+    return ra_json_append(buf, text);
+}
+
 /* ------------------------------------------------------------------ */
 /* Events                                                             */
 /* ------------------------------------------------------------------ */
 
+/* The leaderboard JSON payloads (v1.2.0, item 2). The tracker
+ * carries its current display string; the scoreboard carries
+ * the submitted and best scores (already formatted by
+ * rcheevos), the new rank, the entry count, and the top
+ * entries. Both are built into a caller-owned buffer and
+ * freed after the callback returns. */
+static char* ra_build_tracker_json(const rc_client_leaderboard_tracker_t* tracker) {
+    ra_json_buf_t buf;
+    memset(&buf, 0, sizeof(buf));
+    ra_json_append(&buf, "{\"display\":");
+    ra_json_append_string(&buf, tracker->display);
+    ra_json_append(&buf, "}");
+    return buf.data;
+}
+
+static char* ra_build_scoreboard_json(const rc_client_leaderboard_scoreboard_t* scoreboard) {
+    ra_json_buf_t buf;
+    uint32_t i;
+    memset(&buf, 0, sizeof(buf));
+    ra_json_append(&buf, "{\"submitted_score\":");
+    ra_json_append_string(&buf, scoreboard->submitted_score);
+    ra_json_append(&buf, ",\"best_score\":");
+    ra_json_append_string(&buf, scoreboard->best_score);
+    ra_json_append(&buf, ",\"new_rank\":");
+    ra_json_append_int(&buf, scoreboard->new_rank);
+    ra_json_append(&buf, ",\"num_entries\":");
+    ra_json_append_int(&buf, scoreboard->num_entries);
+    ra_json_append(&buf, ",\"top\":[");
+    for (i = 0; i < scoreboard->num_top_entries; i++) {
+        const rc_client_leaderboard_scoreboard_entry_t* entry = &scoreboard->top_entries[i];
+        if (i > 0)
+            ra_json_append_char(&buf, ',');
+        ra_json_append(&buf, "{\"user\":");
+        ra_json_append_string(&buf, entry->username);
+        ra_json_append(&buf, ",\"display\":");
+        ra_json_append_string(&buf, entry->score);
+        ra_json_append(&buf, ",\"rank\":");
+        ra_json_append_int(&buf, entry->rank);
+        ra_json_append(&buf, "}");
+    }
+    ra_json_append(&buf, "]}");
+    return buf.data;
+}
+
 static void ra_event_handler(const rc_client_event_t* event, rc_client_t* client) {
     (void)client;
-    if (!g_event_cb)
-        return;
-    if (event->type == RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED && event->achievement) {
-        g_event_cb(RA_EVENT_ACHIEVEMENT_TRIGGERED, event->achievement->id,
-                   event->achievement->title, event->achievement->description,
-                   event->achievement->points, g_event_ctx);
-    } else if (event->type == RC_CLIENT_EVENT_GAME_COMPLETED) {
-        g_event_cb(RA_EVENT_GAME_COMPLETED, 0, NULL, NULL, 0, g_event_ctx);
+    if (g_event_cb) {
+        if (event->type == RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED && event->achievement) {
+            g_event_cb(RA_EVENT_ACHIEVEMENT_TRIGGERED, event->achievement->id,
+                       event->achievement->title, event->achievement->description,
+                       event->achievement->points, g_event_ctx);
+        } else if (event->type == RC_CLIENT_EVENT_GAME_COMPLETED) {
+            g_event_cb(RA_EVENT_GAME_COMPLETED, 0, NULL, NULL, 0, g_event_ctx);
+        }
     }
-    /* Leaderboards, challenge/progress indicators, server errors */
-    /* and disconnects are not used in v1.1.0. */
+    /* Leaderboards (v1.2.0, item 2): the attempt is submitted
+     * automatically by rc_client (the tracker is evaluated in
+     * do_frame and the submission goes through the same async
+     * HTTP plumbing as achievements), so the app only has to
+     * show what happened. Challenge/progress indicators,
+     * server errors and disconnects are still not used. */
+    if (g_leaderboard_event_cb) {
+        uint32_t leaderboard_id = 0;
+        char* json = NULL;
+        if (event->type == RC_CLIENT_EVENT_LEADERBOARD_TRACKER_SHOW ||
+            event->type == RC_CLIENT_EVENT_LEADERBOARD_TRACKER_UPDATE) {
+            if (event->leaderboard_tracker) {
+                leaderboard_id = event->leaderboard_tracker->id;
+                json = ra_build_tracker_json(event->leaderboard_tracker);
+            }
+        } else if (event->type == RC_CLIENT_EVENT_LEADERBOARD_TRACKER_HIDE) {
+            if (event->leaderboard_tracker)
+                leaderboard_id = event->leaderboard_tracker->id;
+        } else if (event->type == RC_CLIENT_EVENT_LEADERBOARD_SCOREBOARD) {
+            if (event->leaderboard_scoreboard) {
+                leaderboard_id = event->leaderboard_scoreboard->leaderboard_id;
+                json = ra_build_scoreboard_json(event->leaderboard_scoreboard);
+            }
+        } else if (event->type == RC_CLIENT_EVENT_LEADERBOARD_STARTED ||
+                   event->type == RC_CLIENT_EVENT_LEADERBOARD_FAILED ||
+                   event->type == RC_CLIENT_EVENT_LEADERBOARD_SUBMITTED) {
+            if (event->leaderboard)
+                leaderboard_id = event->leaderboard->id;
+        } else {
+            return;
+        }
+        g_leaderboard_event_cb((int)event->type, leaderboard_id, json, g_leaderboard_event_ctx);
+        free(json);
+    }
+}
+
+void ra_set_leaderboard_event_handler(ra_leaderboard_event_fn fn, void* ctx) {
+    g_leaderboard_event_cb = fn;
+    g_leaderboard_event_ctx = ctx;
 }
 
 /* ------------------------------------------------------------------ */
@@ -416,83 +581,6 @@ int ra_deserialize_progress(const uint8_t* buffer, size_t buffer_size) {
 /* Achievements list (JSON)                                           */
 /* ------------------------------------------------------------------ */
 
-/* A growable string buffer for the JSON builder. */
-typedef struct {
-    char* data;
-    size_t len;
-    size_t cap;
-} ra_json_buf_t;
-
-static int ra_json_reserve(ra_json_buf_t* buf, size_t extra) {
-    size_t needed = buf->len + extra + 1;
-    char* grown;
-    if (needed <= buf->cap)
-        return 0;
-    while (buf->cap < needed)
-        buf->cap = buf->cap ? buf->cap * 2 : 256;
-    grown = (char*)realloc(buf->data, buf->cap);
-    if (!grown)
-        return -1;
-    buf->data = grown;
-    return 0;
-}
-
-static int ra_json_append(ra_json_buf_t* buf, const char* text) {
-    size_t len = strlen(text);
-    if (ra_json_reserve(buf, len) != 0)
-        return -1;
-    memcpy(buf->data + buf->len, text, len);
-    buf->len += len;
-    buf->data[buf->len] = '\0';
-    return 0;
-}
-
-static int ra_json_append_char(ra_json_buf_t* buf, char c) {
-    char text[2];
-    text[0] = c;
-    text[1] = '\0';
-    return ra_json_append(buf, text);
-}
-
-/* Append a JSON string (quoted, with ", \ and control characters
- * escaped). NULL renders as "". */
-static int ra_json_append_string(ra_json_buf_t* buf, const char* text) {
-    if (ra_json_append_char(buf, '"') != 0)
-        return -1;
-    if (text) {
-        for (const unsigned char* p = (const unsigned char*)text; *p; ++p) {
-            char escaped[8];
-            if (*p == '"') {
-                if (ra_json_append(buf, "\\\"") != 0)
-                    return -1;
-            } else if (*p == '\\') {
-                if (ra_json_append(buf, "\\\\") != 0)
-                    return -1;
-            } else if (*p < 0x20) {
-                snprintf(escaped, sizeof(escaped), "\\u%04x", *p);
-                if (ra_json_append(buf, escaped) != 0)
-                    return -1;
-            } else {
-                if (ra_json_append_char(buf, (char)*p) != 0)
-                    return -1;
-            }
-        }
-    }
-    return ra_json_append_char(buf, '"');
-}
-
-static int ra_json_append_int(ra_json_buf_t* buf, long value) {
-    char text[32];
-    snprintf(text, sizeof(text), "%ld", value);
-    return ra_json_append(buf, text);
-}
-
-static int ra_json_append_double(ra_json_buf_t* buf, double value) {
-    char text[32];
-    snprintf(text, sizeof(text), "%g", value);
-    return ra_json_append(buf, text);
-}
-
 char* ra_get_achievements_json(void) {
     rc_client_achievement_list_t* list;
     ra_json_buf_t buf;
@@ -546,4 +634,142 @@ fail:
     free(buf.data);
     rc_client_destroy_achievement_list(list);
     return NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/* Leaderboards and rich presence (v1.2.0, item 2)                  */
+/* ------------------------------------------------------------------ */
+
+int ra_has_leaderboards(void) {
+    if (!g_client || !rc_client_is_game_loaded(g_client))
+        return 0;
+    return rc_client_has_leaderboards(g_client);
+}
+
+char* ra_get_leaderboards_json(void) {
+    rc_client_leaderboard_list_t* list;
+    ra_json_buf_t buf;
+    int first = 1;
+    if (!g_client || !rc_client_is_game_loaded(g_client))
+        return NULL;
+    list = rc_client_create_leaderboard_list(g_client, RC_CLIENT_LEADERBOARD_LIST_GROUPING_NONE);
+    if (!list)
+        return NULL;
+    memset(&buf, 0, sizeof(buf));
+    if (ra_json_append_char(&buf, '[') != 0)
+        goto fail;
+    for (uint32_t b = 0; b < list->num_buckets; ++b) {
+        const rc_client_leaderboard_bucket_t* bucket = &list->buckets[b];
+        for (uint32_t i = 0; i < bucket->num_leaderboards; ++i) {
+            const rc_client_leaderboard_t* l = bucket->leaderboards[i];
+            if (!first && ra_json_append_char(&buf, ',') != 0)
+                goto fail;
+            first = 0;
+            if (ra_json_append(&buf, "{\"id\":") != 0) goto fail;
+            if (ra_json_append_int(&buf, (long)l->id) != 0) goto fail;
+            if (ra_json_append(&buf, ",\"title\":") != 0) goto fail;
+            if (ra_json_append_string(&buf, l->title) != 0) goto fail;
+            if (ra_json_append(&buf, ",\"description\":") != 0) goto fail;
+            if (ra_json_append_string(&buf, l->description) != 0) goto fail;
+            if (ra_json_append(&buf, ",\"format\":") != 0) goto fail;
+            if (ra_json_append_int(&buf, (long)l->format) != 0) goto fail;
+            if (ra_json_append(&buf, ",\"lower_is_better\":") != 0) goto fail;
+            if (ra_json_append_int(&buf, l->lower_is_better ? 1 : 0) != 0) goto fail;
+            if (ra_json_append(&buf, ",\"state\":") != 0) goto fail;
+            if (ra_json_append_int(&buf, (long)l->state) != 0) goto fail;
+            if (ra_json_append(&buf, ",\"tracker_value\":") != 0) goto fail;
+            if (ra_json_append_string(&buf, l->tracker_value) != 0) goto fail;
+            if (ra_json_append_char(&buf, '}') != 0) goto fail;
+        }
+    }
+    if (ra_json_append_char(&buf, ']') != 0)
+        goto fail;
+    rc_client_destroy_leaderboard_list(list);
+    return buf.data;
+
+fail:
+    free(buf.data);
+    rc_client_destroy_leaderboard_list(list);
+    return NULL;
+}
+
+/* The entries fetch is async: rcheevos fetches the list and
+ * calls back with the entries; the holder carries the app's
+ * result callback until then (the same one-shot pattern as the
+ * login/load result holders above). */
+typedef struct {
+    ra_json_result_fn fn;
+    void* ctx;
+} ra_json_result_holder_t;
+
+static void ra_leaderboard_entries_callback(int result, const char* error_message,
+        rc_client_leaderboard_entry_list_t* list, rc_client_t* client, void* callback_userdata) {
+    ra_json_result_holder_t* holder = (ra_json_result_holder_t*)callback_userdata;
+    ra_json_buf_t buf;
+    int first = 1;
+    (void)client;
+    memset(&buf, 0, sizeof(buf));
+    if (result != RC_OK || !list) {
+        holder->fn(result, error_message, NULL, holder->ctx);
+        free(holder);
+        return;
+    }
+    ra_json_append(&buf, "{\"entries\":[");
+    for (uint32_t i = 0; i < list->num_entries; ++i) {
+        const rc_client_leaderboard_entry_t* entry = &list->entries[i];
+        if (!first)
+            ra_json_append_char(&buf, ',');
+        first = 0;
+        ra_json_append(&buf, "{\"user\":");
+        ra_json_append_string(&buf, entry->user);
+        ra_json_append(&buf, ",\"display\":");
+        ra_json_append_string(&buf, entry->display);
+        ra_json_append(&buf, ",\"rank\":");
+        ra_json_append_int(&buf, (long)entry->rank);
+        ra_json_append(&buf, ",\"index\":");
+        ra_json_append_int(&buf, (long)entry->index);
+        ra_json_append(&buf, ",\"submitted\":");
+        ra_json_append_int(&buf, (long)entry->submitted);
+        ra_json_append_char(&buf, '}');
+    }
+    ra_json_append(&buf, "],\"total_entries\":");
+    ra_json_append_int(&buf, (long)list->total_entries);
+    ra_json_append(&buf, ",\"user_index\":");
+    ra_json_append_int(&buf, (long)list->user_index);
+    ra_json_append(&buf, "}");
+    holder->fn(RC_OK, NULL, buf.data, holder->ctx);
+    free(buf.data);
+    free(holder);
+    rc_client_destroy_leaderboard_entry_list(list);
+}
+
+int ra_fetch_leaderboard_entries(uint32_t leaderboard_id, int around_user, ra_json_result_fn result_cb, void* ctx) {
+    ra_json_result_holder_t* holder;
+    if (!g_client || !rc_client_is_game_loaded(g_client) || !result_cb)
+        return -1;
+    holder = (ra_json_result_holder_t*)malloc(sizeof(*holder));
+    if (!holder)
+        return -1;
+    holder->fn = result_cb;
+    holder->ctx = ctx;
+    if (around_user)
+        rc_client_begin_fetch_leaderboard_entries_around_user(g_client, leaderboard_id, 10, ra_leaderboard_entries_callback, holder);
+    else
+        rc_client_begin_fetch_leaderboard_entries(g_client, leaderboard_id, 0, 10, ra_leaderboard_entries_callback, holder);
+    return 0;
+}
+
+int ra_has_rich_presence(void) {
+    if (!g_client || !rc_client_is_game_loaded(g_client))
+        return 0;
+    return rc_client_has_rich_presence(g_client);
+}
+
+size_t ra_get_rich_presence(char* buffer, size_t buffer_size) {
+    if (!buffer || buffer_size == 0)
+        return 0;
+    buffer[0] = '\0';
+    if (!g_client || !rc_client_is_game_loaded(g_client))
+        return 0;
+    return rc_client_get_rich_presence_message(g_client, buffer, buffer_size);
 }

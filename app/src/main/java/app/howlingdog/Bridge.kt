@@ -106,6 +106,15 @@ object Bridge {
     external fun nativeRaSerializeProgress(): ByteArray?
     external fun nativeRaDeserializeProgress(data: ByteArray)
     external fun nativeRaGetAchievements(): ByteArray?
+    // v1.2.0 (item 2): leaderboards and rich presence. The
+    // entries fetch is async: the result arrives through
+    // raLeaderboardEntriesResult, and nativeRaFetchLeaderboardEntries
+    // returns false when no game is loaded (no callback then).
+    external fun nativeRaHasLeaderboards(): Boolean
+    external fun nativeRaGetLeaderboards(): ByteArray?
+    external fun nativeRaFetchLeaderboardEntries(leaderboardId: Int, aroundUser: Boolean): Boolean
+    external fun nativeRaHasRichPresence(): Boolean
+    external fun nativeRaGetRichPresence(): String?
     external fun nativeRaHttpResponse(requestId: Int, body: ByteArray, httpStatus: Int)
 
     /**
@@ -120,6 +129,12 @@ object Bridge {
      */
     var raHttpRequestHandler: ((requestId: Int, url: String, postData: String?) -> Unit)? = null
     var raEventUnlockedHandler: ((id: Int, title: String, description: String, points: Int) -> Unit)? = null
+    // v1.2.0 (item 2): a leaderboard event (tracker show/hide/
+    // update, scoreboard) and the entries-fetch result. The
+    // event's json is the tracker {"display"} or the scoreboard
+    // payload, or null when the event carries none.
+    var raLeaderboardEventHandler: ((type: Int, leaderboardId: Int, json: String?) -> Unit)? = null
+    var raLeaderboardEntriesResultHandler: ((success: Boolean, error: String?, json: String?) -> Unit)? = null
     var raLoginResultHandler: ((success: Boolean, error: String?) -> Unit)? = null
     var raLoadGameResultHandler: ((success: Boolean, error: String?) -> Unit)? = null
 
@@ -131,6 +146,16 @@ object Bridge {
     /** An achievement was unlocked. */
     fun raEventUnlocked(id: Int, title: String, description: String, points: Int) {
         raEventUnlockedHandler?.invoke(id, title, description, points)
+    }
+
+    /** A leaderboard event (tracker show/hide/update, scoreboard). */
+    fun raLeaderboardEvent(type: Int, leaderboardId: Int, json: String?) {
+        raLeaderboardEventHandler?.invoke(type, leaderboardId, json)
+    }
+
+    /** The leaderboard entries fetch finished. */
+    fun raLeaderboardEntriesResult(success: Boolean, error: String?, json: String?) {
+        raLeaderboardEntriesResultHandler?.invoke(success, error, json)
     }
 
     /** The login result. */

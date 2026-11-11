@@ -56,7 +56,7 @@ object RaAchievements {
      */
     fun parse(json: String): List<RaAchievement> {
         val values = try {
-            JsonParser(json).parseArray()
+            RaJson.parseArray(json)
         } catch (_: Exception) {
             return emptyList()
         }
@@ -101,129 +101,5 @@ object RaAchievements {
     fun summary(achievements: List<RaAchievement>): String {
         val unlocked = achievements.count { it.isUnlocked }
         return "$unlocked / ${achievements.size} unlocked"
-    }
-
-    /**
-     * A minimal JSON parser for the native layer's shape: an
-     * array of flat objects whose values are strings, numbers,
-     * true/false, or null. Throws on malformed input (the caller
-     * turns that into an empty list).
-     */
-    private class JsonParser(private val text: String) {
-        private var pos = 0
-
-        fun parseArray(): List<Any?> {
-            skipWs()
-            if (!consume('[')) throw IllegalArgumentException("expected '['")
-            val out = ArrayList<Any?>()
-            skipWs()
-            if (consume(']')) return out
-            while (true) {
-                skipWs()
-                out.add(parseValue())
-                skipWs()
-                when {
-                    consume(',') -> continue
-                    consume(']') -> return out
-                    else -> throw IllegalArgumentException("expected ',' or ']'")
-                }
-            }
-        }
-
-        private fun parseObject(): Map<String, Any?> {
-            if (!consume('{')) throw IllegalArgumentException("expected '{'")
-            val out = LinkedHashMap<String, Any?>()
-            skipWs()
-            if (consume('}')) return out
-            while (true) {
-                skipWs()
-                val key = parseString()
-                skipWs()
-                if (!consume(':')) throw IllegalArgumentException("expected ':'")
-                skipWs()
-                out[key] = parseValue()
-                skipWs()
-                when {
-                    consume(',') -> continue
-                    consume('}') -> return out
-                    else -> throw IllegalArgumentException("expected ',' or '}'")
-                }
-            }
-        }
-
-        private fun parseValue(): Any? {
-            skipWs()
-            if (pos >= text.length) throw IllegalArgumentException("unexpected end")
-            return when (val c = text[pos]) {
-                '"' -> parseString()
-                '{' -> parseObject()
-                '[' -> parseArray()
-                't' -> { expect("true"); true }
-                'f' -> { expect("false"); false }
-                'n' -> { expect("null"); null }
-                else -> parseNumber()
-            }
-        }
-
-        private fun parseString(): String {
-            if (!consume('"')) throw IllegalArgumentException("expected '\"'")
-            val sb = StringBuilder()
-            while (pos < text.length) {
-                val c = text[pos++]
-                when (c) {
-                    '"' -> return sb.toString()
-                    '\\' -> {
-                        if (pos >= text.length) break
-                        when (val esc = text[pos++]) {
-                            '"' -> sb.append('"')
-                            '\\' -> sb.append('\\')
-                            '/' -> sb.append('/')
-                            'b' -> sb.append('\b')
-                            'f' -> sb.append('\u000C')
-                            'n' -> sb.append('\n')
-                            'r' -> sb.append('\r')
-                            't' -> sb.append('\t')
-                            'u' -> {
-                                if (pos + 4 > text.length) throw IllegalArgumentException("bad \\u escape")
-                                val code = text.substring(pos, pos + 4).toIntOrNull(16)
-                                    ?: throw IllegalArgumentException("bad \\u escape")
-                                sb.append(code.toChar())
-                                pos += 4
-                            }
-                            else -> throw IllegalArgumentException("bad escape")
-                        }
-                    }
-                    else -> sb.append(c)
-                }
-            }
-            throw IllegalArgumentException("unterminated string")
-        }
-
-        private fun parseNumber(): Number {
-            val start = pos
-            if (pos < text.length && text[pos] == '-') pos++
-            while (pos < text.length && (text[pos].isDigit() || text[pos] == '.' || text[pos] == 'e' || text[pos] == 'E' || text[pos] == '+' || text[pos] == '-')) pos++
-            val raw = text.substring(start, pos)
-            if (raw.isEmpty()) throw IllegalArgumentException("expected a number")
-            return raw.toLongOrNull() ?: raw.toDoubleOrNull()
-                ?: throw IllegalArgumentException("bad number: $raw")
-        }
-
-        private fun expect(word: String) {
-            if (!text.startsWith(word, pos)) throw IllegalArgumentException("expected $word")
-            pos += word.length
-        }
-
-        private fun skipWs() {
-            while (pos < text.length && text[pos].isWhitespace()) pos++
-        }
-
-        private fun consume(c: Char): Boolean {
-            if (pos < text.length && text[pos] == c) {
-                pos++
-                return true
-            }
-            return false
-        }
     }
 }

@@ -226,14 +226,14 @@ jobs:
           # nativeFlushSaveData; all 31 symbols were in the
           # output).
           EXPORTS=$("$NM" -D "$BRIDGE")
-          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeSetOption nativeSerialize nativeUnserialize nativeFlushSaveData nativeUnloadGame nativeDeinit nativeLastError nativeSetRunahead nativeRunFrameRunahead nativeRaInit nativeRaLogin nativeRaLoginWithToken nativeRaToken nativeRaLogout nativeRaIsLoggedIn nativeRaLoggedInUsername nativeRaLoadGame nativeRaUnloadGame nativeRaIsGameLoaded nativeRaGameTitle nativeRaDoFrame nativeRaReset nativeRaSerializeProgress nativeRaDeserializeProgress nativeRaGetAchievements nativeRaHttpResponse; do
+          for sym in nativeInit nativeLoadGame nativeGetAvInfo nativeRunFrame nativeGetFrame nativeReadAudio nativeSetInput nativeSetOption nativeSerialize nativeUnserialize nativeFlushSaveData nativeUnloadGame nativeDeinit nativeLastError nativeSetRunahead nativeRunFrameRunahead nativeRaInit nativeRaLogin nativeRaLoginWithToken nativeRaToken nativeRaLogout nativeRaIsLoggedIn nativeRaLoggedInUsername nativeRaLoadGame nativeRaUnloadGame nativeRaIsGameLoaded nativeRaGameTitle nativeRaDoFrame nativeRaReset nativeRaSerializeProgress nativeRaDeserializeProgress nativeRaGetAchievements nativeRaHasLeaderboards nativeRaGetLeaderboards nativeRaFetchLeaderboardEntries nativeRaHasRichPresence nativeRaGetRichPresence nativeRaHttpResponse; do
             [[ "$EXPORTS" == *"Java_app_howlingdog_Bridge_$sym"* ]] || {
               echo "missing JNI export: $sym"
               echo "$EXPORTS"
               exit 1
             }
           done
-          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 33 JNI entry points present"
+          echo "bridge OK: $(stat -c%s "$BRIDGE") bytes, links libretro.so, all 38 JNI entry points present"
 
       - name: Stage native libs for Gradle
         run: |

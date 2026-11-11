@@ -132,6 +132,11 @@ static volatile bool g_audio_suppress = false;
 //     nativeRaHttpResponse.
 //   raEventUnlocked(id, title, description, points) — an
 //     achievement unlocked; the Kotlin side shows the popup.
+//   raLeaderboardEvent(type, leaderboardId, json) — a
+//     leaderboard event (tracker show/hide/update, scoreboard);
+//     the Kotlin side shows the tracker or the scoreboard.
+//   raLeaderboardEntriesResult(success, error, json) — the
+//     entries fetch finished; the Kotlin side shows the list.
 //   raLoginResult(success, error) — the login finished.
 //   raLoadGameResult(success, error) — the game load finished.
 //
@@ -144,6 +149,8 @@ static JavaVM *g_ra_vm = NULL;
 static jobject g_ra_bridge = NULL; // global ref to the Bridge object
 static jmethodID g_ra_http_request_method = NULL;
 static jmethodID g_ra_event_unlocked_method = NULL;
+static jmethodID g_ra_leaderboard_event_method = NULL;
+static jmethodID g_ra_leaderboard_entries_result_method = NULL;
 static jmethodID g_ra_login_result_method = NULL;
 static jmethodID g_ra_load_game_result_method = NULL;
 
@@ -228,6 +235,44 @@ static void bridge_ra_event(int type, uint32_t achievement_id, const char *title
     if (type == RA_EVENT_ACHIEVEMENT_TRIGGERED)
         ra_call_event_unlocked(achievement_id, title, description, points);
     /* GAME_COMPLETED has no popup in v1.1.0. */
+}
+
+// v1.2.0 (item 2): a leaderboard event — tracker show/hide/
+// update or the scoreboard — forwarded to Kotlin with the
+// JSON payload the wrapper built (NULL when the event carries
+// none). Runs on the emu thread, like the unlock events.
+static void bridge_ra_leaderboard_event(int type, uint32_t leaderboard_id, const char *json, void *ctx) {
+    JNIEnv *env = ra_get_env();
+    jstring jjson;
+    (void)ctx;
+    if (!env || !g_ra_bridge || !g_ra_leaderboard_event_method)
+        return;
+    jjson = json ? env->NewStringUTF(json) : NULL;
+    env->CallVoidMethod(g_ra_bridge, g_ra_leaderboard_event_method, (jint)type, (jint)leaderboard_id, jjson);
+    if (jjson)
+        env->DeleteLocalRef(jjson);
+    if (env->ExceptionCheck())
+        env->ExceptionClear();
+}
+
+// v1.2.0 (item 2): the entries fetch finished — delivered on
+// the app's HTTP thread, like the login/load results.
+static void bridge_ra_leaderboard_entries_result(int result, const char *error_message, const char *json, void *ctx) {
+    JNIEnv *env = ra_get_env();
+    jstring jerror;
+    jstring jjson;
+    (void)ctx;
+    if (!env || !g_ra_bridge || !g_ra_leaderboard_entries_result_method)
+        return;
+    jerror = error_message ? env->NewStringUTF(error_message) : NULL;
+    jjson = json ? env->NewStringUTF(json) : NULL;
+    env->CallVoidMethod(g_ra_bridge, g_ra_leaderboard_entries_result_method, result == 0 ? JNI_TRUE : JNI_FALSE, jerror, jjson);
+    if (jerror)
+        env->DeleteLocalRef(jerror);
+    if (jjson)
+        env->DeleteLocalRef(jjson);
+    if (env->ExceptionCheck())
+        env->ExceptionClear();
 }
 
 static void bridge_ra_login_result(int result, const char *error_message, void *ctx) {
@@ -924,10 +969,13 @@ Java_app_howlingdog_Bridge_nativeRaInit(JNIEnv *env, jobject thiz) {
         bridge_class = env->GetObjectClass(thiz);
         g_ra_http_request_method = env->GetMethodID(bridge_class, "raHttpRequest", "(ILjava/lang/String;Ljava/lang/String;)V");
         g_ra_event_unlocked_method = env->GetMethodID(bridge_class, "raEventUnlocked", "(ILjava/lang/String;Ljava/lang/String;I)V");
+        g_ra_leaderboard_event_method = env->GetMethodID(bridge_class, "raLeaderboardEvent", "(IILjava/lang/String;)V");
+        g_ra_leaderboard_entries_result_method = env->GetMethodID(bridge_class, "raLeaderboardEntriesResult", "(ZLjava/lang/String;Ljava/lang/String;)V");
         g_ra_login_result_method = env->GetMethodID(bridge_class, "raLoginResult", "(ZLjava/lang/String;)V");
         g_ra_load_game_result_method = env->GetMethodID(bridge_class, "raLoadGameResult", "(ZLjava/lang/String;)V");
         env->DeleteLocalRef(bridge_class);
         if (!g_ra_http_request_method || !g_ra_event_unlocked_method ||
+            !g_ra_leaderboard_event_method || !g_ra_leaderboard_entries_result_method ||
             !g_ra_login_result_method || !g_ra_load_game_result_method) {
             LOGE("nativeRaInit: a Kotlin RA callback is missing");
             return JNI_FALSE;
@@ -935,6 +983,7 @@ Java_app_howlingdog_Bridge_nativeRaInit(JNIEnv *env, jobject thiz) {
     }
     if (ra_init(bridge_ra_memory_provider, NULL, bridge_ra_server_call, NULL, bridge_ra_event, NULL) != 0)
         return JNI_FALSE;
+    ra_set_leaderboard_event_handler(bridge_ra_leaderboard_event, NULL);
     return JNI_TRUE;
 }
 
@@ -1121,6 +1170,52 @@ Java_app_howlingdog_Bridge_nativeRaGetAchievements(JNIEnv *env, jobject /* thiz 
         env->SetByteArrayRegion(out, 0, (jsize)len, (const jbyte *)json);
     free(json);
     return out;
+}
+
+// v1.2.0 (item 2): leaderboards and rich presence.
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeRaHasLeaderboards(JNIEnv * /* env */, jobject /* thiz */) {
+    return ra_has_leaderboards() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_app_howlingdog_Bridge_nativeRaGetLeaderboards(JNIEnv *env, jobject /* thiz */) {
+    char *json = ra_get_leaderboards_json();
+    size_t len;
+    jbyteArray out;
+    if (!json)
+        return NULL;
+    len = strlen(json);
+    out = env->NewByteArray((jsize)len);
+    if (out)
+        env->SetByteArrayRegion(out, 0, (jsize)len, (const jbyte *)json);
+    free(json);
+    return out;
+}
+
+// The result arrives asynchronously through
+// raLeaderboardEntriesResult. Returns false when no game is
+// loaded (the callback is not called then).
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeRaFetchLeaderboardEntries(JNIEnv * /* env */, jobject /* thiz */, jint leaderboard_id, jboolean around_user) {
+    return ra_fetch_leaderboard_entries((uint32_t)leaderboard_id, around_user == JNI_TRUE ? 1 : 0, bridge_ra_leaderboard_entries_result, NULL) == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_app_howlingdog_Bridge_nativeRaHasRichPresence(JNIEnv * /* env */, jobject /* thiz */) {
+    return ra_has_rich_presence() ? JNI_TRUE : JNI_FALSE;
+}
+
+// The current rich presence message ("" when the game has
+// none). The presence itself is sent to the server
+// automatically by rc_client's periodic ping, so this only
+// reads it for display.
+JNIEXPORT jstring JNICALL
+Java_app_howlingdog_Bridge_nativeRaGetRichPresence(JNIEnv *env, jobject /* thiz */) {
+    char buffer[512];
+    if (ra_get_rich_presence(buffer, sizeof(buffer)) == 0)
+        return env->NewStringUTF("");
+    return env->NewStringUTF(buffer);
 }
 
 // The HTTP response body arrives as UTF-8 bytes (a byte array,

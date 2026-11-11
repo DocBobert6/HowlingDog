@@ -325,7 +325,7 @@ class MainActivity : ComponentActivity() {
         return super.onGenericMotionEvent(event)
     }
 
-    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings, Achievements }
+    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup, GameSettings, Achievements, Leaderboards }
 
     private data class Held(
         val up: Boolean = false,
@@ -626,6 +626,16 @@ class MainActivity : ComponentActivity() {
             if (RaClient.lastUnlock != null) {
                 delay(4000)
                 RaClient.clearUnlock()
+            }
+        }
+
+        // v1.2.0 (item 2) — the leaderboard scoreboard note
+        // clears the same way, four seconds after a score is
+        // submitted.
+        LaunchedEffect(RaClient.lastScoreboard) {
+            if (RaClient.lastScoreboard != null) {
+                delay(4000)
+                RaClient.clearScoreboard()
             }
         }
 
@@ -1408,7 +1418,7 @@ class MainActivity : ComponentActivity() {
         // Settings: back returns to where Settings was opened
         // from (the library, or the game). A game's own settings
         // screen (Phase 9, item 8) returns to the library.
-        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings || screen == Screen.Achievements) {
+        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup || screen == Screen.GameSettings || screen == Screen.Achievements || screen == Screen.Leaderboards) {
             when (screen) {
                 Screen.Playing -> when {
                     editControls -> exitEditMode()
@@ -1419,6 +1429,7 @@ class MainActivity : ComponentActivity() {
                 Screen.Licences -> screen = Screen.Settings
                 Screen.Setup -> leaveSetup()
                 Screen.Achievements -> screen = Screen.Playing
+                Screen.Leaderboards -> screen = Screen.Playing
                 Screen.GameSettings -> {
                     perGameFor = null
                     screen = Screen.Library
@@ -2554,6 +2565,27 @@ class MainActivity : ComponentActivity() {
                                     .padding(horizontal = 12.dp, vertical = 6.dp),
                             )
                         }
+                        // v1.2.0 (item 2) — the leaderboard
+                        // scoreboard note, the same gold treatment
+                        // as the unlock popup: the submitted score
+                        // and the new rank. Hidden while paused.
+                        val scoreboard = RaClient.lastScoreboard
+                        if (scoreboard != null && !paused) {
+                            Text(
+                                "Score submitted: ${scoreboard.submittedScore} — Rank #${scoreboard.newRank} of ${scoreboard.numEntries}",
+                                color = Color(EraUi.Palette.GOLD),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 8.dp)
+                                    .background(
+                                        Color(EraUi.Palette.SURFACE),
+                                        RoundedCornerShape(4.dp),
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                            )
+                        }
                         // Pause overlay: covers the game and the
                         // controls (drawn last, so it is on top) and
                         // swallows touches, so no button can be
@@ -2600,6 +2632,11 @@ class MainActivity : ComponentActivity() {
                                     // game stays paused underneath.
                                     showAchievements = RaClient.gameLoaded,
                                     onAchievements = { screen = Screen.Achievements },
+                                    // v1.2.0 (item 2) — the
+                                    // leaderboards, only when the
+                                    // game has at least one.
+                                    showLeaderboards = RaClient.leaderboards.isNotEmpty(),
+                                    onLeaderboards = { screen = Screen.Leaderboards },
                                     onSettings = {
                                         settingsFrom = Screen.Playing
                                         screen = Screen.Settings
@@ -3042,6 +3079,163 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                             }
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { screen = Screen.Playing }) { Text("Back") }
+                }
+            }
+            Screen.Leaderboards -> {
+                // v1.2.0 (item 2) — the loaded game's
+                // leaderboards. Reached from the pause menu; the
+                // game stays paused underneath (the session is not
+                // resumed until the player goes back). Scores are
+                // submitted automatically by rc_client while the
+                // game runs — this screen only shows the boards and
+                // their entries. The rich presence line is what
+                // the RetroAchievements site shows for the game
+                // right now.
+                var selectedBoardId by remember { mutableStateOf(0) }
+                LaunchedEffect(Unit) {
+                    val first = RaClient.leaderboards.firstOrNull()
+                    if (first != null) {
+                        selectedBoardId = first.id
+                        RaClient.fetchLeaderboardEntries(first.id, false)
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                ) {
+                    Text(
+                        RaClient.gameTitle ?: "Leaderboards",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    if (RaClient.richPresence.isNotEmpty()) {
+                        // The message is already a complete
+                        // sentence ("Playing <title>", or the
+                        // game's own presence string), so it is
+                        // shown as-is.
+                        Text(
+                            RaClient.richPresence,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+                    Text(
+                        if (RaClient.gameLoaded) {
+                            "${RaClient.leaderboards.size} leaderboard${if (RaClient.leaderboards.size == 1) "" else "s"}"
+                        } else {
+                            "No leaderboards for this game."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    if (RaClient.gameLoaded) {
+                        for (board in RaClient.leaderboards) {
+                            val selected = board.id == selectedBoardId
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedBoardId = board.id
+                                        RaClient.fetchLeaderboardEntries(board.id, false)
+                                    }
+                                    .padding(vertical = 6.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text(
+                                        board.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selected) Color(EraUi.Palette.GOLD) else Color(EraUi.Palette.TEXT),
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(
+                                        RaLeaderboards.formatName(board.format),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                if (board.description.isNotEmpty()) {
+                                    Text(
+                                        board.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                // The live attempt on this board, if
+                                // one is running.
+                                if (board.id == RaClient.activeTrackerBoardId && RaClient.activeTrackerDisplay.isNotEmpty()) {
+                                    Text(
+                                        "Attempt: ${RaClient.activeTrackerDisplay}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(EraUi.Palette.GOLD),
+                                    )
+                                } else if (board.trackerValue.isNotEmpty()) {
+                                    Text(
+                                        "Attempt: ${board.trackerValue}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(EraUi.Palette.GOLD),
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        // The entries for the selected board.
+                        val entries = RaClient.leaderboardEntries
+                        if (RaClient.leaderboardEntriesLoading) {
+                            Text("Loading…", style = MaterialTheme.typography.bodyMedium)
+                        } else if (RaClient.leaderboardEntriesError != null) {
+                            Text(
+                                RaClient.leaderboardEntriesError ?: "",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        } else if (entries != null && selectedBoardId != 0 &&
+                            RaClient.leaderboardEntriesBoardId == selectedBoardId) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Button(
+                                    onClick = { RaClient.fetchLeaderboardEntries(selectedBoardId, false) },
+                                    enabled = RaClient.leaderboardEntriesAroundUser,
+                                ) { Text("Top 10") }
+                                Button(
+                                    onClick = { RaClient.fetchLeaderboardEntries(selectedBoardId, true) },
+                                    enabled = !RaClient.leaderboardEntriesAroundUser,
+                                ) { Text("Near me") }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            for (entry in entries.entries) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text(
+                                        "#${entry.rank}  ${entry.user}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (entry.user == RaClient.username) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (entry.user == RaClient.username) Color(EraUi.Palette.GOLD) else Color(EraUi.Palette.TEXT),
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(
+                                        entry.display,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "${entries.totalEntries} entries" +
+                                    if (entries.userIndex >= 0) " — you are #${entries.userIndex + 1}" else "",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
                     }
                     Spacer(Modifier.height(16.dp))
@@ -4065,6 +4259,10 @@ fun PauseMenu(
     // shown only when RA has a game loaded for this game.
     showAchievements: Boolean = false,
     onAchievements: () -> Unit = {},
+    // v1.2.0 (item 2) — the leaderboards for this game, shown
+    // only when the game has at least one.
+    showLeaderboards: Boolean = false,
+    onLeaderboards: () -> Unit = {},
     onSettings: () -> Unit,
     onAdjustControls: () -> Unit,
     onQuit: () -> Unit,
@@ -4150,6 +4348,12 @@ fun PauseMenu(
         // this game, only when RA has one loaded.
         if (showAchievements) {
             ArcadeButton(text = "ACHIEVEMENTS", compact = true, onClick = onAchievements)
+            Spacer(Modifier.height(2.dp))
+        }
+        // v1.2.0 (item 2) — the leaderboards for this game, only
+        // when the game has at least one.
+        if (showLeaderboards) {
+            ArcadeButton(text = "LEADERBOARDS", compact = true, onClick = onLeaderboards)
             Spacer(Modifier.height(2.dp))
         }
         ArcadeButton(text = "SETTINGS", compact = true, onClick = onSettings)

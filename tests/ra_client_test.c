@@ -565,6 +565,26 @@ static void test_full_flow(void) {
     CHECK_STR_EQ(ra_game_title(), "Sample Game");
     CHECK(g_unexpected_requests == 0);
 
+    /* The mock game has no leaderboards and no rich presence
+     * patch (v1.2.0, item 2): the accessors report that, and
+     * the boards list is an empty array, not NULL. */
+    {
+        char presence[64];
+        char* lb_json = ra_get_leaderboards_json();
+        CHECK(!ra_has_leaderboards());
+        CHECK(lb_json != NULL);
+        if (lb_json) {
+            CHECK_STR_EQ(lb_json, "[]");
+            free(lb_json);
+        }
+        CHECK(!ra_has_rich_presence());
+        /* No rich presence script, so rcheevos falls back to
+         * "Playing <title>" — the message is still a real
+         * display string, not empty. */
+        CHECK(ra_get_rich_presence(presence, sizeof(presence)) > 0);
+        CHECK_STR_EQ(presence, "Playing Sample Game");
+    }
+
     /* Nothing unlocked yet: the triggers need RAM 0x0001/0x0002. */
     ra_do_frame();
     CHECK(g_num_events == 0);
@@ -677,12 +697,52 @@ static void test_password_login(void) {
     CHECK(!ra_is_ready());
 }
 
+/* The leaderboards and rich presence (v1.2.0, item 2): with no
+ * game loaded every accessor is a safe no-op — no boards, no
+ * presence, and the entries fetch refuses without calling its
+ * callback. Registering a NULL leaderboard handler is safe
+ * too (the events are simply not forwarded). */
+static int g_json_result_calls;
+
+static void mock_json_result(int result, const char* error_message, const char* json, void* ctx) {
+    (void)result;
+    (void)error_message;
+    (void)json;
+    (void)ctx;
+    ++g_json_result_calls;
+}
+
+static void test_leaderboards_no_game(void) {
+    char presence[64];
+    char* json;
+
+    CHECK(ra_init(mock_memory_provider, NULL, mock_server_call, NULL, mock_event, NULL) == 0);
+    CHECK(ra_is_ready());
+    CHECK(!ra_is_game_loaded());
+
+    ra_set_leaderboard_event_handler(NULL, NULL);
+    CHECK(!ra_has_leaderboards());
+    json = ra_get_leaderboards_json();
+    CHECK(json == NULL);
+    g_json_result_calls = 0;
+    CHECK(ra_fetch_leaderboard_entries(1, 0, mock_json_result, NULL) == -1);
+    CHECK(g_json_result_calls == 0);
+    CHECK(!ra_has_rich_presence());
+    memset(presence, 'x', sizeof(presence));
+    CHECK(ra_get_rich_presence(presence, sizeof(presence)) == 0);
+    CHECK(presence[0] == '\0');
+
+    ra_shutdown();
+    CHECK(!ra_is_ready());
+}
+
 int main(void) {
     test_console_id_for_path();
     test_read_memory_mapped();
     test_neo_hash();
     test_cdreader();
     test_password_login();
+    test_leaderboards_no_game();
     test_full_flow();
     printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

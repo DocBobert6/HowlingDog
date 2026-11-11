@@ -18,9 +18,19 @@ import java.net.URL
  * gone), the game load, the per-frame evaluation, the unlock
  * popup data, the achievements list, and the progress
  * serialize/deserialize that the save-state sidecar carries.
- * The native client lives for the app's lifetime once created
- * (login persists); only the loaded game is unloaded when a game
- * quits (the bridge does that in nativeUnloadGame).
+ * v1.2.0 (item 2) adds the leaderboards and rich presence:
+ * the boards list, the entries fetch, the tracker and the
+ * scoreboard, and the current presence message. Submission is
+ * automatic (rc_client evaluates the trackers in do_frame and
+ * submits through the same HTTP plumbing), and the presence is
+ * sent by rc_client's periodic ping — the app only shows what
+ * happened. The native client lives for the app's lifetime once
+ * created (login persists); only the loaded game is unloaded
+ * when a game quits (the bridge does that in nativeUnloadGame).
+ * The native layer calls back into Kotlin through
+ * [Bridge] (raHttpRequest / raEventUnlocked / raLeaderboardEvent
+ * / raLeaderboardEntriesResult / raLoginResult /
+ * raLoadGameResult); those entry points delegate here.
  *
  * The password is used once, for the login that types it, and is
  * never stored: the server hands back a session token, the app
@@ -82,6 +92,43 @@ object RaClient {
     var lastUnlock by mutableStateOf<RaUnlock?>(null)
         private set
 
+    // v1.2.0 (item 2) — leaderboards and rich presence.
+    /** The leaderboards for the loaded game (empty when the game has none). */
+    var leaderboards by mutableStateOf<List<RaLeaderboard>>(emptyList())
+        private set
+
+    /** The current rich presence message for the loaded game ("" when the game has none). */
+    var richPresence by mutableStateOf("")
+        private set
+
+    /** The latest submitted scoreboard, shown as a note until cleared. */
+    var lastScoreboard by mutableStateOf<RaScoreboard?>(null)
+        private set
+
+    /** The board the active tracker belongs to (0 when no attempt is running), and its current display. */
+    var activeTrackerBoardId by mutableStateOf(0)
+        private set
+
+    var activeTrackerDisplay by mutableStateOf("")
+        private set
+
+    /** The entries for the board the leaderboard screen is showing. */
+    var leaderboardEntries by mutableStateOf<RaLeaderboardEntryList?>(null)
+        private set
+
+    var leaderboardEntriesLoading by mutableStateOf(false)
+        private set
+
+    var leaderboardEntriesError by mutableStateOf<String?>(null)
+        private set
+
+    /** Which board the entries belong to, and whether they are the top entries or the ones around the user. */
+    var leaderboardEntriesBoardId by mutableStateOf(0)
+        private set
+
+    var leaderboardEntriesAroundUser by mutableStateOf(false)
+        private set
+
     /** The status line for the Settings screen. */
     var status by mutableStateOf("")
         private set
@@ -110,6 +157,8 @@ object RaClient {
         if (!Bridge.ensureLoaded()) return false
         Bridge.raHttpRequestHandler = { id, url, post -> onHttpRequest(id, url, post) }
         Bridge.raEventUnlockedHandler = { id, title, desc, points -> onUnlocked(id, title, desc, points) }
+        Bridge.raLeaderboardEventHandler = { type, id, json -> onLeaderboardEvent(type, id, json) }
+        Bridge.raLeaderboardEntriesResultHandler = { ok, err, json -> onLeaderboardEntriesResult(ok, err, json) }
         Bridge.raLoginResultHandler = { ok, err -> onLoginResult(ok, err) }
         Bridge.raLoadGameResultHandler = { ok, err -> onLoadGameResult(ok, err) }
         if (!Bridge.nativeRaInit()) {
@@ -167,6 +216,7 @@ object RaClient {
         gameLoaded = false
         achievements = emptyList()
         lastUnlock = null
+        clearLeaderboardState()
         status = "Not logged in."
     }
 
@@ -192,6 +242,21 @@ object RaClient {
         gameLoaded = false
         achievements = emptyList()
         lastUnlock = null
+        clearLeaderboardState()
+    }
+
+    /** Clear the per-game leaderboard and rich presence state (logout and game quit). */
+    private fun clearLeaderboardState() {
+        leaderboards = emptyList()
+        richPresence = ""
+        lastScoreboard = null
+        activeTrackerBoardId = 0
+        activeTrackerDisplay = ""
+        leaderboardEntries = null
+        leaderboardEntriesLoading = false
+        leaderboardEntriesError = null
+        leaderboardEntriesBoardId = 0
+        leaderboardEntriesAroundUser = false
     }
 
     /**
@@ -230,6 +295,97 @@ object RaClient {
     /** Clear the unlock popup (after its 4-second showing). */
     fun clearUnlock() {
         lastUnlock = null
+    }
+
+    // v1.2.0 (item 2) — leaderboards and rich presence.
+
+    /** Refresh the leaderboards list from the native layer. */
+    fun refreshLeaderboards() {
+        if (!initialised || !gameLoaded) return
+        val json = Bridge.nativeRaGetLeaderboards() ?: return
+        leaderboards = RaLeaderboards.parseLeaderboards(String(json, Charsets.UTF_8))
+    }
+
+    /**
+     * Refresh the current rich presence message from the native
+     * layer, for display only — the presence itself is sent to
+     * the server automatically by rc_client's periodic ping, so
+     * this never sends anything.
+     */
+    fun refreshRichPresence() {
+        if (!initialised || !gameLoaded) return
+        richPresence = Bridge.nativeRaGetRichPresence() ?: ""
+    }
+
+    /**
+     * Fetch the entries for a board: the top entries, or the
+     * ones around the logged-in user. The result arrives through
+     * [onLeaderboardEntriesResult].
+     */
+    fun fetchLeaderboardEntries(leaderboardId: Int, aroundUser: Boolean) {
+        if (!initialised || !gameLoaded) return
+        leaderboardEntriesBoardId = leaderboardId
+        leaderboardEntriesAroundUser = aroundUser
+        leaderboardEntries = null
+        leaderboardEntriesError = null
+        leaderboardEntriesLoading = true
+        if (!Bridge.nativeRaFetchLeaderboardEntries(leaderboardId, aroundUser)) {
+            leaderboardEntriesLoading = false
+            leaderboardEntriesError = "Could not fetch the leaderboard."
+        }
+    }
+
+    /** The entries fetch finished. */
+    fun onLeaderboardEntriesResult(success: Boolean, error: String?, json: String?) {
+        leaderboardEntriesLoading = false
+        if (!success || json == null) {
+            leaderboardEntriesError = error?.takeIf { it.isNotEmpty() }
+                ?: "Could not fetch the leaderboard."
+            return
+        }
+        val list = RaLeaderboards.parseEntries(json)
+        if (list == null) {
+            leaderboardEntriesError = "Could not read the leaderboard."
+        } else {
+            leaderboardEntries = list
+        }
+    }
+
+    /**
+     * A leaderboard event from the native layer. The tracker
+     * show/update carries the current attempt's display; the
+     * scoreboard carries the submitted score and the new rank;
+     * an attempt starting, failing, or submitting refreshes
+     * the boards list (the tracker's value changes). A hide
+     * only clears the tracker when it belongs to the board
+     * being hidden, so a second attempt cannot clear the
+     * first one's display.
+     */
+    fun onLeaderboardEvent(type: Int, leaderboardId: Int, json: String?) {
+        when (type) {
+            RaLeaderboardEvents.TRACKER_SHOW, RaLeaderboardEvents.TRACKER_UPDATE -> {
+                activeTrackerBoardId = leaderboardId
+                activeTrackerDisplay = RaLeaderboards.parseTrackerDisplay(json) ?: ""
+            }
+            RaLeaderboardEvents.TRACKER_HIDE -> {
+                if (activeTrackerBoardId == leaderboardId) {
+                    activeTrackerBoardId = 0
+                    activeTrackerDisplay = ""
+                }
+            }
+            RaLeaderboardEvents.SCOREBOARD -> {
+                RaLeaderboards.parseScoreboard(json ?: "")?.let { lastScoreboard = it }
+                refreshLeaderboards()
+            }
+            RaLeaderboardEvents.STARTED, RaLeaderboardEvents.FAILED, RaLeaderboardEvents.SUBMITTED -> {
+                refreshLeaderboards()
+            }
+        }
+    }
+
+    /** Clear the scoreboard note (after its 4-second showing). */
+    fun clearScoreboard() {
+        lastScoreboard = null
     }
 
     /** A server call from the native layer: perform it, then hand the response back by id. */
@@ -282,9 +438,12 @@ object RaClient {
         if (success) {
             gameTitle = Bridge.nativeRaGameTitle()
             refreshAchievements()
+            refreshLeaderboards()
+            refreshRichPresence()
         } else {
             gameTitle = null
             achievements = emptyList()
+            clearLeaderboardState()
         }
     }
 
