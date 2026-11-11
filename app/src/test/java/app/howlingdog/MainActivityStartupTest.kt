@@ -50,6 +50,16 @@ class MainActivityStartupTest {
         composeRule.onNodeWithText("HOWLINGDOG").assertIsDisplayed()
         composeRule.onNodeWithText("PRESS START").assertIsDisplayed()
         composeRule.onNodeWithText("PRESS START").performClick()
+        // Audit 2 onboarding: a fresh install (no system files,
+        // no games) is offered the SYSTEM SETUP screen after the
+        // splash — the first library load is async, so wait for
+        // the offer to land. SKIP reaches the library.
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodesWithText("HOWLINGDOG — SYSTEM SETUP")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("HOWLINGDOG — SYSTEM SETUP").assertIsDisplayed()
+        composeRule.onNodeWithText("SKIP").performClick()
         composeRule.onNodeWithText("SELECT YOUR GAME").assertIsDisplayed()
         composeRule.onNodeWithText("Add game").assertIsDisplayed()
         composeRule.onNodeWithText("Add folder").assertIsDisplayed()
@@ -64,6 +74,11 @@ class MainActivityStartupTest {
         // The screen scrolls, so scroll the node into view first —
         // in the small test window it sits below the fold.
         composeRule.onNodeWithText("PRESS START").performClick()
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodesWithText("HOWLINGDOG — SYSTEM SETUP")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("SKIP").performClick()
         composeRule.onNodeWithText("No games yet. Add a game to start.")
             .performScrollTo()
             .assertIsDisplayed()
@@ -108,9 +123,15 @@ class MainActivityStartupTest {
     fun activitySurvivesRecreation() {
         composeRule.activityRule.scenario.recreate()
         // Recreation restarts at the boot splash (screen state is
-        // not saved); tapping through lands on a clean library.
+        // not saved); tapping through lands on a clean library —
+        // via the fresh-install setup screen, as on first launch.
         composeRule.onNodeWithText("PRESS START").assertIsDisplayed()
         composeRule.onNodeWithText("PRESS START").performClick()
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodesWithText("HOWLINGDOG — SYSTEM SETUP")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("SKIP").performClick()
         composeRule.onNodeWithText("SELECT YOUR GAME").assertIsDisplayed()
         composeRule.onNodeWithText("No games yet. Add a game to start.")
             .performScrollTo()

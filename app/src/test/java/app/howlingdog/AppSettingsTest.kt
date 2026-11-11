@@ -37,4 +37,18 @@ class AppSettingsTest {
     fun invalidBootValueFallsBackToDefault() {
         assertTrue(settingsWith(AppSettings.KEY_SHOW_BOOT to "maybe").showBoot())
     }
+
+    @Test
+    fun setupScreenUnseenByDefault() {
+        assertFalse(settingsWith().setupSeen())
+    }
+
+    @Test
+    fun setupSeenSticksOnceSet() {
+        val settings = settingsWith()
+        settings.setSetupSeen()
+        assertTrue(settings.setupSeen())
+        assertTrue(settingsWith(AppSettings.KEY_SETUP_SEEN to "yes").setupSeen())
+        assertFalse(settingsWith(AppSettings.KEY_SETUP_SEEN to "no").setupSeen())
+    }
 }

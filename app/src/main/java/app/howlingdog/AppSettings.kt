@@ -11,6 +11,7 @@ class AppSettings(private val store: OptionStore) {
 
     companion object {
         const val KEY_SHOW_BOOT = "app.showBoot" // "on" / "off"
+        const val KEY_SETUP_SEEN = "app.setupSeen" // "yes" once the SYSTEM SETUP screen has been dismissed
 
         const val DEFAULT_SHOW_BOOT = true
     }
@@ -26,5 +27,12 @@ class AppSettings(private val store: OptionStore) {
 
     fun setShowBoot(show: Boolean) {
         store.put(KEY_SHOW_BOOT, if (show) "on" else "off")
+    }
+
+    /** Whether the first-run SYSTEM SETUP screen has been shown and dismissed (default false). */
+    fun setupSeen(): Boolean = store.get(KEY_SETUP_SEEN)?.lowercase() == "yes"
+
+    fun setSetupSeen() {
+        store.put(KEY_SETUP_SEEN, "yes")
     }
 }

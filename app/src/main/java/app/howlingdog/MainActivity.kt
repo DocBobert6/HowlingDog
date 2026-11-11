@@ -76,6 +76,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -298,7 +299,7 @@ class MainActivity : ComponentActivity() {
         return super.onGenericMotionEvent(event)
     }
 
-    private enum class Screen { Boot, Library, Playing, Settings, Licences }
+    private enum class Screen { Boot, Library, Playing, Settings, Licences, Setup }
 
     private data class Held(
         val up: Boolean = false,
@@ -438,6 +439,11 @@ class MainActivity : ComponentActivity() {
         // sit). While editing, the game stays paused, the pause
         // overlay hides, and the two control units drag.
         var editControls by remember { mutableStateOf(false) }
+        // First-run setup (audit 2): offered once on a genuinely
+        // fresh install, after the boot splash. `setupPending` is
+        // set when the first library load finds no system files
+        // and no games; it is consumed when the setup screen is
+        // left, and never re-offered after it has been seen.
 
         fun exitEditMode() {
             controlSettings.setStickPosition(stickPos)
@@ -517,6 +523,17 @@ class MainActivity : ComponentActivity() {
                 pauseTimeLeft = t
             }
         }
+        // First-run setup offer: the offer lands while the user is
+        // on the library (the splash is off, or they tapped
+        // through before the first library load finished) — step
+        // into the setup screen once, instead of leaving a fresh
+        // install staring at an empty library.
+        LaunchedEffect(screen, setupPending) {
+            if (setupPending && screen == Screen.Library) {
+                setupPending = false
+                screen = Screen.Setup
+            }
+        }
 
         fun refreshLibrary() {
             lifecycleScope.launch(Dispatchers.IO) {
@@ -525,6 +542,14 @@ class MainActivity : ComponentActivity() {
                 withContext(Dispatchers.Main) {
                     games = loaded
                     bios = b
+                    // First-run setup: a genuinely fresh install (no
+                    // system files, no games) is offered the SYSTEM
+                    // SETUP screen once. The offer is consumed when
+                    // the screen is left, and never re-offered after
+                    // it has been seen.
+                    if (shouldShowSetup(b.readyCount, loaded.size, appSettings.setupSeen())) {
+                        setupPending = true
+                    }
                 }
             }
         }
@@ -578,6 +603,23 @@ class MainActivity : ComponentActivity() {
             playingGame = null
             paused = false
             pauseStatus = ""
+            screen = Screen.Library
+        }
+
+        // Leaving the boot splash: a fresh install that was offered
+        // the setup screen goes there instead of straight to the
+        // library.
+        fun goFromBoot() {
+            screen = if (setupPending) Screen.Setup else Screen.Library
+        }
+
+        // Leaving the setup screen (SKIP, back, or picking a game
+        // from row 3): the screen has been seen, so it is never
+        // offered again on its own — it stays reachable from
+        // Settings as the Setup guide.
+        fun leaveSetup() {
+            appSettings.setSetupSeen()
+            setupPending = false
             screen = Screen.Library
         }
 
@@ -782,6 +824,17 @@ class MainActivity : ComponentActivity() {
             inputActive = true
         }
 
+        // Starting a game from the setup screen's PLAY row: the
+        // setup is done, so it is marked seen before the game
+        // starts. (Declared after startGame: local functions must
+        // be declared before use.)
+        fun playFromSetup() {
+            val game = selectedGame ?: return
+            appSettings.setSetupSeen()
+            setupPending = false
+            startGame(game)
+        }
+
         // Wire the gamepad callbacks: the activity's key/motion
         // handlers call these, and they read the composable state
         // through the remembered State objects, so the captured
@@ -970,7 +1023,7 @@ class MainActivity : ComponentActivity() {
         // returns to the library, never to the Android home screen.
         // Settings: back returns to where Settings was opened
         // from (the library, or the game).
-        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences) {
+        BackHandler(enabled = screen == Screen.Playing || screen == Screen.Settings || screen == Screen.Licences || screen == Screen.Setup) {
             when (screen) {
                 Screen.Playing -> when {
                     editControls -> exitEditMode()
@@ -979,6 +1032,7 @@ class MainActivity : ComponentActivity() {
                 }
                 Screen.Settings -> screen = settingsFrom
                 Screen.Licences -> screen = Screen.Settings
+                Screen.Setup -> leaveSetup()
                 else -> { /* Library/Boot: the handler is disabled there. */ }
             }
         }
@@ -1006,13 +1060,13 @@ class MainActivity : ComponentActivity() {
                                     native.keyCode == KeyEvent.KEYCODE_ENTER ||
                                     native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER)
                             ) {
-                                screen = Screen.Library
+                                goFromBoot()
                                 true
                             } else {
                                 false
                             }
                         }
-                        .clickable { screen = Screen.Library },
+                        .clickable { goFromBoot() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(
@@ -1267,6 +1321,28 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 }
+            }
+
+            Screen.Setup -> {
+                // First-run SYSTEM SETUP (audit 2): the Neo Geo
+                // debug-menu-style onboarding. The rows read their
+                // status from the real state, so they never lie;
+                // PLAY is only enabled once rows 1-3 are done.
+                // Leaving (SKIP, back, or row 3's library trip)
+                // marks the screen seen.
+                SetupScreen(
+                    state = SetupState(
+                        biosReady = bios?.readyCount ?: 0,
+                        gameCount = games.size,
+                        pickedName = selectedGame?.displayName,
+                    ),
+                    onSystemFiles = { biosPicker.launch(null) },
+                    onAddGame = { gamePicker.launch(arrayOf("*/*")) },
+                    onAddFolder = { folderPicker.launch(null) },
+                    onPickGame = { leaveSetup() },
+                    onPlay = { playFromSetup() },
+                    onSkip = { leaveSetup() },
+                )
             }
 
             Screen.Playing -> {
@@ -2044,7 +2120,13 @@ class MainActivity : ComponentActivity() {
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { screen = Screen.Licences }) { Text("Licences") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { screen = Screen.Licences }) { Text("Licences") }
+                        // First-run SYSTEM SETUP, re-openable any
+                        // time: the debug-menu-style guide for a
+                        // fresh install (audit 2).
+                        Button(onClick = { screen = Screen.Setup }) { Text("Setup guide") }
+                    }
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { screen = settingsFrom }) { Text("Back") }
                 }
@@ -2674,6 +2756,222 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             null
         }
+    }
+}
+
+/**
+ * The first-run SYSTEM SETUP screen (audit 2): the Neo Geo
+ * debug-menu-style onboarding. The debug menu's layout — header,
+ * rows with a status column, footer hint — rendered in HowlingDog's
+ * maroon-and-gold palette with gold monospace text, not the real
+ * Neo Geo's green-on-black. Four rows, each with a live status
+ * from the real state; PLAY is only enabled once rows 1-3 are
+ * done, so there is no way to blunder into a game that cannot
+ * boot. Shown once on a genuinely fresh install, dismissible via
+ * SKIP or back, and re-openable from Settings as the Setup guide.
+ *
+ * Extracted from MainActivity so the layout is testable in
+ * isolation (a running game needs native code, which Robolectric
+ * does not have).
+ */
+@Composable
+private fun SetupScreen(
+    state: SetupState,
+    onSystemFiles: () -> Unit,
+    onAddGame: () -> Unit,
+    onAddFolder: () -> Unit,
+    onPickGame: () -> Unit,
+    onPlay: () -> Unit,
+    onSkip: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showAddChoice by remember { mutableStateOf(false) }
+    val mono = FontFamily.Monospace
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(EraUi.Palette.BACKGROUND))
+            .statusBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Color(EraUi.Palette.GOLD), RoundedCornerShape(4.dp))
+                .background(Color(EraUi.Palette.SURFACE_RAISED), RoundedCornerShape(4.dp))
+                .padding(16.dp),
+        ) {
+            Text(
+                "HOWLINGDOG — SYSTEM SETUP",
+                color = Color(EraUi.Palette.GOLD),
+                fontFamily = mono,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            SetupRow(
+                number = "1",
+                title = "SYSTEM FILES",
+                status = state.systemFilesStatus(),
+                done = state.systemFilesDone,
+                subtext = "The system files a game needs to start. They come with your MAME set — pick the folder holding aes.zip, neogeo.zip, neocd.zip and neocdz.zip.",
+                onClick = onSystemFiles,
+            )
+            SetupRow(
+                number = "2",
+                title = "ADD GAMES",
+                status = state.addGamesStatus(),
+                done = state.addGamesDone,
+                subtext = "Cartridges are .NEO files. Disc games are .chd files, or a .cue with its data files.",
+                onClick = { showAddChoice = true },
+            )
+            SetupRow(
+                number = "3",
+                title = "PICK A GAME",
+                status = state.pickGameStatus(),
+                done = state.pickGameDone,
+                subtext = "Choose a game from the grid and press START.",
+                onClick = onPickGame,
+            )
+            SetupRow(
+                number = "4",
+                title = "PLAY",
+                status = state.playStatus(),
+                done = state.playReady,
+                enabled = state.playReady,
+                subtext = "Everything is set. Press START to play.",
+                onClick = onPlay,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSkip() }
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "SKIP",
+                    color = Color(EraUi.Palette.TEXT),
+                    fontFamily = mono,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "Go to the library",
+                    color = Color(EraUi.Palette.TEXT_MUTED),
+                    fontFamily = mono,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "SELECT AN ITEM — PRESS START TO ENTER",
+            color = Color(EraUi.Palette.TEXT_MUTED),
+            fontFamily = mono,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            "BACK TO LEAVE",
+            color = Color(EraUi.Palette.TEXT_MUTED),
+            fontFamily = mono,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    if (showAddChoice) {
+        AlertDialog(
+            onDismissRequest = { showAddChoice = false },
+            title = { Text("Add games") },
+            text = {
+                Column {
+                    Text(
+                        "ONE GAME — one cartridge or disc image.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "A WHOLE FOLDER — a folder of games; a disc game needs its data files too.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAddChoice = false
+                    onAddGame()
+                }) { Text("One game") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showAddChoice = false
+                    onAddFolder()
+                }) { Text("A whole folder") }
+            },
+        )
+    }
+}
+
+/** One row of the SYSTEM SETUP menu: number, title, status on the right, subtext below. */
+@Composable
+private fun SetupRow(
+    number: String,
+    title: String,
+    status: String,
+    done: Boolean,
+    subtext: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val mono = FontFamily.Monospace
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.5f)
+            .clickable(enabled = enabled) { onClick() }
+            .padding(vertical = 8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "$number  $title",
+                color = Color(EraUi.Palette.TEXT),
+                fontFamily = mono,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (done) {
+                    Text(
+                        "✓ ",
+                        color = Color(EraUi.Palette.GOLD),
+                        fontFamily = mono,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Text(
+                    status,
+                    color = if (done) Color(EraUi.Palette.GOLD) else Color(EraUi.Palette.TEXT_MUTED),
+                    fontFamily = mono,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            subtext,
+            color = Color(EraUi.Palette.TEXT_MUTED),
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 
