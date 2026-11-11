@@ -195,7 +195,7 @@ jobs:
             echo "A standalone Neo Geo emulator for Android (AES / MVS / Neo Geo CD / Neo Geo CDZ) around the Geolith libretro core."
             echo ""
             echo "## New features"
-            echo "- RetroAchievements now signs in with your username and password, like other emulators. The API-key login is gone: the password is used once to log in and is never stored on the device — the app keeps the session token the server returns, so the next launch signs in without it."
+            echo "- The era UI now speaks in the real Neo Geo system font: the NEOGEO System Font (Eber / everiux365, CC BY 3.0) is the display font for the select grid, the boot splash, the pause menu, the SYSTEM SETUP screen, and the countdown."
             echo ""
             echo "## Bug fixes"
             echo "- Various bug fixes and stability improvements."
