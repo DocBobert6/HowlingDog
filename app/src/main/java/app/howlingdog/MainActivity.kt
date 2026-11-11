@@ -964,55 +964,6 @@ class MainActivity : ComponentActivity() {
             pushMask()
         }
 
-        fun quitToLibrary() {
-            inputActive = false
-            clearPadState()
-            turboState.releaseAll()
-            uniBiosHoldUntil = 0L
-            // v1.5, feature 2 — auto-save on quit: the game
-            // saves itself to slot 1 (the quick-save slot) when
-            // he quits, so quick load brings him back to where
-            // he left off; slots 2 and 3 stay his keepers. On
-            // by default, with a Settings switch to turn it
-            // off. Quit is only reached from the pause menu (or
-            // the second back press from it), so the session is
-            // paused already; pause first if it somehow is not,
-            // so the serialize is safe. A failed auto-save only
-            // logs — the quit must never be blocked.
-            if (appSettings.autoSaveOnQuit()) {
-                val game = playingGame
-                val s = session
-                if (game != null && s != null) {
-                    try {
-                        if (!paused) pauseGame()
-                        val bytes = s.serializeState()
-                        if (bytes != null) {
-                            val file = stateFileFor(game, QuickSave.QUICK_SLOT)
-                            file.parentFile?.mkdirs()
-                            file.writeBytes(bytes)
-                            writeRaSidecar(game, QuickSave.QUICK_SLOT)
-                            writeThumbnail(game, QuickSave.QUICK_SLOT)
-                        }
-                    } catch (_: Exception) {
-                        // The quit goes ahead regardless.
-                    }
-                }
-            }
-            session?.stop()
-            session = null
-            held = Held()
-            playingGame = null
-            paused = false
-            pauseStatus = ""
-            // Phase 10 — RetroAchievements: the game is gone, so
-            // the per-game RA state goes with it (the login stays).
-            RaClient.onGameQuit()
-            // Phase 9, item 7 — reset the bar to shown for the next game.
-            topBar.onQuit()
-            syncTopBar()
-            screen = Screen.Library
-        }
-
         // Leaving the boot splash: a fresh install that was offered
         // the setup screen goes there instead of straight to the
         // library.
@@ -1251,6 +1202,55 @@ class MainActivity : ComponentActivity() {
             } else {
                 pauseStatus = "That save doesn't match this game setup."
             }
+        }
+
+        fun quitToLibrary() {
+            inputActive = false
+            clearPadState()
+            turboState.releaseAll()
+            uniBiosHoldUntil = 0L
+            // v1.5, feature 2 — auto-save on quit: the game
+            // saves itself to slot 1 (the quick-save slot) when
+            // he quits, so quick load brings him back to where
+            // he left off; slots 2 and 3 stay his keepers. On
+            // by default, with a Settings switch to turn it
+            // off. Quit is only reached from the pause menu (or
+            // the second back press from it), so the session is
+            // paused already; pause first if it somehow is not,
+            // so the serialize is safe. A failed auto-save only
+            // logs — the quit must never be blocked.
+            if (appSettings.autoSaveOnQuit()) {
+                val game = playingGame
+                val s = session
+                if (game != null && s != null) {
+                    try {
+                        if (!paused) pauseGame()
+                        val bytes = s.serializeState()
+                        if (bytes != null) {
+                            val file = stateFileFor(game, QuickSave.QUICK_SLOT)
+                            file.parentFile?.mkdirs()
+                            file.writeBytes(bytes)
+                            writeRaSidecar(game, QuickSave.QUICK_SLOT)
+                            writeThumbnail(game, QuickSave.QUICK_SLOT)
+                        }
+                    } catch (_: Exception) {
+                        // The quit goes ahead regardless.
+                    }
+                }
+            }
+            session?.stop()
+            session = null
+            held = Held()
+            playingGame = null
+            paused = false
+            pauseStatus = ""
+            // Phase 10 — RetroAchievements: the game is gone, so
+            // the per-game RA state goes with it (the login stays).
+            RaClient.onGameQuit()
+            // Phase 9, item 7 — reset the bar to shown for the next game.
+            topBar.onQuit()
+            syncTopBar()
+            screen = Screen.Library
         }
 
         /**
