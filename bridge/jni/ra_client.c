@@ -41,6 +41,8 @@ static uint32_t g_console_id;
 
 static ra_memory_provider_fn g_memory_provider;
 static void* g_memory_ctx;
+static ra_save_memory_provider_fn g_save_memory_provider;
+static void* g_save_memory_ctx;
 static ra_server_call_fn g_server_call;
 static void* g_server_ctx;
 static ra_event_fn g_event_cb;
@@ -124,14 +126,36 @@ uint32_t ra_console_id_for_path(const char* path) {
 /* ------------------------------------------------------------------ */
 
 uint32_t ra_read_memory_mapped(uint32_t console_id, uint32_t address, uint8_t* buffer, uint32_t num_bytes,
-                               const uint8_t* ram, size_t ram_size) {
+                               const uint8_t* ram, size_t ram_size,
+                               const uint8_t* save_ram, size_t save_ram_size) {
     size_t base;
     size_t offset;
 
-    if (!buffer || num_bytes == 0 || !ram || ram_size == 0)
+    if (!buffer || num_bytes == 0)
         return 0;
-    /* Only the 64 KB work RAM is mapped (0x000000-0x00FFFF). */
-    if (address >= 0x10000)
+
+    /* The cart backup RAM (v1.5.1): RA address 0x010000+ reads
+     * the SAVE_RAM, right after the 64 KB work RAM — the
+     * SYSTEM_RAM-then-SAVE_RAM layout rcheevos builds for
+     * ARCADE. Discs keep the old behaviour: their backup RAM
+     * (BRAM) is unreachable through rc_client (its NEO_GEO_CD
+     * regions end at 0x00FFFF), so 0x010000+ reads as unmapped
+     * for them, as for an unknown console or a missing save
+     * RAM. A read is clamped at the end of the save region. */
+    if (address >= 0x10000) {
+        if (console_id != RA_CONSOLE_ARCADE || !save_ram || save_ram_size == 0)
+            return 0;
+        offset = (size_t)address - 0x10000;
+        if (offset >= save_ram_size)
+            return 0;
+        if (offset + num_bytes > save_ram_size)
+            num_bytes = (uint32_t)(save_ram_size - offset);
+        memcpy(buffer, save_ram + offset, num_bytes);
+        return num_bytes;
+    }
+
+    /* The 64 KB work RAM (0x000000-0x00FFFF). */
+    if (!ram || ram_size == 0)
         return 0;
     if ((size_t)address + num_bytes > 0x10000)
         num_bytes = (uint32_t)(0x10000 - (size_t)address);
@@ -156,12 +180,14 @@ uint32_t ra_read_memory_mapped(uint32_t console_id, uint32_t address, uint8_t* b
 static uint32_t ra_read_memory(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client) {
     const uint8_t* ram = NULL;
     size_t ram_size = 0;
+    const uint8_t* save_ram = NULL;
+    size_t save_ram_size = 0;
     (void)client;
     if (g_memory_provider)
         g_memory_provider(&ram, &ram_size, g_memory_ctx);
-    if (!ram || ram_size == 0)
-        return 0;
-    return ra_read_memory_mapped(g_console_id, address, buffer, num_bytes, ram, ram_size);
+    if (g_save_memory_provider)
+        g_save_memory_provider(&save_ram, &save_ram_size, g_save_memory_ctx);
+    return ra_read_memory_mapped(g_console_id, address, buffer, num_bytes, ram, ram_size, save_ram, save_ram_size);
 }
 
 /* ------------------------------------------------------------------ */
@@ -442,6 +468,12 @@ void ra_set_leaderboard_event_handler(ra_leaderboard_event_fn fn, void* ctx) {
     g_leaderboard_event_ctx = ctx;
 }
 
+/* The SAVE_RAM provider (v1.5.1: the cart backup RAM). */
+void ra_set_save_ram_provider(ra_save_memory_provider_fn fn, void* ctx) {
+    g_save_memory_provider = fn;
+    g_save_memory_ctx = ctx;
+}
+
 /* ------------------------------------------------------------------ */
 /* Lifecycle                                                          */
 /* ------------------------------------------------------------------ */
@@ -482,6 +514,8 @@ void ra_shutdown(void) {
     rc_client_destroy(g_client);
     g_client = NULL;
     g_console_id = 0;
+    g_save_memory_provider = NULL;
+    g_save_memory_ctx = NULL;
     memset(g_pending_http, 0, sizeof(g_pending_http));
 }
 

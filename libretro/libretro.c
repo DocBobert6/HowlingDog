@@ -1475,7 +1475,14 @@ void *retro_get_memory_data(unsigned id) {
         case RETRO_MEMORY_SAVE_RAM: {
             if (cd_mode)
                 return (void*)geo_cd_bram_ptr();
-            return NULL;
+            /* v1.5.1 (RA backup RAM): carts expose the 64 KB MVS
+             * backup RAM (NVRAM, 68k 0xD00000-0xD0FFFF) as
+             * SAVE_RAM — the same buffer the SET_MEMORY_MAPS
+             * cart descriptor already declares — so
+             * RetroAchievements can read it. The save flow
+             * (geo_savedata_*) does not use this API, so no
+             * other consumer changes. */
+            return (void*)geo_mem_ptr(GEO_MEMTYPE_NVRAM, NULL);
         }
         case RETRO_MEMORY_SYSTEM_RAM: {
             /* Phase 10 (RetroAchievements): in CD mode the main
@@ -1506,7 +1513,8 @@ size_t retro_get_memory_size(unsigned id) {
         case RETRO_MEMORY_SAVE_RAM: {
             if (cd_mode)
                 return SIZE_8K;
-            return 0;
+            /* v1.5.1 (RA backup RAM): the cart NVRAM, 64 KB. */
+            return SIZE_64K;
         }
         case RETRO_MEMORY_SYSTEM_RAM: {
             mem = (void*)geo_mem_ptr(GEO_MEMTYPE_MAINRAM, &sz);

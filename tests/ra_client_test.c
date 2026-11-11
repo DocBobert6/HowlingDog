@@ -63,6 +63,15 @@ static void mock_memory_provider(const uint8_t** data, size_t* size, void* ctx) 
     *size = sizeof(g_mock_ram);
 }
 
+/* Mock save RAM (v1.5.1): 64 KB, like the cart NVRAM. */
+static uint8_t g_mock_save_ram[0x10000];
+
+static void mock_save_memory_provider(const uint8_t** data, size_t* size, void* ctx) {
+    (void)ctx;
+    *data = g_mock_save_ram;
+    *size = sizeof(g_mock_save_ram);
+}
+
 /* ------------------------------------------------------------------ */
 /* Mock server (canned RetroAchievements API responses)               */
 /* ------------------------------------------------------------------ */
@@ -80,6 +89,9 @@ static const char* kPatchdata2Ach =
         "\"Created\":1367266583,\"Modified\":1376929305},"
        "{\"ID\":5502,\"Title\":\"Ach2\",\"Description\":\"Desc2\",\"Flags\":3,\"Points\":2,"
         "\"MemAddr\":\"0xH0001=2_0x0002=9\",\"Author\":\"User1\",\"BadgeName\":\"00235\","
+        "\"Created\":1376970283,\"Modified\":1376970283},"
+       "{\"ID\":5503,\"Title\":\"Ach3\",\"Description\":\"Desc3\",\"Flags\":3,\"Points\":1,"
+        "\"MemAddr\":\"0xH10000=5\",\"Author\":\"User1\",\"BadgeName\":\"00236\","
         "\"Created\":1376970283,\"Modified\":1376970283}"
       "],"
       "\"Leaderboards\":[]"
@@ -189,7 +201,9 @@ static void test_console_id_for_path(void) {
 static void test_read_memory_mapped(void) {
     uint8_t buffer[16];
     uint8_t ram[0x200000];
+    uint8_t save_ram[0x10000];
     memset(ram, 0, sizeof(ram));
+    memset(save_ram, 0, sizeof(save_ram));
     /* Cart work RAM: byte 0x1234 = 0xAB. */
     ram[0x1234] = 0xAB;
     /* Disc work RAM: PRAM offset 0x100000 + 0x1234. */
@@ -198,38 +212,73 @@ static void test_read_memory_mapped(void) {
      * disc path does not read the cart offset. */
     ram[0x0005] = 0x11;
     ram[0x100005] = 0x22;
+    /* Cart backup RAM: byte 0 = 0x5A, last byte = 0xA5, and a
+     * byte at the same offset as a work-RAM byte, to prove the
+     * regions are distinct. */
+    save_ram[0x0000] = 0x5A;
+    save_ram[0xFFFF] = 0xA5;
+    save_ram[0x0005] = 0x99;
 
     /* Cart: RA address A reads SYSTEM_RAM[A]. */
     memset(buffer, 0, sizeof(buffer));
-    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x1234, buffer, 1, ram, sizeof(ram)) == 1);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x1234, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 1);
     CHECK(buffer[0] == 0xAB);
-    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x0005, buffer, 1, ram, sizeof(ram)) == 1);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x0005, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 1);
     CHECK(buffer[0] == 0x11);
 
     /* Disc: RA address A reads SYSTEM_RAM[0x100000 + A]. */
     memset(buffer, 0, sizeof(buffer));
-    CHECK(ra_read_memory_mapped(RA_CONSOLE_NEO_GEO_CD, 0x1234, buffer, 1, ram, sizeof(ram)) == 1);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_NEO_GEO_CD, 0x1234, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 1);
     CHECK(buffer[0] == 0xCD);
-    CHECK(ra_read_memory_mapped(RA_CONSOLE_NEO_GEO_CD, 0x0005, buffer, 1, ram, sizeof(ram)) == 1);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_NEO_GEO_CD, 0x0005, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 1);
     CHECK(buffer[0] == 0x22);
 
     /* A multi-byte read crossing into the work RAM works, and a
      * read that would cross the 64 KB boundary is clamped. */
     memset(buffer, 0, sizeof(buffer));
-    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0xFFFE, buffer, 4, ram, sizeof(ram)) == 2);
-    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0xFFFE, buffer, 2, ram, sizeof(ram)) == 2);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0xFFFE, buffer, 4, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 2);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0xFFFE, buffer, 2, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 2);
 
-    /* Outside the work RAM: unmapped. */
-    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x10000, buffer, 1, ram, sizeof(ram)) == 0);
-    CHECK(ra_read_memory_mapped(RA_CONSOLE_NEO_GEO_CD, 0x20000, buffer, 1, ram, sizeof(ram)) == 0);
-    /* Unknown console: unmapped. */
-    CHECK(ra_read_memory_mapped(0, 0x1234, buffer, 1, ram, sizeof(ram)) == 0);
+    /* Cart backup RAM (v1.5.1): RA address 0x10000 + A reads
+     * SAVE_RAM[A]. */
+    memset(buffer, 0, sizeof(buffer));
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x10000, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 1);
+    CHECK(buffer[0] == 0x5A);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x1FFFF, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 1);
+    CHECK(buffer[0] == 0xA5);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x10005, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 1);
+    CHECK(buffer[0] == 0x99);
+    /* A multi-byte read crossing the end of the backup RAM is
+     * clamped, and a read never crosses from one region into
+     * the other. */
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x1FFFE, buffer, 4, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 2);
+    /* Past the backup RAM: unmapped. */
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x20000, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 0);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_NEO_GEO_CD, 0x20000, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 0);
+    /* No save RAM registered: the backup range reads as
+     * unmapped (the pre-v1.5.1 behaviour). */
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x10000, buffer, 1, ram, sizeof(ram), NULL, 0) == 0);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x10000, buffer, 1, ram, sizeof(ram), save_ram, 0) == 0);
+    /* A save RAM smaller than 64 KB: only its own bytes are
+     * readable. */
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x17FFF, buffer, 1, ram, sizeof(ram), save_ram, 0x8000) == 1);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x18000, buffer, 1, ram, sizeof(ram), save_ram, 0x8000) == 0);
+    /* Discs: the backup range stays unmapped even with a save
+     * RAM present (the CD BRAM is not exposed). */
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_NEO_GEO_CD, 0x10000, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 0);
+    /* Unknown console: unmapped in both ranges. */
+    CHECK(ra_read_memory_mapped(0, 0x1234, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 0);
+    CHECK(ra_read_memory_mapped(0, 0x10000, buffer, 1, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 0);
     /* RAM too small for the disc offset: unmapped (a cart-sized
      * buffer must never satisfy a disc read). */
-    CHECK(ra_read_memory_mapped(RA_CONSOLE_NEO_GEO_CD, 0x1234, buffer, 1, ram, 0x10000) == 0);
-    /* No RAM at all: unmapped. */
-    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x1234, buffer, 1, NULL, 0) == 0);
-    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x1234, buffer, 0, ram, sizeof(ram)) == 0);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_NEO_GEO_CD, 0x1234, buffer, 1, ram, 0x10000, save_ram, sizeof(save_ram)) == 0);
+    /* No work RAM at all: the work RAM reads as unmapped, but
+     * the backup RAM still reads (the two buffers are
+     * independent). */
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x1234, buffer, 1, NULL, 0, save_ram, sizeof(save_ram)) == 0);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x10000, buffer, 1, NULL, 0, save_ram, sizeof(save_ram)) == 1);
+    CHECK(buffer[0] == 0x5A);
+    CHECK(ra_read_memory_mapped(RA_CONSOLE_ARCADE, 0x1234, buffer, 0, ram, sizeof(ram), save_ram, sizeof(save_ram)) == 0);
 }
 
 /* Build a fake .neo file (4096-byte header + ROM data) and hash
@@ -950,6 +999,97 @@ static void test_full_flow(void) {
     remove(kNeoPath);
 }
 
+/* The cart backup RAM (v1.5.1): an achievement referencing a
+ * backup-RAM address (0x10000+) is disabled when no save-RAM
+ * provider is registered (its address reads as unmapped) and
+ * unlocks once the provider is registered and the byte holds
+ * the trigger value. The mock set's third achievement (5503,
+ * added to the fixture above) reads 0xH10000=5. */
+static void test_save_ram_flow(void) {
+    char* json;
+
+    memset(g_mock_ram, 0, sizeof(g_mock_ram));
+    memset(g_mock_save_ram, 0, sizeof(g_mock_save_ram));
+    g_server_calls = 0;
+    g_unexpected_requests = 0;
+    g_num_events = 0;
+    g_last_result = -999;
+
+    /* Without a save-RAM provider: 5503 is disabled at load. */
+    CHECK(ra_init(mock_memory_provider, NULL, mock_server_call, NULL, mock_event, NULL) == 0);
+    CHECK(ra_login_with_token("User", "ApiToken", mock_result, NULL) == 0);
+    CHECK(g_last_result == 0);
+    build_fake_neo();
+    g_last_result = -999;
+    CHECK(ra_load_game(RA_CONSOLE_ARCADE, kNeoPath, mock_result, NULL) == 0);
+    CHECK(g_last_result == 0);
+    CHECK(ra_is_game_loaded());
+    json = ra_get_achievements_json();
+    CHECK(json != NULL);
+    if (json) {
+        CHECK(strstr(json, "\"id\":5503") != NULL);
+        CHECK(strstr(json, "\"state\":3") != NULL); /* 5503 disabled */
+        free(json);
+    }
+    /* The trigger byte is set, but a disabled achievement never
+     * fires. */
+    g_mock_save_ram[0x0000] = 5;
+    ra_do_frame();
+    CHECK(g_num_events == 0);
+    ra_unload_game();
+    ra_shutdown();
+    remove(kNeoPath);
+
+    /* With the save-RAM provider: 5503 is active at load, and
+     * setting the trigger byte unlocks it. */
+    memset(g_mock_ram, 0, sizeof(g_mock_ram));
+    memset(g_mock_save_ram, 0, sizeof(g_mock_save_ram));
+    g_server_calls = 0;
+    g_unexpected_requests = 0;
+    g_num_events = 0;
+    g_last_result = -999;
+    CHECK(ra_init(mock_memory_provider, NULL, mock_server_call, NULL, mock_event, NULL) == 0);
+    ra_set_save_ram_provider(mock_save_memory_provider, NULL);
+    CHECK(ra_login_with_token("User", "ApiToken", mock_result, NULL) == 0);
+    CHECK(g_last_result == 0);
+    build_fake_neo();
+    g_last_result = -999;
+    CHECK(ra_load_game(RA_CONSOLE_ARCADE, kNeoPath, mock_result, NULL) == 0);
+    CHECK(g_last_result == 0);
+    CHECK(ra_is_game_loaded());
+    json = ra_get_achievements_json();
+    CHECK(json != NULL);
+    if (json) {
+        CHECK(strstr(json, "\"id\":5503") != NULL);
+        CHECK(strstr(json, "\"state\":3") == NULL); /* nothing disabled */
+        free(json);
+    }
+    /* Nothing unlocked yet: the trigger byte is still 0. */
+    ra_do_frame();
+    CHECK(g_num_events == 0);
+    /* Set the backup-RAM trigger byte and run a frame. */
+    g_mock_save_ram[0x0000] = 5;
+    ra_do_frame();
+    CHECK(g_num_events == 1);
+    if (g_num_events >= 1) {
+        CHECK(g_events[0].type == RA_EVENT_ACHIEVEMENT_TRIGGERED);
+        CHECK(g_events[0].id == 5503);
+        CHECK_STR_EQ(g_events[0].title, "Ach3");
+        CHECK(g_events[0].points == 1);
+    }
+    json = ra_get_achievements_json();
+    CHECK(json != NULL);
+    if (json) {
+        CHECK(strstr(json, "\"id\":5503") != NULL);
+        CHECK(strstr(json, "\"state\":2") != NULL); /* 5503 unlocked */
+        free(json);
+    }
+    ra_unload_game();
+    ra_shutdown();
+    CHECK(!ra_is_ready());
+    remove(kNeoPath);
+}
+
 /* The password login (v1.1.2 — the API-key login is gone):
  * the request must carry the password (p=), never a token
  * (t=); on success the session token the server returned is
@@ -1046,6 +1186,7 @@ int main(void) {
     test_password_login();
     test_leaderboards_no_game();
     test_full_flow();
+    test_save_ram_flow();
     printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
 }

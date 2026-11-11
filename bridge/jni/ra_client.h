@@ -10,22 +10,34 @@
  *
  * The 68k memory map (the main technical risk, assessed in
  * PLAN.md §10): rcheevos addresses achievements in the console
- * address space, which for Neo Geo is the 64 KB work RAM at
- * 0x000000-0x00FFFF. The bridge exposes that RAM through the
- * libretro API (retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM)):
- *   - carts (.neo, RC_CONSOLE_ARCADE): the 64 KB work RAM array,
- *     so RA address A reads SYSTEM_RAM[A].
+ * address space. For ARCADE (Neo Geo carts) rcheevos defines
+ * no memory regions of its own (rc_console_memory_regions
+ * returns none), so the frontend's mapping is "system RAM
+ * followed by save RAM" (rc_libretro_memory_init_without_regions):
+ * the 64 KB work RAM at 0x000000-0x00FFFF, then the save RAM
+ * at 0x010000-0x01FFFF. The bridge exposes both through the
+ * libretro API (retro_get_memory_data):
+ *   - SYSTEM_RAM: the 64 KB work RAM array, so RA address A
+ *     reads SYSTEM_RAM[A].
+ *   - SAVE_RAM: the 64 KB MVS backup RAM (NVRAM, 68k
+ *     0xD00000-0xD0FFFF), so RA address 0x10000 + A reads
+ *     SAVE_RAM[A]. v1.5.1: before that release SAVE_RAM was
+ *     NULL for carts, so backup-RAM achievements read as
+ *     unmapped (0 bytes) and rc_client disabled them.
  *   - discs (.cue/.chd/.m3u, RC_CONSOLE_NEO_GEO_CD): the 2 MB
  *     PRAM, whose work RAM sits at offset 0x100000 (the 68k
  *     address of the work RAM), so RA address A reads
  *     SYSTEM_RAM[0x100000 + A]. The built-in rc_libretro helper
  *     would map it to SYSTEM_RAM[A] (wrong), so this layer does
- *     the translation itself — see ra_read_memory_mapped.
- * Only the work RAM is mapped. Addresses outside 0x000000-
- * 0x00FFFF read as unmapped (0 bytes), which makes rc_client
- * disable the achievements that reference them rather than
- * read garbage — the cart's backup RAM (the ARCADE map's
- * SAVE_RAM region) is not exposed by the core's libretro API.
+ *     the translation itself — see ra_read_memory_mapped. The
+ *     disc backup RAM (BRAM, 68k 0x800000) is NOT mapped:
+ *     rcheevos's NEO_GEO_CD regions end at 0x00FFFF, so
+ *     rc_client never asks for it (it would read as unmapped
+ *     anyway) — only the cart backup RAM is exposed.
+ * Only the work RAM and (for carts) the backup RAM are mapped.
+ * Addresses outside those ranges read as unmapped (0 bytes),
+ * which makes rc_client disable the achievements that
+ * reference them rather than read garbage.
  *
  * Hardcore mode is OFF (the default): HowlingDog is built
  * around save states, which hardcore forbids. Achievements
@@ -78,6 +90,16 @@ extern "C" {
  * through the libretro API) or by a stub in the host test. */
 typedef void (*ra_memory_provider_fn)(const uint8_t** data, size_t* size, void* ctx);
 
+/* The core's SAVE_RAM, same shape as the memory provider: for
+ * carts the 64 KB MVS backup RAM (NVRAM), for discs the 8 KB
+ * backup RAM (BRAM). Only the cart one is mapped into the RA
+ * address space (see the header comment); the disc one is
+ * registered but never read, so the bridge registers it
+ * unconditionally and this layer decides. Registered
+ * separately from ra_init (see ra_set_save_ram_provider) so
+ * the achievement path stays untouched. */
+typedef void (*ra_save_memory_provider_fn)(const uint8_t** data, size_t* size, void* ctx);
+
 /* A server call the app must perform asynchronously (the
  * RetroAchievements web API). The app later delivers the
  * response with ra_http_response(request_id, ...). */
@@ -115,9 +137,23 @@ uint32_t ra_console_id_for_path(const char* path);
 
 /* The RA address -> core RAM translation (the 68k memory map).
  * Returns the number of bytes read (0 = unmapped). Pure and
- * host-testable: the RAM is passed in, not read globally. */
+ * host-testable: the RAM is passed in, not read globally.
+ *   - work RAM: RA address A (0x000000-0x00FFFF) reads ram[A]
+ *     for carts, ram[0x100000 + A] for discs.
+ *   - cart backup RAM: RA address 0x10000 + A (0x010000-
+ *     0x01FFFF) reads save_ram[A] — carts only, and only when
+ *     a save-RAM provider is registered (save_ram NULL or
+ *     save_ram_size 0 reads as unmapped). Discs and unknown
+ *     consoles read 0x010000+ as unmapped.
+ * A read is clamped at the end of the region it starts in: it
+ * never crosses from the work RAM into the backup RAM (or past
+ * the end of either buffer). The save region starts at the
+ * fixed 0x10000 — the ARCADE work RAM is always 64 KB — not
+ * at ram_size, so a larger SYSTEM_RAM buffer (a disc PRAM, a
+ * test mock) cannot move it. */
 uint32_t ra_read_memory_mapped(uint32_t console_id, uint32_t address, uint8_t* buffer, uint32_t num_bytes,
-                               const uint8_t* ram, size_t ram_size);
+                               const uint8_t* ram, size_t ram_size,
+                               const uint8_t* save_ram, size_t save_ram_size);
 
 /* Cheats (v1.5, feature 4). A cheat writes one byte to the 68k
  * work RAM (0x100000-0x10FFFF) after every displayed frame.
@@ -206,6 +242,13 @@ void ra_http_response(int request_id, const char* body, size_t body_length, int 
  * delivered through result_cb, exactly once. Returns -1 when
  * no game is loaded (the callback is not called). */
 void ra_set_leaderboard_event_handler(ra_leaderboard_event_fn fn, void* ctx);
+
+/* Register the SAVE_RAM provider (v1.5.1: the cart backup
+ * RAM). Registered separately from ra_init, like the
+ * leaderboard handler, so the achievement path stays
+ * untouched. A NULL provider (the default) leaves the
+ * backup-RAM range unmapped. */
+void ra_set_save_ram_provider(ra_save_memory_provider_fn fn, void* ctx);
 int ra_has_leaderboards(void);
 char* ra_get_leaderboards_json(void);
 int ra_fetch_leaderboard_entries(uint32_t leaderboard_id, int around_user, ra_json_result_fn result_cb, void* ctx);

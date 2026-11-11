@@ -231,6 +231,21 @@ static void bridge_ra_memory_provider(const uint8_t **data, size_t *size, void *
     *size = ptr ? sz : 0;
 }
 
+// The core's SAVE_RAM, through the libretro API. In cart mode
+// this is the 64 KB MVS backup RAM (NVRAM); in CD mode the 8 KB
+// backup RAM (BRAM). Registered as the RA save-RAM provider
+// (v1.5.1) so achievements referencing the cart backup RAM
+// read real values instead of unmapped zeroes.
+static void bridge_ra_save_memory_provider(const uint8_t **data, size_t *size, void *ctx) {
+    void *ptr;
+    size_t sz;
+    (void)ctx;
+    ptr = retro_get_memory_data(RETRO_MEMORY_SAVE_RAM);
+    sz = retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
+    *data = (const uint8_t *)ptr;
+    *size = ptr ? sz : 0;
+}
+
 static void bridge_ra_server_call(int request_id, const char *url, const char *post_data, void *ctx) {
     (void)ctx;
     ra_call_http_request(request_id, url, post_data);
@@ -1012,6 +1027,7 @@ Java_app_howlingdog_Bridge_nativeRaInit(JNIEnv *env, jobject thiz) {
     if (ra_init(bridge_ra_memory_provider, NULL, bridge_ra_server_call, NULL, bridge_ra_event, NULL) != 0)
         return JNI_FALSE;
     ra_set_leaderboard_event_handler(bridge_ra_leaderboard_event, NULL);
+    ra_set_save_ram_provider(bridge_ra_save_memory_provider, NULL);
     return JNI_TRUE;
 }
 
