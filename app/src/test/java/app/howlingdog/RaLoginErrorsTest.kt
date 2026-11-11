@@ -9,6 +9,7 @@ import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.UnknownHostException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -141,5 +142,24 @@ class RaLoginErrorsTest {
         val (body, code) = RaLoginErrors.readResponse(FakeConnection(500, null, null))
         assertEquals(500, code)
         assertEquals(0, body.size)
+    }
+
+    /**
+     * v1.2.0 (bug fix) — only an explicit rejection kills the
+     * stored token. A rejected token (or password) is dead; a
+     * transient failure (no response, a timeout, unreachable)
+     * or an unknown message never clears it — the login simply
+     * did not happen, and the next launch retries the token.
+     */
+    @Test
+    fun isInvalidCredentialsOnlyForExplicitRejections() {
+        assertTrue(RaLoginErrors.isInvalidCredentials("Invalid user/token combination."))
+        assertTrue(RaLoginErrors.isInvalidCredentials("Invalid user/password combination. Please try again."))
+        assertFalse(RaLoginErrors.isInvalidCredentials("No response"))
+        assertFalse(RaLoginErrors.isInvalidCredentials("Request has timed out."))
+        assertFalse(RaLoginErrors.isInvalidCredentials("Could not connect to server."))
+        assertFalse(RaLoginErrors.isInvalidCredentials(null))
+        assertFalse(RaLoginErrors.isInvalidCredentials(""))
+        assertFalse(RaLoginErrors.isInvalidCredentials("Something unexpected happened."))
     }
 }

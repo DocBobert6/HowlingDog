@@ -702,6 +702,18 @@ class MainActivity : ComponentActivity() {
 
         LaunchedEffect(Unit) { refreshLibrary() }
 
+        // v1.2.0 (bug fix) — RetroAchievements: log in with the
+        // stored session token on launch, so closing the app does
+        // not log the user out. Before this, init only ran when a
+        // game started (and from the Settings login button,
+        // without the auto-login), so a fresh launch always showed
+        // "Not logged in." even though the username and token were
+        // stored — the user had to retype their password every
+        // time. init is idempotent, so the later startGame call
+        // is a no-op, and a logged-out user simply stays logged
+        // out (no stored login, no auto-login, no error).
+        LaunchedEffect(Unit) { RaClient.init(appSettings) }
+
         // Phase 9, item 10 — automatic update check when the
         // library is entered (throttled to once an hour inside
         // checkAsync; the check itself is one small API call, and

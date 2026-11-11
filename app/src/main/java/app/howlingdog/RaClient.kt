@@ -137,6 +137,14 @@ object RaClient {
     private var settings: AppSettings? = null
 
     /**
+     * v1.2.0 (bug fix) — the game whose achievements are waiting
+     * on a login still in flight (see [loadGame]). Cleared when
+     * the game quits or the user logs out, so a game that is no
+     * longer playing is never loaded.
+     */
+    private var pendingGamePath: String? = null
+
+    /**
      * Initialise the native RA client and wire the Bridge
      * callbacks. Idempotent. If [AppSettings] holds a username
      * and a session token, the login starts here (the result
@@ -167,9 +175,12 @@ object RaClient {
         }
         initialised = true
         if (autoLogin) {
-            val user = settings.raUsername()
-            val token = settings.raToken()
-            if (user.isNotEmpty() && token.isNotEmpty()) {
+            // v1.2.0 (bug fix): the stored login is read here —
+            // the launch-time auto-login. Before this, init only
+            // ran when a game started, so a fresh launch never
+            // re-logged in and the app always showed "Not logged
+            // in." even though the username and token were stored.
+            settings.raStoredLogin()?.let { (user, token) ->
                 loginWithToken(user, token)
             }
         }
@@ -207,6 +218,7 @@ object RaClient {
     /** Log out and clear the session state, including the stored username and token. */
     fun logout() {
         if (initialised) Bridge.nativeRaLogout()
+        pendingGamePath = null
         settings?.setRaUsername("")
         settings?.setRaToken("")
         loggedIn = false
@@ -229,7 +241,20 @@ object RaClient {
      * supply) simply leaves RA inactive for that game.
      */
     fun loadGame(gamePath: String) {
-        if (!initialised || !loggedIn) return
+        if (!initialised) return
+        if (!loggedIn) {
+            // v1.2.0 (bug fix): the login is still in flight (a
+            // stored-token re-login on launch, or a password login
+            // just started) — remember the game and load its
+            // achievements when the login completes, instead of
+            // dropping the load. A logged-out user never logs in,
+            // so the pending path simply never fires; quitting the
+            // game or logging out clears it, so a game that is no
+            // longer playing is never loaded.
+            pendingGamePath = gamePath
+            return
+        }
+        pendingGamePath = null
         gameLoaded = false
         gameTitle = null
         achievements = emptyList()
@@ -238,6 +263,7 @@ object RaClient {
 
     /** The game quit: the native layer unloads it (in nativeUnloadGame); clear the per-game state here. */
     fun onGameQuit() {
+        pendingGamePath = null
         gameTitle = null
         gameLoaded = false
         achievements = emptyList()
@@ -418,13 +444,23 @@ object RaClient {
             // next launch re-logs in without the password. The
             // password itself is never stored.
             Bridge.nativeRaToken()?.takeIf { it.isNotEmpty() }?.let { settings?.setRaToken(it) }
+            // v1.2.0 (bug fix): a game start that arrived while
+            // this login was in flight left its achievements
+            // waiting — load them now that the login completed.
+            pendingGamePath?.let { path ->
+                pendingGamePath = null
+                loadGame(path)
+            }
         } else {
             username = ""
-            // A rejected token is dead: clear it, so the next
-            // launch asks for the password instead of retrying
-            // the same token and failing the same way. A failed
-            // password login stores nothing in the first place.
-            settings?.setRaToken("")
+            // v1.2.0 (bug fix): only an explicit rejection kills
+            // the stored token. A transient failure (no network,
+            // a timeout) leaves the token in place, so the next
+            // launch retries it instead of forcing a password
+            // re-login for a login that simply did not happen.
+            if (RaLoginErrors.isInvalidCredentials(error)) {
+                settings?.setRaToken("")
+            }
             // A failure is never silent and never vague: the raw
             // rcheevos error is mapped to a message that names
             // what went wrong (see RaLoginErrors).

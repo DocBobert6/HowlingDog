@@ -106,4 +106,22 @@ object RaLoginErrors {
 
         else -> message
     }
+
+    /**
+     * v1.2.0 (bug fix) — whether a raw rcheevos login error
+     * means the server explicitly rejected the credentials (an
+     * invalid username/password, or an invalid username/token).
+     * Only then is the stored session token dead: a rejected
+     * token is cleared, so the next launch asks for the password
+     * instead of retrying the same token. A transient failure
+     * ("No response", a timeout, unreachable) never clears the
+     * token — the login simply did not happen, and the next
+     * launch retries it. An unknown message is treated the same
+     * way (fail closed: keep the token).
+     */
+    fun isInvalidCredentials(error: String?): Boolean = when (error?.trim()) {
+        "Invalid user/password combination. Please try again.",
+        "Invalid user/token combination." -> true
+        else -> false
+    }
 }

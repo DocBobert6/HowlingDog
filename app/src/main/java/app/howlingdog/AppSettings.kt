@@ -109,6 +109,20 @@ class AppSettings(private val store: OptionStore) {
     }
 
     /**
+     * v1.2.0 (bug fix) — the stored login, for the launch-time
+     * auto-login: the (username, token) pair when both are set,
+     * null otherwise. Both must be present — a token without a
+     * username (or the reverse) cannot log in, so the auto-login
+     * is skipped and the user logs in by hand. The password is
+     * never stored, so it never appears here.
+     */
+    fun raStoredLogin(): Pair<String, String>? {
+        val username = raUsername()
+        val token = raToken()
+        return if (username.isNotEmpty() && token.isNotEmpty()) username to token else null
+    }
+
+    /**
      * v1.1.2 — the API-key login is gone: remove the API key a
      * v1.1.0/v1.1.1 install stored, so the old key is not left
      * lying around after the login it belonged to is removed.

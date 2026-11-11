@@ -127,4 +127,51 @@ class AppSettingsTest {
         settings.clearLegacyRaApiKey()
         assertEquals("", map["ra.apiKey"])
     }
+
+    /**
+     * v1.2.0 (bug fix) — the session token survives a restart:
+     * a fresh AppSettings over the same store (what a relaunch
+     * is, at the persistence layer) still reads the username
+     * and token a login stored. This is the half of the logout
+     * bug that was working — the token was saved, just never
+     * read back at launch.
+     */
+    @Test
+    fun raTokenSurvivesSimulatedRestart() {
+        val map = mutableMapOf<String, String>()
+        val store = object : OptionStore {
+            override fun get(key: String): String? = map[key]
+            override fun put(key: String, value: String) {
+                map[key] = value
+            }
+        }
+        AppSettings(store).apply {
+            setRaUsername("DocBobbert")
+            setRaToken("session-token-abc")
+        }
+        // A relaunch: a new AppSettings over the same store.
+        val restarted = AppSettings(store)
+        assertEquals("DocBobbert", restarted.raUsername())
+        assertEquals("session-token-abc", restarted.raToken())
+        assertEquals("DocBobbert" to "session-token-abc", restarted.raStoredLogin())
+    }
+
+    /**
+     * v1.2.0 (bug fix) — the stored login is only usable when
+     * both halves are present: a token without a username (or
+     * the reverse) cannot log in, so the auto-login is skipped.
+     */
+    @Test
+    fun raStoredLoginNeedsBothHalves() {
+        assertNull(settingsWith().raStoredLogin())
+        assertNull(settingsWith(AppSettings.KEY_RA_USERNAME to "DocBobbert").raStoredLogin())
+        assertNull(settingsWith(AppSettings.KEY_RA_TOKEN to "session-token-abc").raStoredLogin())
+        assertEquals(
+            "DocBobbert" to "session-token-abc",
+            settingsWith(
+                AppSettings.KEY_RA_USERNAME to "DocBobbert",
+                AppSettings.KEY_RA_TOKEN to "session-token-abc",
+            ).raStoredLogin(),
+        )
+    }
 }
