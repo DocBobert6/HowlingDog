@@ -857,6 +857,11 @@ class MainActivity : ComponentActivity() {
             ActivityResultContracts.OpenDocument(),
         ) { uri: Uri? ->
             if (uri == null) return@rememberLauncherForActivityResult
+            // Audit fix F4: a .chd can be 300 MB+ and the copy runs
+            // silently — say something is happening, and that the
+            // file is copied into the app (storage is duplicated:
+            // the original stays where it was).
+            status = "Copying the game… The file is copied into the app."
             lifecycleScope.launch(Dispatchers.IO) {
                 val name = displayName(uri) ?: "game.neo"
                 val ext = name.substringAfterLast('.', "").lowercase()
@@ -892,6 +897,9 @@ class MainActivity : ComponentActivity() {
             ActivityResultContracts.OpenDocumentTree(),
         ) { uri: Uri? ->
             if (uri == null) return@rememberLauncherForActivityResult
+            // Audit fix F4: same — a folder of games copies
+            // silently, and a big .chd takes a while.
+            status = "Copying games… Files are copied into the app."
             lifecycleScope.launch(Dispatchers.IO) {
                 gamesDir.mkdirs()
                 var added = 0
@@ -1140,12 +1148,20 @@ class MainActivity : ComponentActivity() {
                             fontWeight = FontWeight.Black,
                             letterSpacing = 2.sp,
                         )
-                        Text(
-                            "TIME %02d".format(timeLeft),
-                            color = if (timeLeft <= 3) Color(EraUi.Palette.WARNING) else Color(EraUi.Palette.TEXT),
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        // Audit fix F5: the countdown is hidden on
+                        // an empty library — it only means something
+                        // once there are games to pick from, and on
+                        // an empty screen "TIME 09" reads like a
+                        // deadline. (A note under it would be clutter
+                        // drawing attention to a decorative element.)
+                        if (games.isNotEmpty()) {
+                            Text(
+                                "TIME %02d".format(timeLeft),
+                                color = if (timeLeft <= 3) Color(EraUi.Palette.WARNING) else Color(EraUi.Palette.TEXT),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
                     }
                     Spacer(Modifier.height(12.dp))
                     Column(
