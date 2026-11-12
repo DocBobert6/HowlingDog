@@ -2694,161 +2694,16 @@ class MainActivity : ComponentActivity() {
                 CheatsScreen()
             }
             Screen.GameSettings -> {
-                // Phase 9, item 8 — this game's own settings: the
-                // per-game overrides (region, palette, aspect
-                // ratio, sprites per line, overclocking, free play,
-                // CRT shader, curvature, left control). Anything
-                // left on "Use global" follows Settings; Reset
-                // drops every override for this game, so it follows
-                // the global settings again. Takes effect the next
-                // time this game starts.
                 val game = perGameFor
                 if (game != null) {
-                    key(perGameTick) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .statusBarsPadding()
-                                .verticalScroll(rememberScrollState())
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Text(
-                                "Settings — ${game.effectiveName}",
-                                style = MaterialTheme.typography.headlineMedium,
-                            )
-                            Text(
-                                "Only this game. Anything left on \"Use global\" follows Settings. Takes effect the next time this game starts.",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                if (perGameSettings.hasProfile(game.mainFile)) {
-                                    "This game has its own settings."
-                                } else {
-                                    "Using the global settings."
-                                },
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            // 2.0.2, fix 3 — the collection entry
-                            // point. The tile's COLLECTION text was
-                            // the only tap target opening the picker,
-                            // and 2.0.1 fix 5 hid it when empty, so
-                            // a game with no collection could never
-                            // get one. The picker now lives here, in
-                            // this game's settings: the row shows the
-                            // current collection (or None) and opens
-                            // the picker when tapped. It works for a
-                            // game with no collection and for one
-                            // that already has one (to change it).
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text("Collection", style = MaterialTheme.typography.bodyMedium)
-                                TextButton(onClick = {
-                                    collectionFor = game
-                                    collectionText = ""
-                                }) {
-                                    Text(collectionStore.collectionFor(game.mainFile) ?: "None")
-                                }
-                            }
-                            Spacer(Modifier.height(16.dp))
-                            for (coreKey in PerGameSettings.CORE_KEYS) {
-                                val opt = CoreOptions.byKey(coreKey) ?: continue
-                                ControlDropdownRow(
-                                    opt.label,
-                                    listOf("global" to "Use global") + opt.values,
-                                    perGameSettings.coreOverride(game.mainFile, coreKey) ?: "global",
-                                ) { value ->
-                                    perGameSettings.setCoreOverride(
-                                        game.mainFile, coreKey,
-                                        if (value == "global") null else value,
-                                    )
-                                    perGameTick++
-                                }
-                            }
-                            Spacer(Modifier.height(16.dp))
-                            Text("CRT display", style = MaterialTheme.typography.titleSmall)
-                            ControlDropdownRow(
-                                "CRT shader",
-                                listOf("global" to "Use global", "on" to "On", "off" to "Off"),
-                                perGameSettings.shaderOverride(game.mainFile)?.let { if (it) "on" else "off" } ?: "global",
-                            ) { value ->
-                                perGameSettings.setShaderOverride(
-                                    game.mainFile,
-                                    when (value) {
-                                        "on" -> true
-                                        "off" -> false
-                                        else -> null
-                                    },
-                                )
-                                perGameTick++
-                            }
-                            ControlDropdownRow(
-                                "Screen curvature",
-                                listOf("global" to "Use global", "on" to "On", "off" to "Off"),
-                                perGameSettings.curvatureOverride(game.mainFile)?.let { if (it) "on" else "off" } ?: "global",
-                            ) { value ->
-                                perGameSettings.setCurvatureOverride(
-                                    game.mainFile,
-                                    when (value) {
-                                        "on" -> true
-                                        "off" -> false
-                                        else -> null
-                                    },
-                                )
-                                perGameTick++
-                            }
-                            Spacer(Modifier.height(16.dp))
-                            Text("On-screen controls", style = MaterialTheme.typography.titleSmall)
-                            ControlDropdownRow(
-                                "Left control",
-                                listOf("global" to "Use global", "stick" to "Joystick", "dpad" to "D-pad"),
-                                perGameSettings.leftControlOverride(game.mainFile)?.name?.lowercase() ?: "global",
-                            ) { value ->
-                                perGameSettings.setLeftControlOverride(
-                                    game.mainFile,
-                                    when (value) {
-                                        "stick" -> LeftControl.STICK
-                                        "dpad" -> LeftControl.DPAD
-                                        else -> null
-                                    },
-                                )
-                                perGameTick++
-                            }
-                            Text(
-                                "The D-pad is eight-way, like the stick — its corners are diagonals. It never switches to four-way.",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            Text("Latency", style = MaterialTheme.typography.titleSmall)
-                            ControlDropdownRow(
-                                "Run-ahead",
-                                listOf("global" to "Use global") + Runahead.OPTIONS,
-                                perGameSettings.runaheadOverride(game.mainFile)?.let { Runahead.store(it) } ?: "global",
-                            ) { value ->
-                                perGameSettings.setRunaheadOverride(
-                                    game.mainFile,
-                                    if (value == "global") null else Runahead.parse(value),
-                                )
-                                perGameTick++
-                            }
-                            Spacer(Modifier.height(16.dp))
-                            Button(onClick = {
-                                perGameSettings.clear(game.mainFile)
-                                perGameTick++
-                                status = "${game.effectiveName}: using global settings."
-                            }) { Text("Reset to global settings") }
-                            Spacer(Modifier.height(16.dp))
-                            Button(onClick = {
-                                perGameFor = null
-                                screen = Screen.Library
-                            }) { Text("Back") }
-                        }
-                    }
+                    GameSettingsScreen(
+                        game = game,
+                        collectionStore = collectionStore,
+                        onBack = {
+                            perGameFor = null
+                            screen = Screen.Library
+                        },
+                    )
                 }
             }
             Screen.Licences -> {
@@ -2906,6 +2761,172 @@ class MainActivity : ComponentActivity() {
             onRefresh = { refreshLibrary() },
             onDismiss = { collectionFor = null },
         )
+    }
+
+    // Phase 9, item 8 — this game's own settings: the
+    // per-game overrides (region, palette, aspect ratio,
+    // sprites per line, overclocking, free play, CRT shader,
+    // curvature, left control). Anything left on "Use global"
+    // follows Settings; Reset drops every override for this
+    // game, so it follows the global settings again. Takes
+    // effect the next time this game starts.
+    // A separate composable (2.0.2, fix 3 follow-up): it used
+    // to live in HowlingDogUi, and inlining it there pushed
+    // HowlingDogUi over the 255-register limit (the v1.3.0
+    // VerifyError lesson). The collection entry point (2.0.2,
+    // fix 3) lives here too.
+    @Composable
+    private fun GameSettingsScreen(
+        game: GameEntry,
+        collectionStore: CollectionStore,
+        onBack: () -> Unit,
+    ) {
+        var perGameTick by perGameTickState
+        var status by statusState
+        var collectionFor by collectionForState
+        var collectionText by collectionTextState
+        key(perGameTick) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    "Settings — ${game.effectiveName}",
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                Text(
+                    "Only this game. Anything left on \"Use global\" follows Settings. Takes effect the next time this game starts.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    if (perGameSettings.hasProfile(game.mainFile)) {
+                        "This game has its own settings."
+                    } else {
+                        "Using the global settings."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(16.dp))
+                // 2.0.2, fix 3 — the collection entry
+                // point. The tile's COLLECTION text was
+                // the only tap target opening the picker,
+                // and 2.0.1 fix 5 hid it when empty, so
+                // a game with no collection could never
+                // get one. The picker now lives here, in
+                // this game's settings: the row shows the
+                // current collection (or None) and opens
+                // the picker when tapped. It works for a
+                // game with no collection and for one
+                // that already has one (to change it).
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Collection", style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = {
+                        collectionFor = game
+                        collectionText = ""
+                    }) {
+                        Text(collectionStore.collectionFor(game.mainFile) ?: "None")
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                for (coreKey in PerGameSettings.CORE_KEYS) {
+                    val opt = CoreOptions.byKey(coreKey) ?: continue
+                    ControlDropdownRow(
+                        opt.label,
+                        listOf("global" to "Use global") + opt.values,
+                        perGameSettings.coreOverride(game.mainFile, coreKey) ?: "global",
+                    ) { value ->
+                        perGameSettings.setCoreOverride(
+                            game.mainFile, coreKey,
+                            if (value == "global") null else value,
+                        )
+                        perGameTick++
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("CRT display", style = MaterialTheme.typography.titleSmall)
+                ControlDropdownRow(
+                    "CRT shader",
+                    listOf("global" to "Use global", "on" to "On", "off" to "Off"),
+                    perGameSettings.shaderOverride(game.mainFile)?.let { if (it) "on" else "off" } ?: "global",
+                ) { value ->
+                    perGameSettings.setShaderOverride(
+                        game.mainFile,
+                        when (value) {
+                            "on" -> true
+                            "off" -> false
+                            else -> null
+                        },
+                    )
+                    perGameTick++
+                }
+                ControlDropdownRow(
+                    "Screen curvature",
+                    listOf("global" to "Use global", "on" to "On", "off" to "Off"),
+                    perGameSettings.curvatureOverride(game.mainFile)?.let { if (it) "on" else "off" } ?: "global",
+                ) { value ->
+                    perGameSettings.setCurvatureOverride(
+                        game.mainFile,
+                        when (value) {
+                            "on" -> true
+                            "off" -> false
+                            else -> null
+                        },
+                    )
+                    perGameTick++
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("On-screen controls", style = MaterialTheme.typography.titleSmall)
+                ControlDropdownRow(
+                    "Left control",
+                    listOf("global" to "Use global", "stick" to "Joystick", "dpad" to "D-pad"),
+                    perGameSettings.leftControlOverride(game.mainFile)?.name?.lowercase() ?: "global",
+                ) { value ->
+                    perGameSettings.setLeftControlOverride(
+                        game.mainFile,
+                        when (value) {
+                            "stick" -> LeftControl.STICK
+                            "dpad" -> LeftControl.DPAD
+                            else -> null
+                        },
+                    )
+                    perGameTick++
+                }
+                Text(
+                    "The D-pad is eight-way, like the stick — its corners are diagonals. It never switches to four-way.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(16.dp))
+                Text("Latency", style = MaterialTheme.typography.titleSmall)
+                ControlDropdownRow(
+                    "Run-ahead",
+                    listOf("global" to "Use global") + Runahead.OPTIONS,
+                    perGameSettings.runaheadOverride(game.mainFile)?.let { Runahead.store(it) } ?: "global",
+                ) { value ->
+                    perGameSettings.setRunaheadOverride(
+                        game.mainFile,
+                        if (value == "global") null else Runahead.parse(value),
+                    )
+                    perGameTick++
+                }
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = {
+                    perGameSettings.clear(game.mainFile)
+                    perGameTick++
+                    status = "${game.effectiveName}: using global settings."
+                }) { Text("Reset to global settings") }
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = onBack) { Text("Back") }
+            }
+        }
     }
 
     // v1.5 merge — the library screen, split out of HowlingDogUi.
