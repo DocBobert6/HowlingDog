@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -55,6 +56,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -91,6 +93,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.KeyboardOptions
@@ -3104,19 +3107,54 @@ class MainActivity : ComponentActivity() {
                 LibraryView.sortGames(list, librarySort, metadataByGame)
             }
             if (games.isNotEmpty()) {
-                // 2.0.1, audit fix 7 — a plain OutlinedTextField
-                // renders 56dp tall, which read like a text area
-                // next to the 40dp library buttons. Pin it to
-                // the same height as the Add game / Add folder /
-                // Settings buttons (the Material3 Button minimum).
+                // 2.0.2, fix 1 — the Search field, themed with
+                // the app and sized so the text fits fully.
+                // 2.0.1 fix 7 pinned it to 40dp, the button
+                // height, but a 16sp line needs ~24dp plus
+                // padding, so only the top half of "Search"
+                // showed — and the field was still a plain
+                // Material3 default (dark box, thin light
+                // border, default text), not the app's era
+                // look. Now: maroon field, gold border, gold
+                // text in the Neo Geo system font, a placeholder
+                // (not a floating label, which the short height
+                // clipped), and 48dp — 24dp of text + 12dp
+                // padding top and bottom — a single-line field
+                // that shows the whole text.
                 OutlinedTextField(
                     value = searchText,
                     onValueChange = { searchText = it },
                     singleLine = true,
-                    label = { Text("Search") },
+                    textStyle = TextStyle(
+                        fontFamily = DisplayFontFamily,
+                        fontSize = 16.sp,
+                        lineHeight = 24.sp,
+                        color = Color(EraUi.Palette.TEXT),
+                    ),
+                    placeholder = {
+                        Text(
+                            "Search",
+                            fontFamily = DisplayFontFamily,
+                            fontSize = 16.sp,
+                            color = Color(EraUi.Palette.TEXT_MUTED),
+                        )
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color(EraUi.Palette.SURFACE_RAISED),
+                        unfocusedContainerColor = Color(EraUi.Palette.SURFACE_RAISED),
+                        focusedTextColor = Color(EraUi.Palette.TEXT),
+                        unfocusedTextColor = Color(EraUi.Palette.TEXT),
+                        cursorColor = Color(EraUi.Palette.GOLD),
+                        focusedBorderColor = Color(EraUi.Palette.GOLD),
+                        unfocusedBorderColor = Color(EraUi.Palette.GOLD_MUTED),
+                        focusedPlaceholderColor = Color(EraUi.Palette.TEXT_MUTED),
+                        unfocusedPlaceholderColor = Color(EraUi.Palette.TEXT_MUTED),
+                    ),
+                    shape = RoundedCornerShape(2.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(40.dp),
+                        .height(48.dp),
                 )
                 Spacer(Modifier.height(8.dp))
                 ControlDropdownRow(
