@@ -861,6 +861,12 @@ class MainActivity : ComponentActivity() {
         // and the game whose collection is being picked (with the
         // text for a new collection name).
         var collections by collectionsState
+        // 2.0.2, fix 3 — the picker state is delegated here too
+        // (not only in LibraryScreen), so the collection picker
+        // dialog renders on any screen — including this game's
+        // settings, where the entry point now lives.
+        var collectionFor by collectionForState
+        var collectionText by collectionTextState
         // Phase 9, item 8 — the game whose own settings screen is
         // open (null when it is closed). `perGameTick` is bumped on
         // every per-game change so that screen recomposes from the
@@ -2725,6 +2731,31 @@ class MainActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Spacer(Modifier.height(16.dp))
+                            // 2.0.2, fix 3 — the collection entry
+                            // point. The tile's COLLECTION text was
+                            // the only tap target opening the picker,
+                            // and 2.0.1 fix 5 hid it when empty, so
+                            // a game with no collection could never
+                            // get one. The picker now lives here, in
+                            // this game's settings: the row shows the
+                            // current collection (or None) and opens
+                            // the picker when tapped. It works for a
+                            // game with no collection and for one
+                            // that already has one (to change it).
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("Collection", style = MaterialTheme.typography.bodyMedium)
+                                TextButton(onClick = {
+                                    collectionFor = game
+                                    collectionText = ""
+                                }) {
+                                    Text(collectionStore.collectionFor(game.mainFile) ?: "None")
+                                }
+                            }
+                            Spacer(Modifier.height(16.dp))
                             for (coreKey in PerGameSettings.CORE_KEYS) {
                                 val opt = CoreOptions.byKey(coreKey) ?: continue
                                 ControlDropdownRow(
@@ -2857,6 +2888,64 @@ class MainActivity : ComponentActivity() {
                     onBack = { screen = arcadeManagerFrom },
                 )
             }
+        }
+        // 2.0.2, fix 3 — the collection picker, rendered here
+        // (outside the screen switch) so it opens from the
+        // library and from per-game settings alike. Saving
+        // also bumps perGameTick, so the settings row shows
+        // the new collection at once.
+        val collectionGame = collectionFor
+        if (collectionGame != null) {
+            val current = collectionStore.collectionFor(collectionGame.mainFile)
+            CollectionPickerDialog(
+                game = collectionGame,
+                current = current,
+                collections = collections,
+                collectionText = collectionText,
+                onCollectionTextChange = { collectionText = it },
+                onPick = { name ->
+                    val target = collectionGame
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        collectionStore.setCollection(target.mainFile, name)
+                        withContext(Dispatchers.Main) {
+                            collectionFor = null
+                            refreshLibrary()
+                            perGameTick++
+                            status = "${target.effectiveName} is in $name."
+                        }
+                    }
+                },
+                onClear = {
+                    val target = collectionGame
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        collectionStore.setCollection(target.mainFile, null)
+                        withContext(Dispatchers.Main) {
+                            collectionFor = null
+                            refreshLibrary()
+                            perGameTick++
+                            status = "${target.effectiveName} has no collection."
+                        }
+                    }
+                },
+                onSaveNew = { typed ->
+                    val target = collectionGame
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        collectionStore.setCollection(target.mainFile, typed)
+                        withContext(Dispatchers.Main) {
+                            collectionFor = null
+                            collectionText = ""
+                            refreshLibrary()
+                            perGameTick++
+                            status = if (typed.isBlank()) {
+                                "${target.effectiveName} has no collection."
+                            } else {
+                                "${target.effectiveName} is in ${typed.trim()}."
+                            }
+                        }
+                    }
+                },
+                onDismiss = { collectionFor = null },
+            )
         }
     }
 
@@ -3401,78 +3490,10 @@ class MainActivity : ComponentActivity() {
                 },
             )
         }
-        // v1.5, feature 3 — pick a collection for the
-        // game, or type a new one. One collection per
-        // game; "No collection" takes it out again. Saving
-        // an empty name clears it, like the rename dialog.
-        val collectionGame = collectionFor
-        if (collectionGame != null) {
-            val current = collectionStore.collectionFor(collectionGame.mainFile)
-            AlertDialog(
-                onDismissRequest = { collectionFor = null },
-                title = { Text("Collection for ${collectionGame.effectiveName}") },
-                text = {
-                    Column {
-                        for (name in collections) {
-                            TextButton(onClick = {
-                                val target = collectionGame
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    collectionStore.setCollection(target.mainFile, name)
-                                    withContext(Dispatchers.Main) {
-                                        collectionFor = null
-                                        refreshLibrary()
-                                        status = "${target.effectiveName} is in $name."
-                                    }
-                                }
-                            }) {
-                                Text(name + if (name == current) " ✓" else "")
-                            }
-                        }
-                        TextButton(onClick = {
-                            val target = collectionGame
-                            lifecycleScope.launch(Dispatchers.IO) {
-                                collectionStore.setCollection(target.mainFile, null)
-                                withContext(Dispatchers.Main) {
-                                    collectionFor = null
-                                    refreshLibrary()
-                                    status = "${target.effectiveName} has no collection."
-                                }
-                            }
-                        }) { Text("No collection") }
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = collectionText,
-                            onValueChange = { collectionText = it },
-                            singleLine = true,
-                            label = { Text("New collection…") },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val target = collectionGame
-                        val typed = collectionText
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            collectionStore.setCollection(target.mainFile, typed)
-                            withContext(Dispatchers.Main) {
-                                collectionFor = null
-                                collectionText = ""
-                                refreshLibrary()
-                                status = if (typed.isBlank()) {
-                                    "${target.effectiveName} has no collection."
-                                } else {
-                                    "${target.effectiveName} is in ${typed.trim()}."
-                                }
-                            }
-                        }
-                    }) { Text("Save") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { collectionFor = null }) { Text("Cancel") }
-                },
-            )
-        }
+        // 2.0.2, fix 3 — the collection picker used to live
+        // here; it is now CollectionPickerDialog, rendered in
+        // HowlingDogUi so it opens from the library and from
+        // per-game settings alike.
         // Phase 9, item 4 — rename the picked game. Save
         // with an empty name clears the custom name, so the
         // game shows its original name again.
@@ -5498,6 +5519,56 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // v1.5, feature 3 — pick a collection for the game, or type
+    // a new one. One collection per game; "No collection" takes it
+    // out again. Saving an empty name clears it, like the rename
+    // dialog. Extracted (2.0.2, fix 3) so the picker opens from
+    // the library and from per-game settings alike — it used to
+    // live only in LibraryScreen, so it could never open from
+    // this game's settings. The caller does the saving (IO) and
+    // the refresh; this only shows the picker.
+    @Composable
+    private fun CollectionPickerDialog(
+        game: GameEntry,
+        current: String?,
+        collections: List<String>,
+        collectionText: String,
+        onCollectionTextChange: (String) -> Unit,
+        onPick: (String) -> Unit,
+        onClear: () -> Unit,
+        onSaveNew: (String) -> Unit,
+        onDismiss: () -> Unit,
+    ) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Collection for ${game.effectiveName}") },
+            text = {
+                Column {
+                    for (name in collections) {
+                        TextButton(onClick = { onPick(name) }) {
+                            Text(name + if (name == current) " ✓" else "")
+                        }
+                    }
+                    TextButton(onClick = onClear) { Text("No collection") }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = collectionText,
+                        onValueChange = onCollectionTextChange,
+                        singleLine = true,
+                        label = { Text("New collection…") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { onSaveNew(collectionText) }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            },
+        )
     }
 
     @Composable
