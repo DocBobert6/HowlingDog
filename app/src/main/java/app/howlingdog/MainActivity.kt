@@ -2889,64 +2889,23 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
-        // 2.0.2, fix 3 — the collection picker, rendered here
-        // (outside the screen switch) so it opens from the
-        // library and from per-game settings alike. Saving
-        // also bumps perGameTick, so the settings row shows
-        // the new collection at once.
-        val collectionGame = collectionFor
-        if (collectionGame != null) {
-            val current = collectionStore.collectionFor(collectionGame.mainFile)
-            CollectionPickerDialog(
-                game = collectionGame,
-                current = current,
-                collections = collections,
-                collectionText = collectionText,
-                onCollectionTextChange = { collectionText = it },
-                onPick = { name ->
-                    val target = collectionGame
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        collectionStore.setCollection(target.mainFile, name)
-                        withContext(Dispatchers.Main) {
-                            collectionFor = null
-                            refreshLibrary()
-                            perGameTick++
-                            status = "${target.effectiveName} is in $name."
-                        }
-                    }
-                },
-                onClear = {
-                    val target = collectionGame
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        collectionStore.setCollection(target.mainFile, null)
-                        withContext(Dispatchers.Main) {
-                            collectionFor = null
-                            refreshLibrary()
-                            perGameTick++
-                            status = "${target.effectiveName} has no collection."
-                        }
-                    }
-                },
-                onSaveNew = { typed ->
-                    val target = collectionGame
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        collectionStore.setCollection(target.mainFile, typed)
-                        withContext(Dispatchers.Main) {
-                            collectionFor = null
-                            collectionText = ""
-                            refreshLibrary()
-                            perGameTick++
-                            status = if (typed.isBlank()) {
-                                "${target.effectiveName} has no collection."
-                            } else {
-                                "${target.effectiveName} is in ${typed.trim()}."
-                            }
-                        }
-                    }
-                },
-                onDismiss = { collectionFor = null },
-            )
-        }
+        // 2.0.2, fix 3 — the collection picker, hosted in its
+        // own composable (outside the screen switch) so it opens
+        // from the library and from per-game settings alike.
+        // It is a separate composable, not inlined here: inlining
+        // the dialog call pushed HowlingDogUi to 262 registers,
+        // over the 255 limit (the v1.3.0 VerifyError lesson).
+        CollectionPickerHost(
+            collectionFor = collectionFor,
+            collectionStore = collectionStore,
+            collections = collections,
+            collectionText = collectionText,
+            onCollectionTextChange = { collectionText = it },
+            onSaved = { status = it },
+            onTick = { perGameTick++ },
+            onRefresh = { refreshLibrary() },
+            onDismiss = { collectionFor = null },
+        )
     }
 
     // v1.5 merge — the library screen, split out of HowlingDogUi.
@@ -5568,6 +5527,73 @@ class MainActivity : ComponentActivity() {
             dismissButton = {
                 TextButton(onClick = onDismiss) { Text("Cancel") }
             },
+        )
+    }
+
+    // 2.0.2, fix 3 — hosts the collection picker dialog: the
+    // picker itself (CollectionPickerDialog) plus the saving.
+    // A separate composable so HowlingDogUi stays under the
+    // 255-register limit (the v1.3.0 VerifyError lesson).
+    // Saving also calls onTick, so the per-game settings row
+    // shows the new collection at once.
+    @Composable
+    private fun CollectionPickerHost(
+        collectionFor: GameEntry?,
+        collectionStore: CollectionStore,
+        collections: List<String>,
+        collectionText: String,
+        onCollectionTextChange: (String) -> Unit,
+        onSaved: (String) -> Unit,
+        onTick: () -> Unit,
+        onRefresh: () -> Unit,
+        onDismiss: () -> Unit,
+    ) {
+        val game = collectionFor ?: return
+        val current = collectionStore.collectionFor(game.mainFile)
+        CollectionPickerDialog(
+            game = game,
+            current = current,
+            collections = collections,
+            collectionText = collectionText,
+            onCollectionTextChange = onCollectionTextChange,
+            onPick = { name ->
+                lifecycleScope.launch(Dispatchers.IO) {
+                    collectionStore.setCollection(game.mainFile, name)
+                    withContext(Dispatchers.Main) {
+                        onDismiss()
+                        onRefresh()
+                        onTick()
+                        onSaved("${game.effectiveName} is in $name.")
+                    }
+                }
+            },
+            onClear = {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    collectionStore.setCollection(game.mainFile, null)
+                    withContext(Dispatchers.Main) {
+                        onDismiss()
+                        onRefresh()
+                        onTick()
+                        onSaved("${game.effectiveName} has no collection.")
+                    }
+                }
+            },
+            onSaveNew = { typed ->
+                lifecycleScope.launch(Dispatchers.IO) {
+                    collectionStore.setCollection(game.mainFile, typed)
+                    withContext(Dispatchers.Main) {
+                        onDismiss()
+                        onCollectionTextChange("")
+                        onRefresh()
+                        onTick()
+                        onSaved(
+                            if (typed.isBlank()) "${game.effectiveName} has no collection."
+                            else "${game.effectiveName} is in ${typed.trim()}."
+                        )
+                    }
+                }
+            },
+            onDismiss = onDismiss,
         )
     }
 
