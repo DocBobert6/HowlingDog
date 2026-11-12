@@ -3075,16 +3075,33 @@ class MainActivity : ComponentActivity() {
                 ArcadeButton(text = "Pick BIOS folder") { onPickBios() }
             }
             Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ArcadeButton(text = "Add game") { onAddGame() }
-                ArcadeButton(text = "Add folder") { onAddFolder() }
-                ArcadeButton(text = "Settings") {
+            // 2.0.2, fix 2 — the action buttons in two rows of
+            // two. Four buttons in one row did not fit this
+            // phone's width, so the fourth — "Arcade Manager" —
+            // overflowed off the right edge and rendered as the
+            // tall maroon strip down the side of the library
+            // (the button's left edge, its label off-screen).
+            // Two rows, each button weighted to half the row,
+            // so every button fits whole and nothing overflows.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ArcadeButton(text = "Add game", modifier = Modifier.weight(1f)) { onAddGame() }
+                ArcadeButton(text = "Add folder", modifier = Modifier.weight(1f)) { onAddFolder() }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ArcadeButton(text = "Settings", modifier = Modifier.weight(1f)) {
                     settingsFrom = Screen.Library
                     screen = Screen.Settings
                 }
                 // 2.0, feature 6 — the Arcade Manager: input
                 // heatmaps and the virtual revenue / time tracker.
-                ArcadeButton(text = "Arcade Manager") {
+                ArcadeButton(text = "Arcade Manager", modifier = Modifier.weight(1f)) {
                     arcadeManagerFrom = Screen.Library
                     refreshArcadeManager()
                     screen = Screen.ArcadeManager
