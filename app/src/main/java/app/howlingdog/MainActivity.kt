@@ -43,7 +43,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -3118,9 +3117,12 @@ class MainActivity : ComponentActivity() {
                 // look. Now: maroon field, gold border, gold
                 // text in the Neo Geo system font, a placeholder
                 // (not a floating label, which the short height
-                // clipped), and 48dp — 24dp of text + 12dp
-                // padding top and bottom — a single-line field
-                // that shows the whole text.
+                // clipped), and 48dp, which centres the 24dp
+                // line with room to spare — a single-line field
+                // that shows the whole text. (This Material3's
+                // String-based OutlinedTextField has no
+                // contentPadding parameter — the text is centred
+                // in the field by default.)
                 OutlinedTextField(
                     value = searchText,
                     onValueChange = { searchText = it },
@@ -3151,7 +3153,6 @@ class MainActivity : ComponentActivity() {
                         unfocusedPlaceholderColor = Color(EraUi.Palette.TEXT_MUTED),
                     ),
                     shape = RoundedCornerShape(2.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
