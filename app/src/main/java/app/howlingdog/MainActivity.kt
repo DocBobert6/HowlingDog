@@ -835,6 +835,10 @@ class MainActivity : ComponentActivity() {
     private val reconCdOnState by lazy { mutableStateOf(shaderSettings.reconOn("cd")) }
     // 2.1.0, Step 4 — the CDZ reconstruction toggle.
     private val reconCdzOnState by lazy { mutableStateOf(shaderSettings.reconOn("cdz")) }
+    // 2.1.0, Step 5 — the grid on reconstruction (one toggle
+    // for all four systems; the renderer already reads it
+    // through the uGrid uniform, Step 1).
+    private val reconGridOnState by lazy { mutableStateOf(shaderSettings.reconGrid()) }
     // 2.1.0 — the draw path that actually drew the last frame
     // (the dev-stats diagnostic's ground truth), read from the
     // renderer when the game screen recomposes.
@@ -3729,6 +3733,7 @@ class MainActivity : ComponentActivity() {
         var reconAesOn by reconAesOnState
         var reconCdOn by reconCdOnState
         var reconCdzOn by reconCdzOnState
+        var reconGridOn by reconGridOnState
         var versionTaps by remember { mutableStateOf(0) }
         // 2.1.0, Step 2 — whether ANY reconstruction is on
         // (all four systems now), and which systems have it
@@ -4318,6 +4323,29 @@ class MainActivity : ComponentActivity() {
                 }
                 Text(
                     "Reconstructs the Neo Geo CDZ picture with a two-pass shader: dither collapses to a smooth gradient, diagonals and curves are rebuilt, HUD text stays sharp. Off by default. Takes effect the next time a game starts.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                // 2.1.0, Step 5 — the grid on reconstruction:
+                // one toggle for all four systems. A light
+                // grid / scanline layer over the reconstruction
+                // at display size, fixed at 15% strength for
+                // Robert to judge on device (not a slider).
+                // Off by default. The grid is a uGrid uniform
+                // in Pass B (Step 1), so there is no separate
+                // grid program to fail — with the toggle off
+                // the uniform is 0 and the picture is the plain
+                // reconstruction.
+                ControlDropdownRow(
+                    "Grid on reconstruction",
+                    listOf("on" to "On", "off" to "Off"),
+                    if (reconGridOn) "on" else "off",
+                ) { value ->
+                    val on = value == "on"
+                    shaderSettings.setReconGrid(on)
+                    reconGridOn = on
+                }
+                Text(
+                    "Layers a light grid over the reconstruction, for the systems that have it on. Off by default. Takes effect the next time a game starts.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
