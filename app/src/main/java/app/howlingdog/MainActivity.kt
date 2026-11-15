@@ -831,6 +831,8 @@ class MainActivity : ComponentActivity() {
     // 2.1.0, Step 2 — the AES reconstruction toggle (the AES
     // config arrived with Step 1's engine; the toggle is Step 2).
     private val reconAesOnState by lazy { mutableStateOf(shaderSettings.reconOn("aes")) }
+    // 2.1.0, Step 3 — the CD reconstruction toggle.
+    private val reconCdOnState by lazy { mutableStateOf(shaderSettings.reconOn("cd")) }
     // 2.1.0 — the draw path that actually drew the last frame
     // (the dev-stats diagnostic's ground truth), read from the
     // renderer when the game screen recomposes.
@@ -3723,18 +3725,20 @@ class MainActivity : ComponentActivity() {
         var developerUnlocked by developerUnlockedState
         var reconMvsOn by reconMvsOnState
         var reconAesOn by reconAesOnState
+        var reconCdOn by reconCdOnState
         var versionTaps by remember { mutableStateOf(0) }
         // 2.1.0, Step 2 — whether ANY reconstruction is on
-        // (MVS or AES so far; CD / CDZ join in Steps 3-4),
+        // (MVS, AES or CD so far; CDZ joins in Step 4),
         // and which systems have it on, for the CRT / edge
         // rows' effective state and notes. The resolve only
         // needs "some recon is on" (any non-OFF recon turns
         // the CRT off), so the CRT row passes MVS as the
         // stand-in mode when any recon is on.
-        val anyReconOn = reconMvsOn || reconAesOn
+        val anyReconOn = reconMvsOn || reconAesOn || reconCdOn
         val reconOnSystems = buildList {
             if (reconMvsOn) add("MVS")
             if (reconAesOn) add("AES")
+            if (reconCdOn) add("CD")
         }
         val reconOnText = reconOnSystems.joinToString(" and ")
         // 2.0, feature 6 fix — the Arcade Manager's Back target
@@ -4242,9 +4246,9 @@ class MainActivity : ComponentActivity() {
                 Button(onClick = { screen = Screen.Setup }) { Text("Setup guide") }
             }
             // 2.1.0 — the Developer menu (experimental): the
-            // MVS and AES reconstruction toggles. The CD /
-            // CDZ toggles arrive with their engines in Steps
-            // 3-4. The warning is verbatim from the plan.
+            // MVS, AES and CD reconstruction toggles. The CDZ
+            // toggle arrives with its engine in Step 4. The
+            // warning is verbatim from the plan.
             if (developerUnlocked) {
                 Spacer(Modifier.height(16.dp))
                 Text("Developer — experimental", style = MaterialTheme.typography.titleSmall)
@@ -4279,6 +4283,22 @@ class MainActivity : ComponentActivity() {
                 }
                 Text(
                     "Reconstructs the AES picture with a two-pass shader: dither collapses to a smooth gradient, diagonals and curves are rebuilt, HUD text stays sharp. Off by default. Takes effect the next time a game starts.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                // 2.1.0, Step 3 — the CD toggle. Same engine
+                // (the CD parameter set starts identical), its
+                // own toggle, off by default.
+                ControlDropdownRow(
+                    "CD reconstruction",
+                    listOf("on" to "On", "off" to "Off"),
+                    if (reconCdOn) "on" else "off",
+                ) { value ->
+                    val on = value == "on"
+                    shaderSettings.setReconOn("cd", on)
+                    reconCdOn = on
+                }
+                Text(
+                    "Reconstructs the Neo Geo CD picture with a two-pass shader: dither collapses to a smooth gradient, diagonals and curves are rebuilt, HUD text stays sharp. Off by default. Takes effect the next time a game starts.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
