@@ -822,6 +822,16 @@ class MainActivity : ComponentActivity() {
     // 2.0, feature 7 — the edge-smoothing mode (off by default).
     private val edgeModeState by lazy { mutableStateOf(shaderSettings.edgeMaster()) }
     private val curvatureOnState by lazy { mutableStateOf(shaderSettings.curvatureMasterOn()) }
+    // 2.1.0 — the Developer menu (unlocked by 7 taps on the
+    // Settings version line) and the MVS reconstruction toggle
+    // (off by default). The AES / CD / CDZ toggles arrive with
+    // their engines in Steps 2-4.
+    private val developerUnlockedState by lazy { mutableStateOf(appSettings.developerUnlocked()) }
+    private val reconMvsOnState by lazy { mutableStateOf(shaderSettings.reconOn("mvs")) }
+    // 2.1.0 — the draw path that actually drew the last frame
+    // (the dev-stats diagnostic's ground truth), read from the
+    // renderer when the game screen recomposes.
+    private val drawPathState by lazy { mutableStateOf("plain") }
     private val stickPosState by lazy { mutableStateOf(controlSettings.stickPosition()) }
     private val buttonsPosState by lazy { mutableStateOf(controlSettings.buttonsPosition()) }
     private val stickScaleState by lazy { mutableStateOf(controlSettings.stickScale()) }
@@ -3703,6 +3713,13 @@ class MainActivity : ComponentActivity() {
         var curvatureOn by curvatureOnState
         // 2.0, feature 7 — the edge-smoothing mode (off by default).
         var edgeMode by edgeModeState
+        // 2.1.0 — the Developer menu (unlocked by 7 taps on the
+        // version line) and the MVS reconstruction toggle (off
+        // by default). The AES / CD / CDZ toggles arrive with
+        // their engines in Steps 2-4.
+        var developerUnlocked by developerUnlockedState
+        var reconMvsOn by reconMvsOnState
+        var versionTaps by remember { mutableStateOf(0) }
         // 2.0, feature 6 fix — the Arcade Manager's Back target
         // was used by the Settings button but never declared in
         // this screen, so the build failed (unresolved
@@ -3762,10 +3779,14 @@ class MainActivity : ComponentActivity() {
             // the stored CRT preference is still on. The stored
             // value is untouched, so turning Edge smoothing back
             // off restores the CRT automatically.
+            // 2.1.0 — the reconstruction wins over the CRT too:
+            // when MVS reconstruction is on, the CRT is off for
+            // MVS games (the resolver: recon > edge > CRT). The
+            // stored CRT preference is still kept.
             ControlDropdownRow(
                 "CRT shader",
                 listOf("on" to "On", "off" to "Off"),
-                if (resolveDisplayMode(crtShaderOn, edgeMode) == DisplayMode.CRT) "on" else "off",
+                if (resolveDisplayMode(crtShaderOn, edgeMode, if (reconMvsOn) ReconMode.MVS else ReconMode.OFF) == DisplayMode.CRT) "on" else "off",
             ) { value ->
                 val on = value == "on"
                 shaderSettings.setShaderMaster(on)
@@ -3781,11 +3802,22 @@ class MainActivity : ComponentActivity() {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            if (reconMvsOn) {
+                Text(
+                    "MVS reconstruction is on, so the CRT shader is off for MVS games.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             // 2.0, feature 7 — the edge-smoothing display mode.
             // Off by default. When it is on, the CRT shader above
             // turns off (they fight visually) — the edge shader is
             // the alternative display mode. "Sharp CRT" is edge
             // smoothing then scanlines only, one tap.
+            // 2.1.0 — the row shows the EFFECTIVE state: when
+            // MVS reconstruction is on, edge smoothing is off
+            // for MVS games (the reconstruction replaces it),
+            // even though the stored edge preference is still
+            // on. The stored value is untouched.
             ControlDropdownRow(
                 "Edge smoothing",
                 listOf(
@@ -3793,10 +3825,11 @@ class MainActivity : ComponentActivity() {
                     "edge" to "Edge smoothing",
                     "sharpcrt" to "Sharp CRT",
                 ),
-                when (edgeMode) {
-                    EdgeMode.OFF -> "off"
-                    EdgeMode.EDGE -> "edge"
-                    EdgeMode.SHARP_CRT -> "sharpcrt"
+                when {
+                    reconMvsOn -> "off"
+                    edgeMode == EdgeMode.EDGE -> "edge"
+                    edgeMode == EdgeMode.SHARP_CRT -> "sharpcrt"
+                    else -> "off"
                 },
             ) { value ->
                 val mode = when (value) {
@@ -3811,6 +3844,12 @@ class MainActivity : ComponentActivity() {
                 "Very clean, sharp pixel art: hard sprite edges are anti-aliased along their direction, while checkerboard dither (transparency, shadows, shading) is preserved and acute corners stay sharp. When on, the CRT shader turns off. Takes effect the next time a game starts.",
                 style = MaterialTheme.typography.bodySmall,
             )
+            if (reconMvsOn) {
+                Text(
+                    "MVS reconstruction is on, so edge smoothing is off for MVS games.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             ControlDropdownRow(
                 "Screen curvature",
                 listOf("on" to "On", "off" to "Off"),
@@ -4153,9 +4192,24 @@ class MainActivity : ComponentActivity() {
                 "HowlingDog — a standalone Neo Geo emulator (AES / MVS / CD / CDZ).",
                 style = MaterialTheme.typography.bodyMedium,
             )
+            // 2.1.0 — the version line is the Developer menu's
+            // footer: 7 taps unlocks a "Developer —
+            // experimental" section in Settings (the MVS
+            // reconstruction toggle). The tap count is local to
+            // this screen; once unlocked it stays unlocked.
             Text(
                 "Version ${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.clickable {
+                    if (!developerUnlocked) {
+                        versionTaps++
+                        if (versionTaps >= 7) {
+                            appSettings.setDeveloperUnlocked()
+                            developerUnlocked = true
+                            versionTaps = 0
+                        }
+                    }
+                },
             )
             Text(
                 "HowlingDog is not affiliated with or endorsed by SNK Corporation.",
@@ -4168,6 +4222,31 @@ class MainActivity : ComponentActivity() {
                 // time: the debug-menu-style guide for a
                 // fresh install (audit 2).
                 Button(onClick = { screen = Screen.Setup }) { Text("Setup guide") }
+            }
+            // 2.1.0 — the Developer menu (experimental): the
+            // MVS reconstruction toggle only. The AES / CD /
+            // CDZ toggles arrive with their engines in Steps
+            // 2-4. The warning is verbatim from the plan.
+            if (developerUnlocked) {
+                Spacer(Modifier.height(16.dp))
+                Text("Developer — experimental", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Experimental. May look wrong and may use more battery. Replaces edge smoothing while on.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                ControlDropdownRow(
+                    "MVS reconstruction",
+                    listOf("on" to "On", "off" to "Off"),
+                    if (reconMvsOn) "on" else "off",
+                ) { value ->
+                    val on = value == "on"
+                    shaderSettings.setReconOn("mvs", on)
+                    reconMvsOn = on
+                }
+                Text(
+                    "Reconstructs the MVS picture with a two-pass shader: dither collapses to a smooth gradient, diagonals and curves are rebuilt, HUD text stays sharp. Off by default. Takes effect the next time a game starts.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
             // 2.0, feature 3 — the memory card manager: the saves
             // on the virtual Neo Geo memory card, with delete for
@@ -4343,6 +4422,12 @@ class MainActivity : ComponentActivity() {
         var paused by pausedState
         var topBarVisible by topBarVisibleState
         var topBarGeneration by topBarGenerationState
+        // 2.1.0 — the dev-stats diagnostic: the draw path that
+        // actually drew the last frame (the renderer's ground
+        // truth). Shown in the top bar when Developer mode is
+        // unlocked.
+        var drawPath by drawPathState
+        var developerUnlocked by developerUnlockedState
         var quickStatus by quickStatusState
         var pauseTimeLeft by pauseTimeLeftState
         var pauseStatus by pauseStatusState
@@ -4447,14 +4532,28 @@ class MainActivity : ComponentActivity() {
                 // title truncates with an ellipsis instead
                 // of pushing the buttons off-screen, in any
                 // orientation.
-                Text(
-                    playingGame?.effectiveName ?: "Game",
-                    color = Color(EraUi.Palette.TEXT),
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
+                // 2.1.0 — the dev-stats diagnostic: when
+                // Developer mode is unlocked, the top bar names
+                // the draw path that actually drew (the
+                // renderer's ground truth) — "recon-mvs" is the
+                // on-device proof the reconstruction is running.
+                Column(modifier = Modifier.weight(1f, fill = false)) {
+                    Text(
+                        playingGame?.effectiveName ?: "Game",
+                        color = Color(EraUi.Palette.TEXT),
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (developerUnlocked) {
+                        Text(
+                            drawPath,
+                            color = Color(EraUi.Palette.TEXT),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                        )
+                    }
+                }
                 if (editControls) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Button(onClick = { moveTogether = !moveTogether }) {
@@ -4551,7 +4650,25 @@ class MainActivity : ComponentActivity() {
                                 // only in effect when the edge mode
                                 // is off.
                                 shaderSettings.edgeMode(mode),
+                                // 2.1.0 — the reconstruction wins
+                                // over both the edge and the CRT
+                                // (the renderer picks the recon
+                                // programs when it is on). The
+                                // grid layers over it (Step 5).
+                                shaderSettings.reconModeFor(mode),
+                                shaderSettings.reconGrid(),
                             )
+                            // 2.1.0 — the dev-stats diagnostic:
+                            // the draw path that actually drew
+                            // (the renderer's ground truth), read
+                            // when the game screen recomposes.
+                            // It lags one frame behind a mode
+                            // change (the frame draws after this
+                            // update runs); the top bar's next
+                            // recomposition refreshes it, and the
+                            // mode is stable, so the value shown
+                            // is the path that is drawing.
+                            drawPath = it.drawPath()
                         }
                     },
                     modifier = Modifier.fillMaxSize(),

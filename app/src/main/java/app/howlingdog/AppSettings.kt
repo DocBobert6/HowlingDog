@@ -40,6 +40,10 @@ class AppSettings(private val store: OptionStore) {
         // kept only so an upgrade from v1.1.0/v1.1.1 can remove
         // the stored key — it is never written again.
         private const val LEGACY_RA_API_KEY = "ra.apiKey"
+        // 2.1.0 — the Developer menu: unlocked by tapping the
+        // Settings version line 7 times. "yes" once unlocked
+        // (it stays unlocked); off by default.
+        const val KEY_DEVELOPER_UNLOCKED = "app.developerUnlocked"
 
         const val DEFAULT_SHOW_BOOT = true
     }
@@ -55,6 +59,13 @@ class AppSettings(private val store: OptionStore) {
 
     fun setShowBoot(show: Boolean) {
         store.put(KEY_SHOW_BOOT, if (show) "on" else "off")
+    }
+
+    /** Whether the Developer menu is unlocked (default false; unlocked by 7 taps on the Settings version line). */
+    fun developerUnlocked(): Boolean = store.get(KEY_DEVELOPER_UNLOCKED)?.lowercase() == "yes"
+
+    fun setDeveloperUnlocked() {
+        store.put(KEY_DEVELOPER_UNLOCKED, "yes")
     }
 
     /** Whether the first-run SYSTEM SETUP screen has been shown and dismissed (default false). */

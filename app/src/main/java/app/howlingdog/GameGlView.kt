@@ -44,10 +44,22 @@ class GameGlView @JvmOverloads constructor(
      * Apply a system's preset and toggles (called at game start,
      * and when the game changes). The edge mode is forwarded to
      * the renderer: when it is on, the edge program draws and
-     * the CRT program does not.
+     * the CRT program does not. The reconstruction mode is
+     * forwarded the same way: when it is on, the recon draws
+     * and neither the edge program nor the CRT program does.
      */
-    fun setPreset(preset: ShaderPreset, shaderOn: Boolean, curveOn: Boolean, edge: EdgeMode = EdgeMode.OFF) {
-        renderer.setPreset(preset, shaderOn, curveOn, edge)
+    fun setPreset(
+        preset: ShaderPreset,
+        shaderOn: Boolean,
+        curveOn: Boolean,
+        edge: EdgeMode = EdgeMode.OFF,
+        recon: ReconMode = ReconMode.OFF,
+        reconGrid: Boolean = false,
+    ) {
+        renderer.setPreset(preset, shaderOn, curveOn, edge, recon, reconGrid)
         requestRender()
     }
+
+    /** The draw path that actually drew the last frame (the dev-stats diagnostic's ground truth). */
+    fun drawPath(): String = renderer.drawPath()
 }

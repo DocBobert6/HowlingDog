@@ -174,4 +174,84 @@ class ShaderSettingsTest {
         s.setShaderMaster(true)
         assertEquals(DisplayMode.CRT, s.displayMode("aes"))
     }
+
+    @Test
+    fun reconWinsOverEdgeAndCrt() {
+        // 2.1.0 — the exclusivity rule: the reconstruction is
+        // the quality path, so when it is on the chain and the
+        // edge are both off, whatever they say.
+        assertEquals(DisplayMode.RECON_MVS, resolveDisplayMode(true, EdgeMode.EDGE, ReconMode.MVS))
+        assertEquals(DisplayMode.RECON_MVS, resolveDisplayMode(false, EdgeMode.SHARP_CRT, ReconMode.MVS))
+        assertEquals(DisplayMode.RECON_AES, resolveDisplayMode(true, EdgeMode.OFF, ReconMode.AES))
+        assertEquals(DisplayMode.RECON_CD, resolveDisplayMode(true, EdgeMode.OFF, ReconMode.CD))
+        assertEquals(DisplayMode.RECON_CDZ, resolveDisplayMode(true, EdgeMode.OFF, ReconMode.CDZ))
+        // With the reconstruction off, the old rule stands.
+        assertEquals(DisplayMode.EDGE, resolveDisplayMode(true, EdgeMode.EDGE, ReconMode.OFF))
+        assertEquals(DisplayMode.CRT, resolveDisplayMode(true, EdgeMode.OFF, ReconMode.OFF))
+        assertEquals(DisplayMode.PLAIN, resolveDisplayMode(false, EdgeMode.OFF, ReconMode.OFF))
+    }
+
+    @Test
+    fun drawPathNamesEveryMode() {
+        assertEquals("recon-mvs", drawPathFor(DisplayMode.RECON_MVS))
+        assertEquals("recon-aes", drawPathFor(DisplayMode.RECON_AES))
+        assertEquals("recon-cd", drawPathFor(DisplayMode.RECON_CD))
+        assertEquals("recon-cdz", drawPathFor(DisplayMode.RECON_CDZ))
+        assertEquals("edge", drawPathFor(DisplayMode.EDGE))
+        assertEquals("sharp-crt", drawPathFor(DisplayMode.SHARP_CRT))
+        assertEquals("crt", drawPathFor(DisplayMode.CRT))
+        assertEquals("plain", drawPathFor(DisplayMode.PLAIN))
+    }
+
+    @Test
+    fun reconDefaultsOffForEverySystemAndRoundTrips() {
+        val s = ShaderSettings(MapStore())
+        for (mode in ShaderPresets.modes()) {
+            assertFalse("recon must default off for $mode", s.reconOn(mode))
+        }
+        s.setReconOn("mvs", true)
+        assertTrue(s.reconOn("mvs"))
+        assertFalse("turning MVS recon on must not turn AES on", s.reconOn("aes"))
+        s.setReconOn("mvs", false)
+        assertFalse(s.reconOn("mvs"))
+    }
+
+    @Test
+    fun reconModeForMapsTheSystemAndFallsBackToOff() {
+        val s = ShaderSettings(MapStore())
+        assertEquals(ReconMode.OFF, s.reconModeFor("mvs"))
+        s.setReconOn("mvs", true)
+        assertEquals(ReconMode.MVS, s.reconModeFor("mvs"))
+        s.setReconOn("aes", true)
+        assertEquals(ReconMode.AES, s.reconModeFor("aes"))
+        s.setReconOn("cd", true)
+        assertEquals(ReconMode.CD, s.reconModeFor("cd"))
+        s.setReconOn("cdz", true)
+        assertEquals(ReconMode.CDZ, s.reconModeFor("cdz"))
+        assertEquals(ReconMode.CDZ, s.reconModeFor("cdz_unibios"))
+        assertEquals(ReconMode.OFF, s.reconModeFor("uni"))
+    }
+
+    @Test
+    fun displayModeFollowsTheReconToggle() {
+        val store = MapStore()
+        val s = ShaderSettings(store)
+        s.setReconOn("mvs", true)
+        assertEquals(DisplayMode.RECON_MVS, s.displayMode("mvs"))
+        assertEquals("the MVS recon must not affect AES", DisplayMode.CRT, s.displayMode("aes"))
+        s.setEdgeMaster(EdgeMode.EDGE)
+        assertEquals("recon wins over the edge too", DisplayMode.RECON_MVS, s.displayMode("mvs"))
+        s.setReconOn("mvs", false)
+        assertEquals(DisplayMode.EDGE, s.displayMode("mvs"))
+    }
+
+    @Test
+    fun reconGridDefaultsOffAndRoundTrips() {
+        val s = ShaderSettings(MapStore())
+        assertFalse(s.reconGrid())
+        s.setReconGrid(true)
+        assertTrue(s.reconGrid())
+        s.setReconGrid(false)
+        assertFalse(s.reconGrid())
+    }
 }

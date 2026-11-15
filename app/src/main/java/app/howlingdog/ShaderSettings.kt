@@ -11,20 +11,51 @@ package app.howlingdog
  */
 enum class EdgeMode { OFF, EDGE, SHARP_CRT }
 
+/**
+ * 2.1.0 — the reconstruction mode: which system's
+ * reconstruction is on (at most one — the game running is one
+ * system). OFF is the default (the reconstruction is off unless
+ * the player turns it on in the Developer menu). When a
+ * reconstruction is on, it replaces both the CRT chain and the
+ * edge shader — they never stack.
+ */
+enum class ReconMode { OFF, MVS, AES, CD, CDZ }
+
 /** The display mode actually in effect, after the exclusivity rule. */
-enum class DisplayMode { CRT, EDGE, SHARP_CRT, PLAIN }
+enum class DisplayMode { CRT, EDGE, SHARP_CRT, PLAIN, RECON_MVS, RECON_AES, RECON_CD, RECON_CDZ }
 
 /**
- * Resolve the display mode from the CRT toggle and the edge
- * mode. The edge mode wins: when it is on, the CRT is off.
- * Otherwise the CRT is on when its toggle is on, and plain
- * (no shader) when it is off.
+ * Resolve the display mode from the CRT toggle, the edge mode
+ * and the reconstruction mode. The reconstruction wins over
+ * both: when it is on, the chain and the edge are off. Otherwise
+ * the edge mode wins over the CRT, as before.
  */
-fun resolveDisplayMode(crtOn: Boolean, edge: EdgeMode): DisplayMode = when {
+fun resolveDisplayMode(crtOn: Boolean, edge: EdgeMode, recon: ReconMode = ReconMode.OFF): DisplayMode = when {
+    recon == ReconMode.MVS -> DisplayMode.RECON_MVS
+    recon == ReconMode.AES -> DisplayMode.RECON_AES
+    recon == ReconMode.CD -> DisplayMode.RECON_CD
+    recon == ReconMode.CDZ -> DisplayMode.RECON_CDZ
     edge == EdgeMode.EDGE -> DisplayMode.EDGE
     edge == EdgeMode.SHARP_CRT -> DisplayMode.SHARP_CRT
     crtOn -> DisplayMode.CRT
     else -> DisplayMode.PLAIN
+}
+
+/**
+ * The draw-path token for a display mode, for the dev-stats
+ * diagnostic (on-device proof of which mode is running):
+ * "recon-mvs", "recon-aes", "recon-cd", "recon-cdz", "edge",
+ * "sharp-crt", "crt", "plain".
+ */
+fun drawPathFor(mode: DisplayMode): String = when (mode) {
+    DisplayMode.RECON_MVS -> "recon-mvs"
+    DisplayMode.RECON_AES -> "recon-aes"
+    DisplayMode.RECON_CD -> "recon-cd"
+    DisplayMode.RECON_CDZ -> "recon-cdz"
+    DisplayMode.EDGE -> "edge"
+    DisplayMode.SHARP_CRT -> "sharp-crt"
+    DisplayMode.CRT -> "crt"
+    DisplayMode.PLAIN -> "plain"
 }
 
 /**
@@ -53,11 +84,47 @@ class ShaderSettings(private val store: OptionStore) {
         const val KEY_CURVE_PREFIX = "display.curvature." // + mode
         const val KEY_EDGE_MASTER = "display.edge" // "off" / "edge" / "sharpCrt"
         const val KEY_EDGE_PREFIX = "display.edge." // + mode
+        const val KEY_RECON_PREFIX = "display.recon." // + mode, "on" / "off"
+        const val KEY_RECON_GRID = "display.reconGrid" // "on" / "off"
     }
 
     /** Whether the CRT shader chain is on for a system mode. */
     fun shaderOn(mode: String): Boolean {
         return readToggle(KEY_SHADER_PREFIX + mode, KEY_SHADER_MASTER, true)
+    }
+
+    /** Whether the reconstruction is on for a system mode (default off; Developer menu only). */
+    fun reconOn(mode: String): Boolean {
+        return store.get(KEY_RECON_PREFIX + mode)?.lowercase() == "on"
+    }
+
+    fun setReconOn(mode: String, on: Boolean) {
+        store.put(KEY_RECON_PREFIX + mode, if (on) "on" else "off")
+    }
+
+    /** Whether the grid is layered over the reconstruction (default off; one toggle for all systems). */
+    fun reconGrid(): Boolean {
+        return store.get(KEY_RECON_GRID)?.lowercase() == "on"
+    }
+
+    fun setReconGrid(on: Boolean) {
+        store.put(KEY_RECON_GRID, if (on) "on" else "off")
+    }
+
+    /** The reconstruction mode in effect for a system mode (OFF unless its toggle is on). */
+    fun reconModeFor(mode: String): ReconMode {
+        // "cdz_unibios" is the UniBios CDZ system, which shares
+        // the CDZ recon key (the CDZ toggle), so normalise it
+        // before reading the toggle.
+        val key = if (mode == "cdz_unibios") "cdz" else mode
+        if (!reconOn(key)) return ReconMode.OFF
+        return when (key) {
+            "mvs" -> ReconMode.MVS
+            "aes" -> ReconMode.AES
+            "cd" -> ReconMode.CD
+            "cdz" -> ReconMode.CDZ
+            else -> ReconMode.OFF
+        }
     }
 
     /** The edge-smoothing mode for a system mode (default OFF). */
@@ -89,9 +156,9 @@ class ShaderSettings(private val store: OptionStore) {
         }
     }
 
-    /** The display mode in effect for a system mode, after the exclusivity rule (edge wins over CRT). */
+    /** The display mode in effect for a system mode, after the exclusivity rule (reconstruction wins over edge and CRT). */
     fun displayMode(mode: String): DisplayMode {
-        return resolveDisplayMode(shaderOn(mode), edgeMode(mode))
+        return resolveDisplayMode(shaderOn(mode), edgeMode(mode), reconModeFor(mode))
     }
 
     /** Per-system key wins, then the master key, then OFF. Anything but "edge"/"sharpcrt" counts as off. */

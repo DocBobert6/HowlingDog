@@ -55,6 +55,19 @@ class AppSettingsTest {
     }
 
     @Test
+    fun developerMenuLockedByDefaultAndSticksOnceUnlocked() {
+        // 2.1.0 — the Developer menu is locked by default
+        // (unlocked by 7 taps on the Settings version line)
+        // and stays unlocked once set.
+        val settings = settingsWith()
+        assertFalse(settings.developerUnlocked())
+        assertFalse(settingsWith(AppSettings.KEY_DEVELOPER_UNLOCKED to "no").developerUnlocked())
+        settings.setDeveloperUnlocked()
+        assertTrue(settings.developerUnlocked())
+        assertTrue(settingsWith(AppSettings.KEY_DEVELOPER_UNLOCKED to "yes").developerUnlocked())
+    }
+
+    @Test
     fun dismissedUpdateEmptyByDefault() {
         assertNull(settingsWith().dismissedUpdateVersion())
         assertNull(settingsWith(AppSettings.KEY_DISMISSED_UPDATE to "").dismissedUpdateVersion())
