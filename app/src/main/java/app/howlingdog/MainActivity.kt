@@ -828,6 +828,9 @@ class MainActivity : ComponentActivity() {
     // their engines in Steps 2-4.
     private val developerUnlockedState by lazy { mutableStateOf(appSettings.developerUnlocked()) }
     private val reconMvsOnState by lazy { mutableStateOf(shaderSettings.reconOn("mvs")) }
+    // 2.1.0, Step 2 — the AES reconstruction toggle (the AES
+    // config arrived with Step 1's engine; the toggle is Step 2).
+    private val reconAesOnState by lazy { mutableStateOf(shaderSettings.reconOn("aes")) }
     // 2.1.0 — the draw path that actually drew the last frame
     // (the dev-stats diagnostic's ground truth), read from the
     // renderer when the game screen recomposes.
@@ -3719,7 +3722,21 @@ class MainActivity : ComponentActivity() {
         // their engines in Steps 2-4.
         var developerUnlocked by developerUnlockedState
         var reconMvsOn by reconMvsOnState
+        var reconAesOn by reconAesOnState
         var versionTaps by remember { mutableStateOf(0) }
+        // 2.1.0, Step 2 — whether ANY reconstruction is on
+        // (MVS or AES so far; CD / CDZ join in Steps 3-4),
+        // and which systems have it on, for the CRT / edge
+        // rows' effective state and notes. The resolve only
+        // needs "some recon is on" (any non-OFF recon turns
+        // the CRT off), so the CRT row passes MVS as the
+        // stand-in mode when any recon is on.
+        val anyReconOn = reconMvsOn || reconAesOn
+        val reconOnSystems = buildList {
+            if (reconMvsOn) add("MVS")
+            if (reconAesOn) add("AES")
+        }
+        val reconOnText = reconOnSystems.joinToString(" and ")
         // 2.0, feature 6 fix — the Arcade Manager's Back target
         // was used by the Settings button but never declared in
         // this screen, so the build failed (unresolved
@@ -3780,13 +3797,13 @@ class MainActivity : ComponentActivity() {
             // value is untouched, so turning Edge smoothing back
             // off restores the CRT automatically.
             // 2.1.0 — the reconstruction wins over the CRT too:
-            // when MVS reconstruction is on, the CRT is off for
-            // MVS games (the resolver: recon > edge > CRT). The
-            // stored CRT preference is still kept.
+            // when a reconstruction is on, the CRT is off for
+            // that system's games (the resolver: recon > edge >
+            // CRT). The stored CRT preference is still kept.
             ControlDropdownRow(
                 "CRT shader",
                 listOf("on" to "On", "off" to "Off"),
-                if (resolveDisplayMode(crtShaderOn, edgeMode, if (reconMvsOn) ReconMode.MVS else ReconMode.OFF) == DisplayMode.CRT) "on" else "off",
+                if (resolveDisplayMode(crtShaderOn, edgeMode, if (anyReconOn) ReconMode.MVS else ReconMode.OFF) == DisplayMode.CRT) "on" else "off",
             ) { value ->
                 val on = value == "on"
                 shaderSettings.setShaderMaster(on)
@@ -3802,9 +3819,9 @@ class MainActivity : ComponentActivity() {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            if (reconMvsOn) {
+            if (anyReconOn) {
                 Text(
-                    "MVS reconstruction is on, so the CRT shader is off for MVS games.",
+                    "$reconOnText reconstruction is on, so the CRT shader is off for $reconOnText games.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -3814,10 +3831,11 @@ class MainActivity : ComponentActivity() {
             // the alternative display mode. "Sharp CRT" is edge
             // smoothing then scanlines only, one tap.
             // 2.1.0 — the row shows the EFFECTIVE state: when
-            // MVS reconstruction is on, edge smoothing is off
-            // for MVS games (the reconstruction replaces it),
-            // even though the stored edge preference is still
-            // on. The stored value is untouched.
+            // a reconstruction is on, edge smoothing is off
+            // for that system's games (the reconstruction
+            // replaces it), even though the stored edge
+            // preference is still on. The stored value is
+            // untouched.
             ControlDropdownRow(
                 "Edge smoothing",
                 listOf(
@@ -3826,7 +3844,7 @@ class MainActivity : ComponentActivity() {
                     "sharpcrt" to "Sharp CRT",
                 ),
                 when {
-                    reconMvsOn -> "off"
+                    anyReconOn -> "off"
                     edgeMode == EdgeMode.EDGE -> "edge"
                     edgeMode == EdgeMode.SHARP_CRT -> "sharpcrt"
                     else -> "off"
@@ -3844,9 +3862,9 @@ class MainActivity : ComponentActivity() {
                 "Very clean, sharp pixel art: hard sprite edges are anti-aliased along their direction, while checkerboard dither (transparency, shadows, shading) is preserved and acute corners stay sharp. When on, the CRT shader turns off. Takes effect the next time a game starts.",
                 style = MaterialTheme.typography.bodySmall,
             )
-            if (reconMvsOn) {
+            if (anyReconOn) {
                 Text(
-                    "MVS reconstruction is on, so edge smoothing is off for MVS games.",
+                    "$reconOnText reconstruction is on, so edge smoothing is off for $reconOnText games.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -4224,9 +4242,9 @@ class MainActivity : ComponentActivity() {
                 Button(onClick = { screen = Screen.Setup }) { Text("Setup guide") }
             }
             // 2.1.0 — the Developer menu (experimental): the
-            // MVS reconstruction toggle only. The AES / CD /
+            // MVS and AES reconstruction toggles. The CD /
             // CDZ toggles arrive with their engines in Steps
-            // 2-4. The warning is verbatim from the plan.
+            // 3-4. The warning is verbatim from the plan.
             if (developerUnlocked) {
                 Spacer(Modifier.height(16.dp))
                 Text("Developer — experimental", style = MaterialTheme.typography.titleSmall)
@@ -4245,6 +4263,22 @@ class MainActivity : ComponentActivity() {
                 }
                 Text(
                     "Reconstructs the MVS picture with a two-pass shader: dither collapses to a smooth gradient, diagonals and curves are rebuilt, HUD text stays sharp. Off by default. Takes effect the next time a game starts.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                // 2.1.0, Step 2 — the AES toggle. Same engine
+                // as MVS (the AES parameter set starts
+                // identical), its own toggle, off by default.
+                ControlDropdownRow(
+                    "AES reconstruction",
+                    listOf("on" to "On", "off" to "Off"),
+                    if (reconAesOn) "on" else "off",
+                ) { value ->
+                    val on = value == "on"
+                    shaderSettings.setReconOn("aes", on)
+                    reconAesOn = on
+                }
+                Text(
+                    "Reconstructs the AES picture with a two-pass shader: dither collapses to a smooth gradient, diagonals and curves are rebuilt, HUD text stays sharp. Off by default. Takes effect the next time a game starts.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
