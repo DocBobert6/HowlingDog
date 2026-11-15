@@ -833,6 +833,8 @@ class MainActivity : ComponentActivity() {
     private val reconAesOnState by lazy { mutableStateOf(shaderSettings.reconOn("aes")) }
     // 2.1.0, Step 3 — the CD reconstruction toggle.
     private val reconCdOnState by lazy { mutableStateOf(shaderSettings.reconOn("cd")) }
+    // 2.1.0, Step 4 — the CDZ reconstruction toggle.
+    private val reconCdzOnState by lazy { mutableStateOf(shaderSettings.reconOn("cdz")) }
     // 2.1.0 — the draw path that actually drew the last frame
     // (the dev-stats diagnostic's ground truth), read from the
     // renderer when the game screen recomposes.
@@ -3726,19 +3728,21 @@ class MainActivity : ComponentActivity() {
         var reconMvsOn by reconMvsOnState
         var reconAesOn by reconAesOnState
         var reconCdOn by reconCdOnState
+        var reconCdzOn by reconCdzOnState
         var versionTaps by remember { mutableStateOf(0) }
         // 2.1.0, Step 2 — whether ANY reconstruction is on
-        // (MVS, AES or CD so far; CDZ joins in Step 4),
-        // and which systems have it on, for the CRT / edge
-        // rows' effective state and notes. The resolve only
-        // needs "some recon is on" (any non-OFF recon turns
-        // the CRT off), so the CRT row passes MVS as the
-        // stand-in mode when any recon is on.
-        val anyReconOn = reconMvsOn || reconAesOn || reconCdOn
+        // (all four systems now), and which systems have it
+        // on, for the CRT / edge rows' effective state and
+        // notes. The resolve only needs "some recon is on"
+        // (any non-OFF recon turns the CRT off), so the CRT
+        // row passes MVS as the stand-in mode when any recon
+        // is on.
+        val anyReconOn = reconMvsOn || reconAesOn || reconCdOn || reconCdzOn
         val reconOnSystems = buildList {
             if (reconMvsOn) add("MVS")
             if (reconAesOn) add("AES")
             if (reconCdOn) add("CD")
+            if (reconCdzOn) add("CDZ")
         }
         val reconOnText = reconOnSystems.joinToString(" and ")
         // 2.0, feature 6 fix — the Arcade Manager's Back target
@@ -4245,10 +4249,9 @@ class MainActivity : ComponentActivity() {
                 // fresh install (audit 2).
                 Button(onClick = { screen = Screen.Setup }) { Text("Setup guide") }
             }
-            // 2.1.0 — the Developer menu (experimental): the
-            // MVS, AES and CD reconstruction toggles. The CDZ
-            // toggle arrives with its engine in Step 4. The
-            // warning is verbatim from the plan.
+            // 2.1.0 — the Developer menu (experimental): all
+            // four reconstruction toggles (MVS, AES, CD, CDZ).
+            // The warning is verbatim from the plan.
             if (developerUnlocked) {
                 Spacer(Modifier.height(16.dp))
                 Text("Developer — experimental", style = MaterialTheme.typography.titleSmall)
@@ -4299,6 +4302,22 @@ class MainActivity : ComponentActivity() {
                 }
                 Text(
                     "Reconstructs the Neo Geo CD picture with a two-pass shader: dither collapses to a smooth gradient, diagonals and curves are rebuilt, HUD text stays sharp. Off by default. Takes effect the next time a game starts.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                // 2.1.0, Step 4 — the CDZ toggle. Same engine
+                // (the CDZ parameter set starts identical), its
+                // own toggle, off by default.
+                ControlDropdownRow(
+                    "CDZ reconstruction",
+                    listOf("on" to "On", "off" to "Off"),
+                    if (reconCdzOn) "on" else "off",
+                ) { value ->
+                    val on = value == "on"
+                    shaderSettings.setReconOn("cdz", on)
+                    reconCdzOn = on
+                }
+                Text(
+                    "Reconstructs the Neo Geo CDZ picture with a two-pass shader: dither collapses to a smooth gradient, diagonals and curves are rebuilt, HUD text stays sharp. Off by default. Takes effect the next time a game starts.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
