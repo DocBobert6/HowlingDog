@@ -2,7 +2,7 @@
 
 # HowlingDog
 
-> **⚠️ Attention — v1.3.0 users:** v1.3.0 crashes on startup and cannot be used at all. This is fixed in **v2.1.0**. If you have v1.3.0 installed, please uninstall it and install the latest release: [v2.1.0](https://github.com/DocBobert6/HowlingDog/releases/tag/v2.1.0).
+> **⚠️ Attention — v1.3.0 users:** v1.3.0 crashes on startup and cannot be used at all. This is fixed in **v2.2.0**. If you have v1.3.0 installed, please uninstall it and install the latest release: [v2.2.0](https://github.com/DocBobert6/HowlingDog/releases/tag/v2.2.0).
 
 A standalone Neo Geo emulator for Android: an original frontend around
 the Geolith libretro core — AES, MVS, Neo Geo CD, and Neo Geo CDZ in
