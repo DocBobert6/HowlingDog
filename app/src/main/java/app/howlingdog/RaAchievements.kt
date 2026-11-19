@@ -1,5 +1,7 @@
 package app.howlingdog
 
+import java.net.URLEncoder
+
 /**
  * Phase 10 — RetroAchievements: the achievement model.
  *
@@ -123,5 +125,95 @@ object RaAchievements {
     fun summary(achievements: List<RaAchievement>): String {
         val unlocked = achievements.count { it.isUnlocked }
         return "$unlocked / ${achievements.size} unlocked"
+    }
+
+    /** "120 / 400 pts" — unlocked points over the set's total points, for the Center header. */
+    fun pointsSummary(achievements: List<RaAchievement>): String {
+        val unlocked = achievements.filter { it.isUnlocked }.sumOf { it.points }
+        val total = achievements.sumOf { it.points }
+        return "$unlocked / $total pts"
+    }
+
+    /** Fraction of the set unlocked (0..1), for the Center's gold completion bar. 0 when the set is empty. */
+    fun completionFraction(achievements: List<RaAchievement>): Float {
+        if (achievements.isEmpty()) return 0f
+        return achievements.count { it.isUnlocked }.toFloat() / achievements.size.toFloat()
+    }
+
+    /**
+     * The Center's sort orders. CLOSEST is the default: it
+     * surfaces what the player can earn next.
+     */
+    enum class Sort {
+        /** Locked first; measured ones by progress descending, then unmeasured by points; unlocked last. */
+        CLOSEST,
+        /** As loaded from the native layer (grouped by lock state). */
+        DEFAULT,
+        /** Points descending. */
+        POINTS,
+        /** Rarest first; unknown rarity last. */
+        RARITY,
+    }
+
+    /**
+     * Sort a loaded game's achievements. The sort is over data
+     * already in memory — no network, no re-fetch. All sorts are
+     * stable, so equal keys keep the loaded order.
+     */
+    fun sortAchievements(achievements: List<RaAchievement>, sort: Sort): List<RaAchievement> {
+        return when (sort) {
+            Sort.DEFAULT -> achievements.toList()
+            Sort.POINTS -> achievements.sortedByDescending { it.points }
+            Sort.RARITY -> achievements.sortedWith(
+                compareBy<RaAchievement> { it.rarity == null }.thenBy { it.rarity ?: Double.MAX_VALUE },
+            )
+            Sort.CLOSEST -> achievements.sortedWith(
+                compareBy<RaAchievement> { it.isUnlocked }
+                    .thenByDescending { it.measuredProgress != null }
+                    .thenByDescending { it.measuredPercent ?: 0.0 }
+                    .thenByDescending { it.points },
+            )
+        }
+    }
+
+    /** Rarity tiers, keyed off the server percent already in hand. */
+    enum class RarityTier(val label: String) {
+        /** Earned by 5% of players or fewer. */
+        VERY_RARE("Very rare"),
+        /** Earned by 10% of players or fewer. */
+        RARE("Rare"),
+        /** Earned by more than 10% of players. */
+        COMMON("Common"),
+    }
+
+    /**
+     * The tier for a server rarity percent, or null when the
+     * rarity is unknown — an unknown rarity is shown as no
+     * rarity, never invented as common.
+     */
+    fun rarityTier(rarity: Double?): RarityTier? {
+        if (rarity == null) return null
+        return when {
+            rarity <= 5.0 -> RarityTier.VERY_RARE
+            rarity <= 10.0 -> RarityTier.RARE
+            else -> RarityTier.COMMON
+        }
+    }
+
+    /**
+     * The "Search for Help" URL for an achievement: a web search
+     * for "<game title> <achievement title> RetroAchievements",
+     * opened in the default browser. (The per-game GuideURL would
+     * be preferred when non-null, but it only exists in the RA
+     * web API, which HowlingDog has no client for — so the search
+     * is the whole feature.)
+     */
+    fun searchForHelpUrl(gameTitle: String?, achievementTitle: String): String {
+        val query = listOfNotNull(
+            gameTitle?.takeIf { it.isNotBlank() },
+            achievementTitle,
+            "RetroAchievements",
+        ).joinToString(" ")
+        return "https://duckduckgo.com/?q=" + URLEncoder.encode(query, "UTF-8")
     }
 }

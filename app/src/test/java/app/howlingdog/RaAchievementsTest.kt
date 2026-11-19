@@ -86,6 +86,100 @@ class RaAchievementsTest {
         assertNull(list[0].rarityHardcore)
     }
 
+    // --- Center sort, rarity tiers, header (Step 3) ---
+
+    private fun ach(
+        id: Int,
+        points: Int,
+        unlocked: Boolean = false,
+        measuredProgress: String? = null,
+        measuredPercent: Double? = null,
+        rarity: Double? = null,
+    ): RaAchievement = RaAchievement(
+        id = id,
+        title = "Ach$id",
+        description = "",
+        points = points,
+        state = if (unlocked) RaAchievements.STATE_UNLOCKED else RaAchievements.STATE_ACTIVE,
+        unlocked = unlocked,
+        measuredProgress = measuredProgress,
+        measuredPercent = measuredPercent,
+        rarity = rarity,
+    )
+
+    @Test
+    fun pointsSummaryAndCompletionFraction() {
+        val list = listOf(ach(1, 10, unlocked = true), ach(2, 30), ach(3, 10, unlocked = true))
+        assertEquals("20 / 50 pts", RaAchievements.pointsSummary(list))
+        assertEquals(2f / 3f, RaAchievements.completionFraction(list), 0.001f)
+        assertEquals("0 / 0 pts", RaAchievements.pointsSummary(emptyList()))
+        assertEquals(0f, RaAchievements.completionFraction(emptyList()), 0.001f)
+    }
+
+    @Test
+    fun rarityTierBands() {
+        assertNull(RaAchievements.rarityTier(null))
+        assertEquals(RaAchievements.RarityTier.VERY_RARE, RaAchievements.rarityTier(5.0))
+        assertEquals(RaAchievements.RarityTier.VERY_RARE, RaAchievements.rarityTier(1.2))
+        assertEquals(RaAchievements.RarityTier.RARE, RaAchievements.rarityTier(5.1))
+        assertEquals(RaAchievements.RarityTier.RARE, RaAchievements.rarityTier(10.0))
+        assertEquals(RaAchievements.RarityTier.COMMON, RaAchievements.rarityTier(10.1))
+        assertEquals(RaAchievements.RarityTier.COMMON, RaAchievements.rarityTier(87.0))
+        assertEquals("Very rare", RaAchievements.RarityTier.VERY_RARE.label)
+        assertEquals("Rare", RaAchievements.RarityTier.RARE.label)
+        assertEquals("Common", RaAchievements.RarityTier.COMMON.label)
+    }
+
+    @Test
+    fun sortClosestPutsNearestLockedFirstAndUnlockedLast() {
+        // Closest first: the locked measured achievement nearest
+        // completion, then the other locked measured one, then the
+        // locked unmeasured one, then the unlocked ones.
+        val near = ach(1, 5, measuredProgress = "9/10", measuredPercent = 0.9, rarity = 20.0)
+        val far = ach(2, 5, measuredProgress = "1/10", measuredPercent = 0.1, rarity = 20.0)
+        val plain = ach(3, 10, rarity = 20.0)
+        val done = ach(4, 50, unlocked = true, measuredProgress = "10/10", measuredPercent = 1.0)
+        val input = listOf(done, plain, far, near)
+        val sorted = RaAchievements.sortAchievements(input, RaAchievements.Sort.CLOSEST)
+        assertEquals(listOf(1, 2, 3, 4), sorted.map { it.id })
+    }
+
+    @Test
+    fun sortDefaultKeepsLoadedOrder() {
+        val input = listOf(ach(3, 5), ach(1, 10), ach(2, 1))
+        assertEquals(listOf(3, 1, 2), RaAchievements.sortAchievements(input, RaAchievements.Sort.DEFAULT).map { it.id })
+    }
+
+    @Test
+    fun sortPointsDescending() {
+        val input = listOf(ach(1, 5), ach(2, 50), ach(3, 10))
+        assertEquals(listOf(2, 3, 1), RaAchievements.sortAchievements(input, RaAchievements.Sort.POINTS).map { it.id })
+    }
+
+    @Test
+    fun sortRarityRarestFirstUnknownLast() {
+        val input = listOf(
+            ach(1, 5, rarity = 50.0),
+            ach(2, 5, rarity = null),
+            ach(3, 5, rarity = 2.0),
+            ach(4, 5, rarity = 10.0),
+        )
+        assertEquals(listOf(3, 4, 1, 2), RaAchievements.sortAchievements(input, RaAchievements.Sort.RARITY).map { it.id })
+    }
+
+    @Test
+    fun searchForHelpUrl() {
+        assertEquals(
+            "https://duckduckgo.com/?q=Metal+Slug+3+First+Blood+RetroAchievements",
+            RaAchievements.searchForHelpUrl("Metal Slug 3", "First Blood"),
+        )
+        // No game title: the query is just the achievement plus the site.
+        assertEquals(
+            "https://duckduckgo.com/?q=First+Blood+RetroAchievements",
+            RaAchievements.searchForHelpUrl(null, "First Blood"),
+        )
+    }
+
     @Test
     fun parseMalformedJsonIsEmpty() {
         assertTrue(RaAchievements.parse("").isEmpty())

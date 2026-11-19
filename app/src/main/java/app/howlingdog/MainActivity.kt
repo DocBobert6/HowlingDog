@@ -746,6 +746,9 @@ class MainActivity : ComponentActivity() {
     // startGame both read it; the session only holds the current
     // enabled codes (see PlayerSession.setCheats).
     private val cheatStore by lazy { CheatStore(File(filesDir, "cheats")) }
+    // Achievement Center (v2.2.0, Step 3): the badge image
+    // store, one lazy field like the other stores.
+    private val badgeStore by lazy { RaBadgeStore(filesDir) }
     private val topBar by lazy { TopBarVisibility() }
     private val screenState by lazy { mutableStateOf(if (appSettings.showBoot()) Screen.Boot else Screen.Library) }
     private val gamesState by lazy { mutableStateOf<List<GameEntry>>(emptyList()) }
@@ -2485,231 +2488,25 @@ class MainActivity : ComponentActivity() {
                 }
             }
             Screen.Achievements -> {
-                // Phase 10 — RetroAchievements: the loaded game's
-                // achievements. Reached from the pause menu; the
-                // game stays paused underneath (the session is not
-                // resumed until the player goes back).
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
-                ) {
-                    Text(
-                        RaClient.gameTitle ?: "Achievements",
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        if (RaClient.gameLoaded) {
-                            RaAchievements.summary(RaClient.achievements)
-                        } else {
-                            "No achievements for this game."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    if (RaClient.gameLoaded) {
-                        for (achievement in RaClient.achievements) {
-                            if (achievement.state == RaAchievements.STATE_INACTIVE) continue
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        achievement.title,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                    Text(
-                                        achievement.description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                    if (!achievement.measuredProgress.isNullOrEmpty()) {
-                                        Text(
-                                            achievement.measuredProgress,
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                    }
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        if (achievement.isUnlocked) "Unlocked" else "${achievement.points} pts",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = if (achievement.isUnlocked) {
-                                            Color(EraUi.Palette.GOLD)
-                                        } else {
-                                            Color(EraUi.Palette.TEXT)
-                                        },
-                                        fontWeight = if (achievement.isUnlocked) FontWeight.Bold else FontWeight.Normal,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Button(onClick = { screen = Screen.Playing }) { Text("Back") }
-                }
+                // Achievement Center (v2.2.0, Step 3): the
+                // Achievements screen rebuilt into the hub.
+                // The game stays paused underneath (the session
+                // is not resumed until the player goes back).
+                AchievementCenterScreen(
+                    initialSection = CenterSection.ACHIEVEMENTS,
+                    badgeStore = badgeStore,
+                    onBack = { screen = Screen.Playing },
+                )
             }
             Screen.Leaderboards -> {
-                // v1.2.0 (item 2) — the loaded game's
-                // leaderboards. Reached from the pause menu; the
-                // game stays paused underneath (the session is not
-                // resumed until the player goes back). Scores are
-                // submitted automatically by rc_client while the
-                // game runs — this screen only shows the boards and
-                // their entries. The rich presence line is what
-                // the RetroAchievements site shows for the game
-                // right now.
-                var selectedBoardId by remember { mutableStateOf(0) }
-                LaunchedEffect(Unit) {
-                    val first = RaClient.leaderboards.firstOrNull()
-                    if (first != null) {
-                        selectedBoardId = first.id
-                        RaClient.fetchLeaderboardEntries(first.id, false)
-                    }
-                }
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
-                ) {
-                    Text(
-                        RaClient.gameTitle ?: "Leaderboards",
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    if (RaClient.richPresence.isNotEmpty()) {
-                        // The message is already a complete
-                        // sentence ("Playing <title>", or the
-                        // game's own presence string), so it is
-                        // shown as-is.
-                        Text(
-                            RaClient.richPresence,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                    }
-                    Text(
-                        if (RaClient.gameLoaded) {
-                            "${RaClient.leaderboards.size} leaderboard${if (RaClient.leaderboards.size == 1) "" else "s"}"
-                        } else {
-                            "No leaderboards for this game."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    if (RaClient.gameLoaded) {
-                        for (board in RaClient.leaderboards) {
-                            val selected = board.id == selectedBoardId
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selectedBoardId = board.id
-                                        RaClient.fetchLeaderboardEntries(board.id, false)
-                                    }
-                                    .padding(vertical = 6.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(
-                                        board.title,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (selected) Color(EraUi.Palette.GOLD) else Color(EraUi.Palette.TEXT),
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    Text(
-                                        RaLeaderboards.formatName(board.format),
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                                if (board.description.isNotEmpty()) {
-                                    Text(
-                                        board.description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                                // The live attempt on this board, if
-                                // one is running.
-                                if (board.id == RaClient.activeTrackerBoardId && RaClient.activeTrackerDisplay.isNotEmpty()) {
-                                    Text(
-                                        "Attempt: ${RaClient.activeTrackerDisplay}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color(EraUi.Palette.GOLD),
-                                    )
-                                } else if (board.trackerValue.isNotEmpty()) {
-                                    Text(
-                                        "Attempt: ${board.trackerValue}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color(EraUi.Palette.GOLD),
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        // The entries for the selected board.
-                        val entries = RaClient.leaderboardEntries
-                        if (RaClient.leaderboardEntriesLoading) {
-                            Text("Loading…", style = MaterialTheme.typography.bodyMedium)
-                        } else if (RaClient.leaderboardEntriesError != null) {
-                            Text(
-                                RaClient.leaderboardEntriesError ?: "",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        } else if (entries != null && selectedBoardId != 0 &&
-                            RaClient.leaderboardEntriesBoardId == selectedBoardId) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Button(
-                                    onClick = { RaClient.fetchLeaderboardEntries(selectedBoardId, false) },
-                                    enabled = RaClient.leaderboardEntriesAroundUser,
-                                ) { Text("Top 10") }
-                                Button(
-                                    onClick = { RaClient.fetchLeaderboardEntries(selectedBoardId, true) },
-                                    enabled = !RaClient.leaderboardEntriesAroundUser,
-                                ) { Text("Near me") }
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            for (entry in entries.entries) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(
-                                        "#${entry.rank}  ${entry.user}",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (entry.user == RaClient.username) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (entry.user == RaClient.username) Color(EraUi.Palette.GOLD) else Color(EraUi.Palette.TEXT),
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    Text(
-                                        entry.display,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "${entries.totalEntries} entries" +
-                                    if (entries.userIndex >= 0) " — you are #${entries.userIndex + 1}" else "",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Button(onClick = { screen = Screen.Playing }) { Text("Back") }
-                }
+                // Achievement Center (v2.2.0, Step 3): the
+                // Leaderboards screen is the Center's second
+                // section now. Same pause behaviour as before.
+                AchievementCenterScreen(
+                    initialSection = CenterSection.LEADERBOARDS,
+                    badgeStore = badgeStore,
+                    onBack = { screen = Screen.Playing },
+                )
             }
             Screen.Cheats -> {
                 CheatsScreen()
