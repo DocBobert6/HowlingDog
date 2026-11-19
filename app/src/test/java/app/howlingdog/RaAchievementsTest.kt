@@ -131,6 +131,25 @@ class RaAchievementsTest {
     }
 
     @Test
+    fun unlockHapticLevelByTierCappedByUserLevel() {
+        val veryRare = RaAchievements.RarityTier.VERY_RARE
+        val rare = RaAchievements.RarityTier.RARE
+        val common = RaAchievements.RarityTier.COMMON
+        // The tier's level, when the user allows it.
+        assertEquals(HapticLevel.HEAVY, RaAchievements.unlockHapticLevel(veryRare, HapticLevel.HEAVY))
+        assertEquals(HapticLevel.MEDIUM, RaAchievements.unlockHapticLevel(rare, HapticLevel.HEAVY))
+        assertEquals(HapticLevel.LIGHT, RaAchievements.unlockHapticLevel(common, HapticLevel.HEAVY))
+        // Never stronger than the user's own level.
+        assertEquals(HapticLevel.LIGHT, RaAchievements.unlockHapticLevel(veryRare, HapticLevel.LIGHT))
+        assertEquals(HapticLevel.LIGHT, RaAchievements.unlockHapticLevel(rare, HapticLevel.LIGHT))
+        assertEquals(HapticLevel.MEDIUM, RaAchievements.unlockHapticLevel(veryRare, HapticLevel.MEDIUM))
+        // OFF means silence, even for a very rare unlock.
+        assertEquals(HapticLevel.OFF, RaAchievements.unlockHapticLevel(veryRare, HapticLevel.OFF))
+        // An unknown rarity reads as common.
+        assertEquals(HapticLevel.LIGHT, RaAchievements.unlockHapticLevel(null, HapticLevel.HEAVY))
+    }
+
+    @Test
     fun sortClosestPutsNearestLockedFirstAndUnlockedLast() {
         // Closest first: the locked measured achievement nearest
         // completion, then the other locked measured one, then the

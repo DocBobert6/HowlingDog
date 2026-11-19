@@ -201,6 +201,24 @@ object RaAchievements {
     }
 
     /**
+     * The haptic level for an unlock, from its rarity tier and
+     * the user's haptics level (Step 4). A very rare unlock is
+     * a heavy click, a rare one a click, a common one a light
+     * tick — but never stronger than the user's own level, so
+     * OFF means silence even for a very rare unlock, and a user
+     * who chose LIGHT never gets a heavy buzz. An unknown rarity
+     * reads as common.
+     */
+    fun unlockHapticLevel(tier: RarityTier?, userLevel: HapticLevel): HapticLevel {
+        val tierLevel = when (tier) {
+            RarityTier.VERY_RARE -> HapticLevel.HEAVY
+            RarityTier.RARE -> HapticLevel.MEDIUM
+            else -> HapticLevel.LIGHT
+        }
+        return minOf(tierLevel, userLevel)
+    }
+
+    /**
      * The "Search for Help" URL for an achievement: a web search
      * for "<game title> <achievement title> RetroAchievements",
      * opened in the default browser. (The per-game GuideURL would

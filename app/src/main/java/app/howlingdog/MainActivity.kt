@@ -1187,7 +1187,19 @@ class MainActivity : ComponentActivity() {
         // after four seconds. The effect restarts when a new
         // unlock arrives, so a second unlock re-arms the timer.
         LaunchedEffect(RaClient.lastUnlock) {
-            if (RaClient.lastUnlock != null) {
+            val unlock = RaClient.lastUnlock
+            if (unlock != null) {
+                // v2.2.0, Step 4 — rarity haptic: a distinct buzz
+                // per rarity tier (heavy for very rare, a click
+                // for rare, a light tick for common), never
+                // stronger than the user's own haptics level
+                // (OFF means silence). The rarity is looked up
+                // from the achievements list by id — the unlock
+                // itself carries no rarity.
+                val tier = RaAchievements.rarityTier(
+                    RaClient.achievements.firstOrNull { it.id == unlock.id }?.rarity,
+                )
+                haptics.perform(RaAchievements.unlockHapticLevel(tier, hapticsLevel))
                 delay(4000)
                 RaClient.clearUnlock()
             }
@@ -5262,8 +5274,19 @@ class MainActivity : ComponentActivity() {
                 // paused.
                 val unlock = RaClient.lastUnlock
                 if (unlock != null && !paused) {
+                    // v2.2.0, Step 4 — rarity variant: a rare
+                    // unlock names its tier and gets a gold
+                    // border on the chip; a common unlock is
+                    // the plain gold chip it always was, and
+                    // an unknown rarity reads as common.
+                    val unlockTier = RaAchievements.rarityTier(
+                        RaClient.achievements.firstOrNull { it.id == unlock.id }?.rarity,
+                    )
+                    val rareUnlock = unlockTier != null &&
+                        unlockTier != RaAchievements.RarityTier.COMMON
                     Text(
-                        "Achievement Unlocked: ${unlock.title} (+${unlock.points} pts)",
+                        "Achievement Unlocked: ${unlock.title} (+${unlock.points} pts)" +
+                            if (rareUnlock) " — ${unlockTier.label}" else "",
                         color = Color(EraUi.Palette.GOLD),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
@@ -5273,6 +5296,11 @@ class MainActivity : ComponentActivity() {
                             .background(
                                 Color(EraUi.Palette.SURFACE),
                                 RoundedCornerShape(4.dp),
+                            )
+                            .border(
+                                width = if (rareUnlock) 2.dp else 0.dp,
+                                color = Color(EraUi.Palette.GOLD),
+                                shape = RoundedCornerShape(4.dp),
                             )
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     )
