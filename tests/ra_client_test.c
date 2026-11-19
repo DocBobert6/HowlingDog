@@ -960,6 +960,17 @@ static void test_full_flow(void) {
         CHECK(strstr(json, "\"title\":\"Ach2\"") != NULL);
         CHECK(strstr(json, "\"state\":2") != NULL); /* 5501 unlocked */
         CHECK(strstr(json, "\"state\":1") != NULL); /* 5502 active */
+        /* v2.2.0 Step 1: the JSON carries the badge URLs and the
+         * server rarity. The mock set's BadgeName 00234 builds
+         * /Badge/00234.png (unlocked) and /Badge/00234_lock.png
+         * (locked); the fixture sends no Rarity, so both rarity
+         * fields read 0 — presence, not value, is asserted. */
+        CHECK(strstr(json, "\"badge_url\":\"") != NULL);
+        CHECK(strstr(json, "/Badge/00234.png") != NULL);
+        CHECK(strstr(json, "\"badge_locked_url\":\"") != NULL);
+        CHECK(strstr(json, "/Badge/00234_lock.png") != NULL);
+        CHECK(strstr(json, "\"rarity\":") != NULL);
+        CHECK(strstr(json, "\"rarity_hardcore\":") != NULL);
         free(json);
     }
 

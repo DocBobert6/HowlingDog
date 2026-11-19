@@ -17,11 +17,12 @@ class RaAchievementsTest {
 
     // The native layer's shape: unlocked is an int (0/1), not a
     // JSON boolean, and measured_progress is "" when there is
-    // none. Mirrors the mock game in the ra_client host test (two
-    // achievements, 5 and 2 points).
+    // none. Badge URLs are "" when there is no badge; rarity is
+    // 0.0 when the server sent none. Mirrors the mock game in the
+    // ra_client host test (two achievements, 5 and 2 points).
     private val sampleJson = """[
-        {"id":5501,"title":"Ach1","description":"First one","points":5,"state":1,"unlocked":0,"badge_url":"","rarity":0.0,"measured_progress":"","measured_percent":0.0},
-        {"id":5502,"title":"Ach2","description":"Second one","points":2,"state":2,"unlocked":1,"badge_url":"","rarity":0.0,"measured_progress":"3/5","measured_percent":0.6}
+        {"id":5501,"title":"Ach1","description":"First one","points":5,"state":1,"unlocked":0,"badge_url":"","badge_locked_url":"","rarity":0.0,"rarity_hardcore":0.0,"measured_progress":"","measured_percent":0.0},
+        {"id":5502,"title":"Ach2","description":"Second one","points":2,"state":2,"unlocked":1,"badge_url":"https://media.retroachievements.org/Badge/00235.png","badge_locked_url":"https://media.retroachievements.org/Badge/00235_lock.png","rarity":12.5,"rarity_hardcore":4.0,"measured_progress":"3/5","measured_percent":0.6}
     ]"""
 
     @Test
@@ -37,6 +38,13 @@ class RaAchievementsTest {
         assertFalse(first.unlocked)
         assertFalse(first.isUnlocked)
         assertNull(first.measuredProgress)
+        // Empty badge URLs parse to null (no badge), and a 0.0
+        // rarity is kept as a real server value.
+        assertNull(first.badgeUrl)
+        assertNull(first.badgeLockedUrl)
+        assertNull(first.badgeUrlForState)
+        assertEquals(0.0, first.rarity!!, 0.001)
+        assertEquals(0.0, first.rarityHardcore!!, 0.001)
         val second = list[1]
         assertEquals(5502, second.id)
         assertEquals(2, second.points)
@@ -45,6 +53,37 @@ class RaAchievementsTest {
         assertTrue(second.isUnlocked)
         assertEquals("3/5", second.measuredProgress)
         assertEquals(0.6, second.measuredPercent!!, 0.001)
+        assertEquals("https://media.retroachievements.org/Badge/00235.png", second.badgeUrl)
+        assertEquals("https://media.retroachievements.org/Badge/00235_lock.png", second.badgeLockedUrl)
+        // Unlocked: the state badge is the unlocked badge.
+        assertEquals("https://media.retroachievements.org/Badge/00235.png", second.badgeUrlForState)
+        assertEquals(12.5, second.rarity!!, 0.001)
+        assertEquals(4.0, second.rarityHardcore!!, 0.001)
+    }
+
+    @Test
+    fun lockedBadgeUrlForState() {
+        // Locked: the state badge is the locked (greyed) badge.
+        val list = RaAchievements.parse(
+            """[{"id":1,"title":"Locked","description":"","points":1,"state":1,"unlocked":0,"badge_url":"https://media.retroachievements.org/Badge/00234.png","badge_locked_url":"https://media.retroachievements.org/Badge/00234_lock.png","rarity":25.0}]""",
+        )
+        assertEquals(1, list.size)
+        assertEquals("https://media.retroachievements.org/Badge/00234_lock.png", list[0].badgeUrlForState)
+    }
+
+    @Test
+    fun missingBadgeAndRarityParseToNull() {
+        // Old JSON shape (no badge/rarity fields at all) still
+        // parses; the new fields are null, never a crash.
+        val list = RaAchievements.parse(
+            """[{"id":1,"title":"Old","description":"","points":1,"state":1,"unlocked":0}]""",
+        )
+        assertEquals(1, list.size)
+        assertNull(list[0].badgeUrl)
+        assertNull(list[0].badgeLockedUrl)
+        assertNull(list[0].badgeUrlForState)
+        assertNull(list[0].rarity)
+        assertNull(list[0].rarityHardcore)
     }
 
     @Test

@@ -699,8 +699,12 @@ char* ra_get_achievements_json(void) {
             if (ra_json_append_int(&buf, a->unlocked ? 1 : 0) != 0) goto fail;
             if (ra_json_append(&buf, ",\"badge_url\":") != 0) goto fail;
             if (ra_json_append_string(&buf, a->badge_url) != 0) goto fail;
+            if (ra_json_append(&buf, ",\"badge_locked_url\":") != 0) goto fail;
+            if (ra_json_append_string(&buf, a->badge_locked_url) != 0) goto fail;
             if (ra_json_append(&buf, ",\"rarity\":") != 0) goto fail;
             if (ra_json_append_double(&buf, (double)a->rarity) != 0) goto fail;
+            if (ra_json_append(&buf, ",\"rarity_hardcore\":") != 0) goto fail;
+            if (ra_json_append_double(&buf, (double)a->rarity_hardcore) != 0) goto fail;
             if (ra_json_append(&buf, ",\"measured_progress\":") != 0) goto fail;
             if (ra_json_append_string(&buf, a->measured_progress) != 0) goto fail;
             if (ra_json_append(&buf, ",\"measured_percent\":") != 0) goto fail;

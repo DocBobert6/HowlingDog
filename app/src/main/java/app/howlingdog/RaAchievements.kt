@@ -7,9 +7,10 @@ package app.howlingdog
  * comes from the native layer (nativeRaGetAchievements), which
  * builds it from the rc_client list; each entry carries the id,
  * title, description, points, state, and — for measured
- * achievements — the progress string and percent. Badge images
- * are out of scope for v1.1.0 (no image loader in the project),
- * so no badge URL is carried.
+ * achievements — the progress string and percent — plus the badge
+ * URLs and the server-computed rarity (added in v2.2.0, Step 1).
+ * The badge *images* are loaded by the badge loader (Step 2), not
+ * here.
  *
  * States mirror rc_client_achievement_state: INACTIVE (0) means
  * the achievement can never be earned in this game, ACTIVE (1)
@@ -36,8 +37,19 @@ data class RaAchievement(
     val unlocked: Boolean,
     val measuredProgress: String? = null,
     val measuredPercent: Double? = null,
+    /** The 64 px badge image URL (unlocked badge), or null when the native layer sent none. */
+    val badgeUrl: String? = null,
+    /** The 64 px locked-badge image URL (greyed badge), or null when the native layer sent none. */
+    val badgeLockedUrl: String? = null,
+    /** Server-computed rarity: percent of players who earned it (0..100), or null when unknown. */
+    val rarity: Double? = null,
+    /** The same, for hardcore. HowlingDog is softcore-only, so this is carried for completeness and never displayed as earnable. */
+    val rarityHardcore: Double? = null,
 ) {
     val isUnlocked: Boolean get() = unlocked || state == RaAchievements.STATE_UNLOCKED
+
+    /** The badge URL for the achievement's current state: the unlocked badge once earned, the locked badge until then. */
+    val badgeUrlForState: String? get() = if (isUnlocked) badgeUrl else badgeLockedUrl
 }
 
 object RaAchievements {
@@ -50,7 +62,8 @@ object RaAchievements {
      * Parse the achievements JSON from the native layer: an array
      * of objects with id, title, description, points, state,
      * unlocked (an int, 0/1), and optionally measured_progress /
-     * measured_percent. Malformed JSON (or a non-array) parses to
+     * measured_percent, badge_url / badge_locked_url, and rarity /
+     * rarity_hardcore. Malformed JSON (or a non-array) parses to
      * an empty list — a bad payload must never crash the list
      * screen. A single malformed entry is skipped, not fatal.
      */
@@ -76,7 +89,12 @@ object RaAchievements {
 
     private fun parseOne(obj: Map<String, Any?>): RaAchievement {
         // The native layer emits unlocked as an int (0/1) and
-        // measured_progress as "" when there is none.
+        // measured_progress as "" when there is none. Badge URLs
+        // are "" when the achievement has no badge (or the native
+        // layer sent none); rarity is 0.0 when the server sent
+        // none. Empty badge strings parse to null, and a 0.0
+        // rarity is kept as 0.0 (it is a real server value, not
+        // an absence marker).
         val measuredProgress = (obj["measured_progress"] as? String)
             ?.takeIf { it.isNotEmpty() }
         val measuredPercent = (obj["measured_percent"] as? Number)?.toDouble()
@@ -94,6 +112,10 @@ object RaAchievements {
             },
             measuredProgress = measuredProgress,
             measuredPercent = measuredPercent,
+            badgeUrl = (obj["badge_url"] as? String)?.takeIf { it.isNotEmpty() },
+            badgeLockedUrl = (obj["badge_locked_url"] as? String)?.takeIf { it.isNotEmpty() },
+            rarity = (obj["rarity"] as? Number)?.toDouble(),
+            rarityHardcore = (obj["rarity_hardcore"] as? Number)?.toDouble(),
         )
     }
 
